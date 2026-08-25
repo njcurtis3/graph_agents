@@ -103,8 +103,7 @@ warns about. The hook creates the obligation; a real verification pass discharge
 3. **No diamond has ever run.** Both runs resolved to `single-loop`, both correctly.
    Worktree isolation has therefore still never been exercised, and see the note under
    gap #8: on a target with no git repo it *cannot* be.
-4. **`new-app` has never been used.** All 5 registry entries (`huntstack`,
-   `app-2.xyz`, `podcraft-ai`, `whoop-med-tracker`, `thrml`) were back-filled from
+4. **`new-app` has never been used.** All 5 registry entries were back-filled from
    directories that already existed; all five directories are on disk beside
    `graph_agents/`. Re-checked this pass, unchanged.
 5. **Nothing enforces the umbrella invariant.** "No cross-app imports" is prose in

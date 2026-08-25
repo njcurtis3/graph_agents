@@ -21,7 +21,7 @@ Nodes are **apps**. This graph is intentionally almost edgeless.
         ┌───────────┬───────────┬───────────┬─────────────┘
         ▼           ▼           ▼           ▼           ▼
    ┌─────────┐ ┌─────────┐ ┌─────────┐ ┌────────┐ ┌───────────┐
-   │huntstack│ │app-2 │ │podcraft │ │ thrml  │ │whoop-med  │
+   │  App 1  │ │  App 2  │ │  App 3  │ │ App 4  │ │   App 5   │
    └─────────┘ └─────────┘ └─────────┘ └────────┘ └───────────┘
 ```
 
