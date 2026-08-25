@@ -56,15 +56,16 @@ far is fleet tooling operating on itself.
 | `scout` | haiku | Read, Glob, Grep, Bash, WebSearch, WebFetch | 39 | yes, 2 runs |
 | `architect` | opus | Read, Glob, Grep, Bash | 70 | yes, 2 runs |
 | `builder` | opus | Read, Write, Edit, Glob, Grep, Bash | 49 | yes, 5 slices |
-| `reviewer` | opus | Read, Glob, Grep, Bash | 52 | yes, 6 reviews |
+| `reviewer` | opus | Read, Glob, Grep, Bash | 52 | yes, 7 reviews |
 | `integrator` | opus | Read, Write, Edit, Glob, Grep, Bash | 40 | **no** |
 | `ops` | opus | Read, Write, Edit, Glob, Grep, Bash | 43 | **no** |
 
 Model tiers and tool grants were re-read from frontmatter this pass and are unchanged
 since creation. Line counts grew where `2026-08-25-fleet-hardening` edited the file.
-Execution counts are as of the end of slice `s5` of that run, `s5`'s own review included:
-6 reviews over 5 slices, because `s4` and `s5` were each REJECTED once and re-reviewed by
-a second, fresh `reviewer`.
+Execution counts are as of the end of run `2026-08-25-fleet-hardening`: 7 reviews over 5
+slices, because `s4` and `s5` were each REJECTED once and re-reviewed by a second, fresh
+`reviewer` — `s1`+`s2`+`s3` = 3, `s4` = 2, `s5` = 2. The run is closed, so unlike every
+earlier count in this row, 7 is final rather than as-of-writing.
 
 Tiering rationale: `GRAPH.md` § Model tiering. Short version — spend on judgment, not
 retrieval. `reviewer` and `architect` are never-downgrade.
@@ -227,10 +228,11 @@ is not machine-checkable and never was.
 first attempt added the `2026-08-25-fleet-hardening` heading above but left the
 refuge-freshness narrative below it untouched, so that heading captured the other run's
 paragraphs: this file briefly claimed that *this* run refused to fan out a 2-slice
-sequence, held its gate with `git status` clean on huntstack, and found two failed
-huntstack scraper runs — all four claims false of this run, one of them contradicting the
-run's own "not touching anything outside `graph_agents/`". No grep could catch it, because
-every sentence was individually well-formed and had been accurate about a different run.
+sequence, held its gate with `git status` clean on huntstack, found two failed huntstack
+scraper runs, and was watching a huntstack roadmap "late Aug" re-scrape window — all four
+claims false of this run, one of them contradicting the run's own "not touching anything
+outside `graph_agents/`". No grep could catch it, because every sentence was individually
+well-formed and had been accurate about a different run.
 A heading inserted above existing prose changes what that prose refers to. Both runs now
 have their own heading and the passages name their run instead of saying "that run".
 
@@ -285,3 +287,4 @@ What `2026-08-25-refuge-freshness` found in huntstack, independent of the featur
 | 2026-08-25 | s4: added `.graph/verify-state.py` and wired it into `feature-graph` steps 2/3/5/6. REJECTED on attempt 1 for passing on an untouched template; fixed with placeholder-identity detection |
 | 2026-08-25 | s5: degraded-mode rule (`no repo, no diamond`) written into `feature-graph` step 0.5 + step 5 and into `GRAPH.md`; `verify-state.py` documented with all seven blind spots; this file's gap list re-verified against disk — gaps #1 and #6 closed, #7 narrowed, #8–#12 newly booked |
 | 2026-08-25 | s5 REJECTED on attempt 1: its new run heading captured the refuge-freshness narrative below it, making four huntstack claims read as claims about this run. Re-anchored under a per-run heading on attempt 2 |
+| 2026-08-25 | Run close: reviewer count corrected to 7 (`s5`'s own second reviewer included) and scoped to the closed run; the four captured huntstack claims now all named |
