@@ -1,5 +1,5 @@
 {
-  "$comment": "Shared state for ONE work-graph run. Lives at .graph/runs/<run-id>/state.json. Every node reads this on start and appends to its OWN key on finish. Never rewrite another node's key. This file is the edge: it is how context crosses between agents that cannot see each other.",
+  "$comment": "Shared state for ONE work-graph run. Lives at .graph/runs/<run-id>/state.json. Every node reads this on start and appends to its OWN key on finish - the builder writes its own builders.<slice> key, including the branch it worked on. Never rewrite another node's key. This file is the edge: it is how context crosses between agents that cannot see each other.",
   "run_id": "<yyyy-mm-dd>-<short-slug>",
   "goal": "one sentence, in the user's words",
   "app": "registry id, or 'umbrella'",
@@ -17,7 +17,7 @@
   },
   "approved_by_human": false,
   "builders": {
-    "s1": { "status": "pending|done|failed", "branch": "", "changed": [], "notes": "" }
+    "s1": { "status": "pending|done|failed", "branch": "written by the builder: the branch this slice's work landed on, or an empty string when the target is not a git repo at all", "changed": [], "notes": "" }
   },
   "reviews": {
     "s1": { "verdict": "PASS|REJECT", "attempt": 1, "findings": [{ "file": "", "line": 0, "issue": "", "severity": "" }] }

@@ -154,6 +154,16 @@
       },
       "deviation_from_approved_plan": "s2's approved file set was THREE files (architect.md, reviewer.md, ops.md). The orchestrator extended it mid-slice to FIVE, adding scout.md and integrator.md, and asked that this be recorded rather than quietly absorbed. Why: done_when (a) demanded `grep -l state.json .claude/agents/*.md | wc -l` == 6, which was unsatisfiable from the approved set. The real pre-s2 count was 1 (builder.md only), not 3 -- scout fact 6 conflated 'mentions the contract' with 'contains the string state.json'. The orchestrator's ruling was to make the files honest rather than weaken the gate, since an unsatisfiable grep gate is exactly the fake-check failure this run exists to eliminate, and one consistent idiom across all six nodes is what makes any future mechanical check over them meaningful. Extension was strictly wording: neither node's behaviour, responsibilities, model tier, or Return block changed. Reported to the user as a deviation by the orchestrator; visible to the reviewer here.",
       "blocked_then_unblocked": "done_when (a) `grep -l state.json graph_agents/.claude/agents/*.md | wc -l` returns 4, not 6, and cannot reach 6 from inside this slice's file set. The premise 'currently 3' is wrong: before s2 exactly ONE agent file contained the literal token `state.json` (builder.md:12,16). Scout fact 6 said scout.md:15 and integrator.md:21 mention state.json -- they carry the CONTRACT but not the literal string: scout.md:15 reads 'If a state file path was given...' and integrator.md:12/21 read 'Read state.' / 'Append to `integrator` in state:'. My three files now all carry the literal token, so the count went 1 -> 4. Getting to 6 requires a one-word edit to scout.md:15 and integrator.md:12 or :21, both explicitly outside my file set (s2 was told not to touch them because 'they already have the contract' -- semantically true, literally false for this grep). Not taking those files. Options for the orchestrator: (i) hand scout.md + integrator.md to a follow-up slice, or (ii) restate the gate as 6 files carrying the contract, in which case it already passes at 6/6."
+    },
+    "s3": {
+      "status": "done",
+      "branch": "master",
+      "changed": [
+        "graph_agents/.graph/runs/_schema.json ($comment extended: the builder writes its own builders.<slice> key incl. the branch; builders.s1.branch value replaced with the descriptive convention)",
+        "graph_agents/.claude/agents/builder.md (Protocol step 4 ONLY: names the run's state.json, defines `branch`, adds the never-rewrite sentence verbatim from the other five)",
+        "graph_agents/.graph/runs/2026-08-25-fleet-hardening/state.json (this builders.s3 entry)"
+      ],
+      "notes": "Purely additive: builder.md changed exactly one Protocol step (4), frontmatter and every other section byte-identical, no reordering. The never-rewrite sentence is the other five files' wording verbatim -- `**Never rewrite another node's key.**` (architect.md:48, integrator.md:22, ops.md:23, scout.md:16; reviewer.md:20 appends '-- not the builder's, not another reviewer's'). Step 4 also now names the run's `state.json` instead of 'in state', closing the s2 reviewer's 5/6-idiom finding. The schema value is DESCRIPTIVE prose, not a literal branch name -- no concrete branch is written into either file, so the docs cannot go stale against `master`; the only place `master` appears is this run's own builders.*.branch data, which is real. No real run's state.json was backfilled with a branch value. OUT OF SCOPE, NOT TOUCHED: (1) .gitattributes / core.autocrlf noise s1 and the s1 reviewer both flagged -- still unowned, builder.md and _schema.json were LF on disk and were rewritten with newline='' to preserve LF. (2) The reviewer's own key shape in _schema.json:23 has no `summary` field even though both reviews written so far carry one; same for builders' `gate_results`/`deviation_from_approved_plan`. The schema under-describes what nodes actually write. Not mine to widen. (3) FOR s5: builder.md's frontmatter still says builders run 'in isolation' and 'in parallel with sibling builders' (line 3), which is the promise s5 is making honest for no-repo targets -- I did not touch frontmatter, per my slice boundary. GATE WORDING ADJUSTMENT (declared, not hidden): the slice brief's check `grep -c \"never rewrite another node\"` returns 0 because the fleet's actual wording capitalises it as a sentence -- `Never`. The gate that matches reality is `grep -c \"Never rewrite another node's key\" graph_agents/.claude/agents/builder.md` -> 1 (equivalently `grep -ci`). I matched the other five files rather than lower-casing the sentence to satisfy a grep."
     }
   },
   "reviews": {
@@ -242,6 +252,66 @@
         }
       ],
       "summary": "All four gate checks re-run verbatim and all four pass, including the constitutional check (d). Repo root is graph_agents/ exactly, all 18 fleet files are tracked with .claude/ and .graph/runs/ genuinely not ignored, rollback was proven live rather than asserted, and the CURRENT-STATE.md edit is a single appended Decisions row with zero line drift and no s5 scope creep. PASS."
+    },
+    "s2": {
+      "verdict": "PASS",
+      "attempt": 1,
+      "reviewer_reran_all_four_gates": true,
+      "gate_rerun": {
+        "a_grep_l_state_json_count": "6 -- PASS (architect, builder, integrator, ops, reviewer, scout)",
+        "b_one_branch_line_contains_git_repo": "PASS -- architect.md:28 '- One slice = one builder = one branch **only where the target is a git repo**. If the target'",
+        "c_grep_c_human_read_architect": "1 -- PASS (>=1)",
+        "d_git_status_porcelain": "empty -- PASS"
+      },
+      "boundary_checks": {
+        "builder_md_untouched": "PASS -- 8941992 --numstat lists only architect.md, integrator.md, ops.md, reviewer.md, scout.md + this state.json. builder.md absent. s3's boundary intact.",
+        "s5_files_untouched": "PASS -- CURRENT-STATE.md, GRAPH.md, feature-graph/SKILL.md all absent from the commit.",
+        "frontmatter_drift": "NONE -- diffs contain no frontmatter hunk; byte-compared 8941992^ vs HEAD for scout.md and integrator.md: scout still 'tools: Read, Glob, Grep, Bash, WebSearch, WebFetch' / 'model: haiku', integrator unchanged. No re-tiering.",
+        "wording_only_extension": "HELD -- scout.md is +2/-1 confined to Protocol step 4; the read stays CONDITIONAL ('If a run `state.json` path was given'), not made unconditional. integrator.md is +4/-4 confined to Protocol steps 1 and 5. No responsibility added or removed in either; both Return blocks byte-identical.",
+        "no_wholesale_rewrite": "HELD -- architect.md is +13/-4, all four deletions are in-place replacements of the two bullets the plan named (the 'one branch' bullet and the 'Read the scout's state' rule). Shape logic (lines 11-24), the delete-fake-edges rule (37-38) and the Return block (53-68) are byte-identical to 8941992^.",
+        "state_key_hygiene": "PASS -- state.json diff is +114/-2; the only two deleted lines are the empty '\"reviews\": {}' placeholder and a log line that is re-emitted. No other node's key content was rewritten."
+      },
+      "contract_correctness": {
+        "architect": "architect.md:47 -> `architect` key. CORRECT.",
+        "reviewer": "reviewer.md:19 -> `reviews.<slice>`. CORRECT.",
+        "ops": "ops.md:21-22 -> `ops` key. CORRECT.",
+        "scout": "scout.md:15-16 -> `scout` key. CORRECT.",
+        "integrator": "integrator.md:21 -> `integrator` key. CORRECT.",
+        "builder": "builder.md:16 -> `builders.<your-slice>`. Pre-existing, correct, untouched (s3's file)."
+      },
+      "findings": [
+        {
+          "severity": "note",
+          "file": "graph_agents/.claude/agents/builder.md",
+          "line": "16",
+          "issue": "The idiom is 5/6, not 6/6. builder.md still reads 'Append to `builders.<your-slice>` in state' -- it names state.json at :12 (so gate (a) passes) but says 'in state' at :16 and carries NO '**Never rewrite another node's key.**' sentence, which the other five now all carry verbatim. Commit 8941992's message claims 'each is told never to rewrite another node's key'; that is true of five files, not six. Correctly NOT fixed here -- builder.md is s3's file and touching it would have been the real rejection. Recommend s3 fold the one sentence in, since s3's builder.md edit is already additive to the same Protocol step 4."
+        },
+        {
+          "severity": "note",
+          "file": "graph_agents/.graph/runs/2026-08-25-fleet-hardening/state.json",
+          "line": "architect.plan[1].done_when (d)",
+          "issue": "Gate (d) as the human approved it -- 'git -C graph_agents diff --name-only HEAD lists exactly those three paths and nothing else' -- is not checkable as written after the file-set extension: the commit touches five agent files, and post-commit the command returns empty regardless. The builder substituted 'git status --porcelain is empty' (carried forward from s1's review). That substitution is correct and stricter in one dimension (nothing untracked) and weaker in another (it cannot detect an out-of-scope file that was committed). I closed that hole by hand with `git show --numstat`; the commit touches exactly the five agent files plus state.json."
+        },
+        {
+          "severity": "note",
+          "file": "graph_agents/.claude/agents/ops.md",
+          "line": "21",
+          "issue": "ops's contract is conditional ('If a run `state.json` was given') while architect/reviewer/integrator are unconditional and scout is conditional. Defensible -- ops is documented as running behind an explicit human gate and is often invoked outside a graph, same situation as scout -- but it means the 'one idiom' is really two: conditional for the nodes that can run standalone, unconditional for the nodes that only exist inside a run. Worth stating explicitly in s5's GRAPH.md pass rather than leaving a reader to infer it."
+        },
+        {
+          "severity": "note",
+          "file": "graph_agents/.claude/agents/architect.md",
+          "line": "30",
+          "issue": "The 'see `feature-graph` step 5' pointer is NOT dangling today: SKILL.md:58 is already 'Step 5 -- execute', the step that owns isolation. Checked s5's approved intent: it ADDS a 'No repo, no diamond' paragraph to step 5 and a new 'step 0.5' -- inserting 0.5 rather than a new integer step means step 5 does not renumber. The pointer resolves before s5 and gets its exact referent from s5. Residual risk only if s5 deviates into renumbering, which s5's reviewer should check."
+        },
+        {
+          "severity": "note",
+          "file": "graph_agents/.graph/runs/2026-08-25-fleet-hardening/state.json",
+          "line": "reviews.s1",
+          "issue": "Commit 8941992 also carries the s1 reviewer's `reviews.s1` block into the tree, because s1 was committed before its reviewer wrote. Tree hygiene only -- the s2 builder did not author or alter another node's key content (the diff adds reviews.s1 wholesale in place of the empty placeholder). Unavoidable given the tracked-run-state decision; noting it so the pattern is not mistaken for a contract violation later."
+        }
+      ],
+      "meta_did_the_new_contract_work": "YES, and this review is the evidence. reviewer.md:19-20 is the first instruction I read, it named the exact key (`reviews.<slice>`), the exact fields (verdict, attempt, findings) and the exact prohibition. I did not have to ask the orchestrator where to write or guess a shape -- I appended to reviews.s2 from the file alone. The one thing it does not say is WHICH state.json (it says 'the run's'), so it still depends on the orchestrator passing the run path; that is the same conditional gap ops and scout make explicit. Not a defect at s2's scope."
     }
   },
   "integrator": {
@@ -261,6 +331,7 @@
     "HUMAN GATE PASSED 2026-08-25: user approved all four decisions - (1) git init inside graph_agents/ only, (2) single-loop shape, (3) scope line: gap #5 and gaps #2/#3 stay open, (4) s5 kept, user is the human-read check on CURRENT-STATE.md accuracy. Executing s1-s5 sequentially, builder then fresh reviewer per slice.",
     "builder s2: state contract added to architect.md, reviewer.md and ops.md (append to your own key, never rewrite another's). architect.md:28 'one slice = one branch' made conditional on the target being a git repo, with single-loop as the stated fallback. done_when rule gained an honest escape hatch: disk-verifiable condition for prose, or labelled human-read -- no fake commands. builder.md/scout.md/integrator.md untouched.",
     "builder s2: BLOCKED on done_when (a). Contract wording landed in all three target files and all other gates pass, but the literal-token count is 4/6, not 6/6 -- scout.md and integrator.md carry the contract in words without the string `state.json`, and both are outside s2's file set. Scout fact 6 (and the 'currently 3' baseline) was inaccurate: the real pre-s2 count was 1.",
-    "builder s2: UNBLOCKED and done. Orchestrator authorized a mid-slice file-set extension from 3 files to 5, adding scout.md and integrator.md for wording only, after confirming done_when (a) was unsatisfiable as written (real pre-s2 count was 1, not 3). Ruling was to fix the files rather than weaken the gate. All six agent files now state the contract in one idiom; all five gates pass; recorded as a deviation from the approved plan, not absorbed silently."
+    "builder s2: UNBLOCKED and done. Orchestrator authorized a mid-slice file-set extension from 3 files to 5, adding scout.md and integrator.md for wording only, after confirming done_when (a) was unsatisfiable as written (real pre-s2 count was 1, not 3). Ruling was to fix the files rather than weaken the gate. All six agent files now state the contract in one idiom; all five gates pass; recorded as a deviation from the approved plan, not absorbed silently.",
+    "builder s3: branch field given an owner. _schema.json builders.s1.branch now carries the convention in prose (builder writes it; branch the slice landed on, or empty string when the target is not a git repo) and the top-level $comment says the builder writes its own builders.<slice> key. builder.md Protocol step 4 states the same and, folding in the s2 review carry-forward, now names the run's state.json and carries the never-rewrite sentence verbatim -- the idiom is 6/6. Additive only: one Protocol step changed, frontmatter and all other sections byte-identical. No literal branch name written into either file; the run's real branch is `master`, not `main`."
   ]
 }

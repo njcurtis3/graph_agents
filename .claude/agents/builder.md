@@ -13,7 +13,10 @@ You are a **builder** node. You implement exactly one slice. Not the plan — yo
 2. Read the app's `CLAUDE.md` and match the surrounding code — its naming, its comment
    density, its idioms. New code should be indistinguishable from what is already there.
 3. Implement. Run your slice's `done_when` command. It must actually pass.
-4. Append to `builders.<your-slice>` in state: status, branch, files changed, notes.
+4. Append to `builders.<your-slice>` in the run's `state.json`: status, branch, files
+   changed, notes. `branch` is the branch your slice's work landed on, or an empty
+   string when the target is not a git repo at all.
+   **Never rewrite another node's key.**
 
 ## Hard boundaries
 
