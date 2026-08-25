@@ -169,23 +169,35 @@
       "status": "done",
       "branch": "master",
       "changed": [
-        "graph_agents/.graph/verify-state.py (NEW, 98 lines, stdlib only, read-only checker)",
-        "graph_agents/.claude/skills/feature-graph/SKILL.md (one verify call added to steps 2, 3, 5 and 6; no restructuring, no renumbering)",
-        "graph_agents/.graph/runs/2026-08-25-fleet-hardening/state.json (this builders.s4 entry; also carries the pre-existing uncommitted reviews.s3 block into the tree)"
+        "graph_agents/.graph/verify-state.py (NEW in 1e8f78a, 113 lines after the attempt-2 fixes; stdlib only, read-only checker)",
+        "graph_agents/.claude/skills/feature-graph/SKILL.md (one verify call added to steps 2, 3, 5 and 6 in 1e8f78a; UNCHANGED in attempt 2, still +25/-0, no renumbering)",
+        "graph_agents/.graph/runs/2026-08-25-fleet-hardening/state.json (this builders.s4 entry; the attempt-2 commit also carries reviews.s4 into the tree)"
       ],
       "gate_results": {
-        "a_fleet_scout_architect": "exit 0 -- 'verify-state: 2026-08-25-fleet-hardening -- 2 key(s) OK: scout, architect'",
-        "b_fleet_integrator_negative": "exit 1 -- 'integrator: present but empty -- the node did not write it'. REAL negative: the key is {merged:[],conflicts:[],verification:''} because no integrator ran in this single-loop run.",
-        "c_dotted_keys": "exit 0 -- builders.s1, reviews.s1, reviews.s3 all resolve and are non-empty",
-        "d_parked_run_scout": "exit 0 -- works against 2026-08-25-refuge-freshness",
-        "e_parked_run_builders_s1": "exit 1 -- 'builders.s1: key not present' (that run parked at the human gate; builders is {})",
-        "f_missing_run": "exit 1 -- 'no such run: no-such-run (looked for ...\\runs\\no-such-run\\state.json)'. No traceback.",
-        "g_malformed_json": "exit 1 -- 'malformed JSON in <path>: Expecting value: line 1 column 7 (char 6)'. No traceback.",
-        "h_no_args": "exit 1 -- 'usage: verify-state.py <run-id> <key> [<key> ...]'",
-        "i_numstat_scope": "verify-state.py + SKILL.md + this state.json, nothing else",
-        "j_status_porcelain": "empty"
+        "1_fleet_scout_architect": "exit 0 -- '2 key(s) OK: scout, architect'",
+        "2_fleet_integrator": "exit 1 -- 'integrator: present but empty -- the node did not write it'",
+        "3_dotted_keys_no_regression": "exit 0 -- '5 key(s) OK: scout, architect, builders.s1, reviews.s1, reviews.s3'",
+        "4_parked_run_scout": "exit 0 -- '1 key(s) OK: scout'",
+        "5_parked_run_builders_s1": "exit 1 -- 'builders.s1: key not present'",
+        "6_missing_run": "exit 1 -- 'no such run: no-such-run (looked for ...runs/no-such-run/state.json)'. No traceback.",
+        "7_numstat_scope": "attempt-2 commit touches verify-state.py + this state.json only; SKILL.md unchanged since 1e8f78a",
+        "8_status_porcelain": "empty after commit",
+        "9_fresh_schema_fixture_ALL_FAIL": "scratchpad/freshrun/state.json = a verbatim `cp _schema.json`. scout, architect, builders.s1, integrator, reviews.s1, ops and approved_by_human ALL exit 1 with 'still the schema placeholder -- the node did not write it'. Blocker 1 closed: the four wired call sites are now RED on a run where no node has executed.",
+        "10_ops_now_fails": "exit 1 -- 'ops: still the schema placeholder -- the node did not write it' (was exit 0 in attempt 1)",
+        "11_utf16_bom": "exit 1 -- \"malformed JSON in <path>: 'utf-8' codec can't decode byte 0xff in position 0: invalid start byte\". One line, no traceback. UTF-16 without a BOM also exits 1 cleanly.",
+        "12_missing_or_malformed_schema_degrades": "Missing: exit 0 with 'WARNING: cannot read <path> ([Errno 2] No such file or directory: ...) -- checking for empty values only, untouched placeholders will pass'. No crash, and the empty-check still fires (an empty integrator still exits 1 with the template absent). Malformed: same WARNING carrying the JSON error.",
+        "13_adversarial_sweep_no_regression": "{}, [], \"\", whitespace-only, null and recursive all-empty -> exit 1. 0 and false -> exit 0 (design, unchanged). builders.s99, scout.facts.0, .d, d., d..x -> exit 1 'key not present'. Zero keys -> usage line. Top-level list/string/null -> 'is not a JSON object'. Empty file and truncated JSON -> 'malformed JSON'. ../../../etc/passwd -> 'no such run'. No traceback anywhere.",
+        "14_cwd_independent": "Same results from C:/ and from graph_agents/ as from repos/. RUNS and SCHEMA both resolve from the script's own location.",
+        "15_never_writes": "grep over the file: the only open() calls are read-mode (state.json, _schema.json); every .write() is sys.stderr."
       },
-      "notes": "WOULD IT HAVE CAUGHT ANYTHING IN THIS RUN? NO -- and that should be recorded honestly. Every node in 2026-08-25-fleet-hardening (scout, architect, three builders, three reviewers) did write its own key, so run against this run's history the script is green everywhere except `integrator` and `ops`, which never ran at all. Its value is prospective: it converts the orchestrator's manual after-every-node read (done by hand five times this run, CURRENT-STATE.md:86-87) into one command. The only genuinely empty key it flags today is the untouched integrator placeholder. WHAT IT DOES NOT CHECK, so s5 does not oversell it: (1) it does not check CONTENT CORRECTNESS -- a node that writes {\"status\":\"done\"} into builders.s9 with no changed list passes, because a dict with one non-empty value is non-empty; (2) it does not check the key SHAPE against _schema.json -- wrong fields, missing `branch`, missing `verdict` all pass; (3) it does not check WHO wrote the key, so it cannot detect the contract violation it is named after -- one node rewriting another node's key is invisible to it, and the orchestrator hand-writing every key still passes; (4) it does not check that the key matches the work -- a stale key from a previous attempt passes; (5) numbers and booleans count as non-empty by design, so `{\"gated\": false}` passes; (6) it is advisory, not enforcing: nothing invokes it automatically, no hook fires it, and it exits 1 in a skill step the orchestrator has to actually choose to run. It is a check, not a gate. DESIGN NOTE: emptiness is recursive -- a dict or list whose values are ALL empty is empty, which is exactly what makes the integrator negative test work. Run path resolves from the script's own location (graph_agents/.graph/runs/<id>/state.json), so it works from repos/ or anywhere; a direct path to a state.json is also accepted as the first argument. OUT OF SCOPE, NOT TOUCHED: (a) the .gitattributes / core.autocrlf noise flagged by s1, s1's reviewer and s3 is still unowned -- SKILL.md was CRLF in the working tree (a checkout artefact; the HEAD blob is LF) and I preserved its existing endings rather than renormalising it, so the diff is content-only; (b) GRAPH.md and CURRENT-STATE.md are s5's and are untouched -- s5 documents this script, I only created it; (c) builder.md:3's false 'in isolation / in parallel' frontmatter claim, raised by s3's reviewer, is still not in any slice's file set; (d) the step 5 verify block is placed after the diamond paragraph but applies to both single-loop and diamond -- I did not restructure step 5 to make that placement prettier."
+      "notes": "WOULD IT HAVE CAUGHT ANYTHING IN THIS RUN? NO -- honest answer, unchanged. Every node in 2026-08-25-fleet-hardening (scout, architect, three builders, three reviewers) did write its own key, so no real failure in this run would have been caught. Its value is prospective: it turns the orchestrator's manual after-every-node read (done by hand five times this run, CURRENT-STATE.md:86-87) into one command, and after the attempt-2 fix it is RED on a freshly opened run instead of green. WHICH KEYS FAIL TODAY, PRECISELY -- s5 should copy this rather than summarise it: on this run, `integrator` fails as empty and `ops` fails as an untouched placeholder; on the parked run 2026-08-25-refuge-freshness, `builders.s1` and `reviews.s1` are absent while `ops` and `approved_by_human` are untouched placeholders. CORRECTION TO ATTEMPT 1: that note wrongly implied the script flags un-run nodes generally. It did not flag `ops` at all until the placeholder check existed, because {gated: true} is a non-empty boolean. WHAT IT STILL DOES NOT CHECK, so s5 does not oversell it: (1) CONTENT CORRECTNESS -- a key holding {\"status\":\"done\"} and nothing else passes; (2) KEY SHAPE -- it consults _schema.json for placeholder IDENTITY only, never for structure, so a missing `branch`, a missing `verdict` or an invented field all pass; (3) WHO wrote the key -- state.json records no authorship, so the never-rewrite-another-node's-key contract it is named after is invisible to it, and the orchestrator hand-writing every key still passes; (4) STALENESS -- no timestamps, so a key left over from a previous attempt passes; (5) numbers and booleans are non-empty BY DESIGN (a real parallel_safe:false must not look unwritten), so a hand-written {\"gated\": false} that differs from the template passes; (6) PARTIAL placeholders -- identity is compared on the WHOLE value, so a builders.<slice> where `status` was filled in but `branch` is still the template's description passes; (7) it is ADVISORY, not enforcing -- nothing invokes it automatically, no hook fires it, and it lives in a SKILL.md step the orchestrator has to choose to run. It is a check, not a gate. DESIGN NOTES: emptiness is recursive (a dict or list whose values are all empty is empty); the run path and the template path both resolve from the script's own location, so cwd does not matter, and a direct path to a state.json is accepted as the first argument. OUT OF SCOPE, NOT TOUCHED: (a) _schema.json stays as-is per the orchestrator's explicit instruction -- the self-documenting placeholders are s3's deliverable, and placeholder-identity detection survives template drift where blanking would not; (b) the .gitattributes / core.autocrlf noise flagged by s1, s1's reviewer and s3 is still unowned -- verify-state.py and this state.json are LF on disk and were rewritten preserving LF; (c) GRAPH.md and CURRENT-STATE.md are s5's and untouched -- s5 documents this script, I only built it; (d) builder.md:3's false 'in isolation / in parallel' frontmatter claim, raised by s3's reviewer, is still in no slice's file set; (e) step 5's verify-block placement -- the s4 reviewer ruled it is not a defect and restructuring step 5 belongs to s5.",
+      "attempt": 2,
+      "attempt_2_fixes": {
+        "blocker_1_placeholder_identity": "FIXED IN verify-state.py ONLY -- _schema.json was not touched and is not in my file set. New load_template() reads graph_agents/.graph/runs/_schema.json; a key whose value EQUALS the corresponding value in the template now fails with a distinct message: '<key>: still the schema placeholder -- the node did not write it'. The placeholder check is ordered after the empty-check, so an empty key still reports 'present but empty'. A missing, unreadable or malformed template does NOT crash and does NOT hard-fail: it prints one WARNING line to stderr naming the path and the reason, then degrades to the empty-check alone.",
+        "blocker_2_unicode": "FIXED. `except json.JSONDecodeError` -> `except ValueError` at the state.json load (UnicodeDecodeError and JSONDecodeError are both ValueError subclasses), with a comment naming the PowerShell-redirection cause. A UTF-16LE-with-BOM state.json now exits 1 with one line and no traceback. I did NOT switch to utf-8-sig: silently absorbing a BOM would make the verifier accept a file the rest of the fleet reads as UTF-8, hiding the corruption instead of reporting it.",
+        "notes_correction": "The attempt-1 note claiming the script was 'green everywhere except integrator and ops' was WRONG: `ops` exited 0 because {gated: true} is a non-empty boolean. Rewritten in notes below. After the placeholder fix `ops` exits 1 on this run -- not because the boolean rule changed (it did not) but because {gated: true, actions: []} is identical to the template.",
+        "unchanged_by_request": "0 and false stay non-empty; the reviewer and orchestrator both agreed, since treating them as empty would make a legitimately recorded parallel_safe:false look unwritten. The script was NOT rewritten -- is_empty(), resolve(), state_path(), die() and main()'s structure are unchanged from 1e8f78a. SKILL.md was not touched in attempt 2, so the no-renumbering and +25/-0 findings stand."
+      }
     }
   },
   "reviews": {
@@ -382,6 +394,89 @@
         }
       ],
       "summary": "PASS. All six gates re-run verbatim from repos/ and all six pass. The builder.md edit is provably additive -- everything outside Protocol step 4 is byte-identical including frontmatter, model tier and tools -- so the mid-run-definition-reload question stays non-load-bearing exactly as architect.self_modification_protocol requires. Schema stays valid JSON, only the two claimed lines changed, and the extended $comment specialises rather than contradicts GRAPH.md:110-112. No run data was backfilled and the parked refuge run is untouched. Correcting the lower-case grep gate was the right call: the fleet's real wording is capitalised and byte-identical across four sibling files, and bending the prose to fit a bad check is precisely the fake-check failure this run is eliminating. One thing must not be dropped: builder.md:3's 'in isolation / in parallel' claim is NOT covered by s5's approved file set and will survive this run false unless a follow-up owns it."
+    },
+    "s4": {
+      "verdict": "REJECT",
+      "attempt": 1,
+      "gate_rerun_all_eight": {
+        "1_scout_architect": "exit 0 -- verify-state: 2026-08-25-fleet-hardening -- 2 key(s) OK: scout, architect",
+        "2_integrator_negative": "exit 1 -- integrator: present but empty -- the node did not write it. PASSES, but see blocker 1: it only fails because this run's orchestrator hand-blanked integrator.verification. A fresh cp of _schema.json makes this same command exit 0.",
+        "3_dotted_keys": "exit 0 -- 3 key(s) OK: builders.s1, reviews.s1, reviews.s3",
+        "4_refuge_scout": "exit 0 -- 1 key(s) OK: scout",
+        "5_refuge_builders_s1": "exit 1 -- builders.s1: key not present",
+        "6_no_such_run": "exit 1 -- no such run: no-such-run (looked for ...runs/no-such-run/state.json). Clean, no traceback.",
+        "7_numstat": "exit 0 -- exactly 3 paths: .claude/skills/feature-graph/SKILL.md (25/0), .graph/runs/2026-08-25-fleet-hardening/state.json (70/0), .graph/verify-state.py (98/0). In scope.",
+        "8_status_porcelain": "empty at review start; confirmed empty again at review end. All reviewer fixtures were built in the scratchpad, none in a real run directory."
+      },
+      "findings": [
+        {
+          "severity": "blocker",
+          "file": "graph_agents/.graph/verify-state.py + graph_agents/.claude/skills/feature-graph/SKILL.md",
+          "line": "21-31 / 38,58,84,85,99",
+          "issue": "ALL FOUR WIRED CALL SITES RETURN EXIT 0 ON A RUN WHERE NO NODE HAS RUN. SKILL.md:20-24 step 1 creates a run by: cp graph_agents/.graph/runs/_schema.json $RUN/state.json. Every placeholder value in that template is a NON-EMPTY descriptive string, so is_empty() is False for all of them. Reproduced verbatim into the scratchpad: cp _schema.json freshrun/state.json, then python graph_agents/.graph/verify-state.py <freshrun>/state.json scout -> exit 0, '1 key(s) OK: scout' -- before scout is ever spawned. Same for architect (template carries rationale=why this shape and not the cheaper one, parallel_safe=true), builders.s1 (status=pending|done|failed), reviews.s1 (verdict=PASS|REJECT, attempt=1) and integrator (verification=what command proved it works, and its output). SKILL.md:34-35 now tells the orchestrator 'Do not advance until this exits 0 -- a node that returned a summary without writing its key has not run'. That sentence is false as wired: the gate is green in exactly the situation it exists to catch. This is the check-that-lies case. The done_when negative test hides it: this run's integrator key is {merged:[], conflicts:[], verification:empty} only because the orchestrator hand-emptied the verification string when opening the run; the shipped template does not produce that shape. FIX (one of): (a) fail a key whose value is identical to the corresponding value in _schema.json, i.e. an untouched placeholder; or (b) blank the placeholder scalars in _schema.json so a fresh cp is genuinely empty -- cheaper, but _schema.json is not in s4's approved file set and would need orchestrator authorization."
+        },
+        {
+          "severity": "blocker",
+          "file": "graph_agents/.graph/verify-state.py",
+          "line": "46-51",
+          "issue": "PYTHON TRACEBACK on a state.json that is not valid UTF-8. open(path, encoding=utf-8) plus 'except json.JSONDecodeError' does not catch UnicodeDecodeError, which is raised inside json.load during fp.read(). Reproduced: a state.json encoded UTF-16LE-with-BOM prints a 12-line traceback ending 'UnicodeDecodeError: utf-8 codec cannot decode byte 0xff in position 0' instead of the documented one-line message. Not a contrived encoding: powershell.exe -NoProfile with output redirection on this machine emits ff fe 7b 00 ... (verified by od), and PowerShell is the primary shell in this environment. Any node or orchestrator that writes state.json with redirection or Out-File in Windows PowerShell produces a file that makes the verifier traceback. The exit code is still 1 so there is no false pass, but a traceback reads as 'the checker is broken' rather than 'the state file is corrupt'. FIX is one word: UnicodeDecodeError and json.JSONDecodeError are both ValueError subclasses (verified), so 'except ValueError as exc' at line 48 catches both; opening with encoding=utf-8-sig would additionally absorb the BOM case."
+        },
+        {
+          "severity": "note",
+          "file": "graph_agents/.graph/runs/2026-08-25-fleet-hardening/state.json",
+          "line": "builders.s4.notes",
+          "issue": "FOR s5, DO NOT COPY THIS SENTENCE. The notes claim the script is 'green everywhere except integrator and ops, which never ran at all'. ops exits 0: python graph_agents/.graph/verify-state.py 2026-08-25-fleet-hardening ops -> '1 key(s) OK: ops', because ops is {gated:true, actions:[]} and the boolean true counts as non-empty. The very next sentence in the same notes ('The only genuinely empty key it flags today is the untouched integrator placeholder') is the correct one. Same effect on the parked run: 2026-08-25-refuge-freshness ops and approved_by_human both exit 0 though that run is parked unapproved at the human gate."
+        },
+        {
+          "severity": "note",
+          "file": "graph_agents/.graph/verify-state.py",
+          "line": "31",
+          "issue": "On the '0 and false are non-empty by design' decision: defensible in isolation, and it should be KEPT. JSON cannot distinguish a deliberate 0 from a placeholder 0, and treating 0/false as empty would make a legitimately recorded parallel_safe:false or attempt:0 look unwritten, which is a worse class of error. But it is not independently sufficient, and the two live cases above (ops, approved_by_human) show it passing pure placeholders. It compounds blocker 1, and blocker 1's placeholder-identity fix resolves both at once -- another reason to prefer that over widening is_empty()."
+        },
+        {
+          "severity": "verified",
+          "file": "graph_agents/.claude/skills/feature-graph/SKILL.md",
+          "line": "12,18,29,53,61,69,93,102",
+          "issue": "NO RENUMBERING. The heading set before 1e8f78a and after is identical and in the same order: Step 0 stop rule / 1 open the run / 2 scout / 3 architect / 4 HUMAN GATE / 5 execute / 6 fan-in / 7 ops, then Orchestrator rules and Resuming. Only line numbers shifted. architect.md:30's pointer 'see feature-graph step 5' still resolves to the heading '## Step 5 -- execute', the step that owns isolation. The residual risk s2's reviewer flagged is closed for s4; it now rests entirely on s5."
+        },
+        {
+          "severity": "verified",
+          "file": "graph_agents/.claude/skills/feature-graph/SKILL.md",
+          "line": "n/a",
+          "issue": "+25/-0 CONFIRMED PURELY ADDITIVE. numstat says 25 0; the diff contains zero deleted content lines in SKILL.md and zero in the state.json hunk. No existing guidance was deleted or reworded: the scout brief-writing block, the diamond/single-loop split, the On REJECT rule and the fan-in paragraph are all byte-preserved. The $RUN variable the new blocks use is defined at SKILL.md:21 in the pre-existing step 1 block, so the snippets match the surrounding convention rather than inventing a new one."
+        },
+        {
+          "severity": "verified",
+          "file": "graph_agents/.claude/skills/feature-graph/SKILL.md",
+          "line": "80-88",
+          "issue": "NOT A BLOCKER, contra the builder's own flag. The step 5 verify block sits after the 'If diamond' paragraphs, but its prose at :80 is shape-agnostic ('After each builder returns, and again after each reviewer') and the single-loop branch at :71 explicitly says 'spawn one builder, then one reviewer', so both shapes read it as applying to them. The identical structural ambiguity already exists for the pre-existing On REJECT rule at :90, which is likewise shape-agnostic and likewise sits below the diamond paragraph. s4 did not introduce the pattern, and restructuring step 5 is in s5's file set, not s4's."
+        },
+        {
+          "severity": "verified",
+          "file": "graph_agents/.graph/verify-state.py",
+          "line": "n/a",
+          "issue": "LIMITATIONS LIST IN builders.s4.notes IS ACCURATE ON ALL SIX ITEMS, except the ops sentence noted separately. (1) content correctness: a key holding only {status:done} exits 0 -- confirmed. (2) shape vs _schema.json: the script never opens _schema.json; grep for schema|mtime|author|written_by over the file returns nothing. (3) who wrote a key: no authorship data exists anywhere in state.json, so it genuinely cannot detect the never-rewrite violation it is named after. (4) staleness: no mtime, no timestamp comparison. (5) numbers/booleans non-empty: {gated:false} exits 0 -- confirmed. (6) advisory not enforcing: the only references to verify-state anywhere in graph_agents/ are the five SKILL.md lines; settings.json's single PostToolUse hook invokes flag-stale-state.py only. Nothing fires it automatically. s5 may document all six as written."
+        },
+        {
+          "severity": "verified",
+          "file": "graph_agents/.graph/verify-state.py",
+          "line": "n/a",
+          "issue": "ADVERSARIAL SWEEP -- all clean, all nonzero, no traceback except the UTF-8 case. Empty dict, empty list, empty string, whitespace-only string and null all exit 1. 0, false, true, the string 0, [0], [false] and {count:0} exit 0 (documented). {a:{}, b:[]} exits 1, so the recursion claim is real. {verdict:empty-string} exits 1, which is the correct answer -- an all-blank review is not a review. {a:{b:{c:[]}}} exits 1. A list of empty things exits 1. Dotted-key seams: builders.s99, one.status.deeper, scout.facts.0 (intermediate is a list, not a dict), leading-dot .d, trailing-dot d. and d..x ALL return the clean 'key not present' line, exit 1, no crash -- resolve() guards with isinstance(node, dict) before indexing. Zero keys, and a run-id with no keys, both hit the usage line, exit 1. Top-level JSON that is a list, a string, or null all hit 'is not a JSON object', exit 1. Empty file and truncated JSON hit 'malformed JSON', exit 1. A UTF-8 file with a BOM gets json's own 'Unexpected UTF-8 BOM' message, exit 1, clean. A directory named state.json fails isfile and gets the clean 'no such run' line."
+        },
+        {
+          "severity": "note",
+          "file": "graph_agents/.graph/verify-state.py",
+          "line": "34-38",
+          "issue": "Path handling widens nothing that matters. state_path() treats any first argument ending in .json as a literal path, and os.path.join lets a non-.json argument containing .. or a drive letter escape the runs/ directory. Tried ../../etc, /etc/passwd, a Windows drive path, the empty string, . and .. -- all produced the clean 'no such run: X (looked for Y)' line, exit 1. The script only ever opens a file for reading and never writes (no write mode, no os.remove, no shutil), and its only caller is an orchestrator supplying its own run id, so arbitrary read is not a new capability. Not worth hardening. Confirmed cwd-independent: RUNS is derived from __file__, and the fleet-hardening scout check exits 0 when run from C:/Windows."
+        },
+        {
+          "severity": "verified",
+          "file": "graph_agents/.graph/runs/2026-08-25-fleet-hardening/state.json",
+          "line": "n/a",
+          "issue": "'WOULD NOT HAVE CAUGHT ANY REAL FAILURE IN THIS RUN' -- CONFIRMED TRUE. One invocation over all eleven keys that a node actually wrote (scout, architect, builders.s1-s4, reviews.s1-s3, approved_by_human, log) exits 0. Only integrator and reviews.s4 exit 1, and both are keys whose node had not run at the time. The builder's honesty here is correct and s5 should record it. Scope and hygiene also clean: the commit touches 3 files, none outside graph_agents/, no cross-app import, GRAPH.md and CURRENT-STATE.md (s5's) untouched, and the state.json hunk is +70/-0 so no other node's key was rewritten."
+        }
+      ],
+      "summary": "REJECT on attempt 1, for one blocker that makes the new check dishonest and one that makes it crash. All eight named gates were re-run verbatim and all eight pass -- but passing them is not sufficient, because the done_when's real negative is an artifact of this run's hand-edited integrator key rather than of the shipped template. Reproducing SKILL.md step 1 exactly (cp _schema.json into a new run directory) and then running the four calls s4 wired in shows all four exit 0 on a run where no node has been spawned: every placeholder in _schema.json is a non-empty descriptive string, so is_empty() is False for scout, architect, builders.s1, reviews.s1 and integrator alike. The skill now instructs the orchestrator do-not-advance-until-this-exits-0 at a gate that is green before any work happens. That is a check that lies, which this run's own framing calls worse than no check. Second blocker: a state.json that is not valid UTF-8 -- specifically UTF-16LE-with-BOM, which is what output redirection emits in this machine's PowerShell -- raises UnicodeDecodeError past the except json.JSONDecodeError clause and prints a raw traceback; the exit code is still 1 so there is no false pass, and the fix is one word since both exceptions are ValueError subclasses. Everything else is genuinely good and should survive the fix: no step was renumbered so architect.md:30's pointer still resolves, the SKILL.md diff is +25/-0 with nothing deleted or reworded, the recursion in is_empty is correct including the all-blank-review case, every dotted-key and malformed-input seam I could invent fails cleanly, the 0/false design decision is defensible and should be kept, the six-item limitations list is accurate and s5 may use it as written, and the claim that this script would not have caught any failure in this run is true. Two things for whoever fixes it: builders.s4.notes says the script flags ops and it does not, and the placeholder-identity fix resolves the ops and approved_by_human false-OKs at the same time as the main blocker."
     }
   },
   "integrator": {

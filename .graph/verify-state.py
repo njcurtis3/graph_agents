@@ -8,14 +8,20 @@ names the offending key on stderr. Dotted keys walk nested objects: `reviews.s1`
 `builders.s2`.
 
 "Non-empty" is the whole point. A node that wrote `{}`, `[]`, `""`, or a dict whose
-values are all empty did NOT do its job -- the untouched `integrator` key is exactly
-that shape. Presence alone is not evidence of work.
+values are all empty did NOT do its job. Presence alone is not evidence of work.
+
+Neither is a non-empty PLACEHOLDER. `feature-graph` step 1 opens a run by copying
+`_schema.json`, whose values are all descriptive strings, so an untouched key is
+non-empty and would sail through. A value byte-identical to the one in the template
+is therefore treated as unwritten too. Without this the check is green in exactly
+the situation it exists to catch: a run where no node has executed.
 
 This is a checker: pure stdlib, no network, and it never writes.
 """
 import json, os, sys
 
 RUNS = os.path.join(os.path.dirname(os.path.abspath(__file__)), "runs")
+SCHEMA = os.path.join(RUNS, "_schema.json")
 
 
 def is_empty(value):
@@ -45,10 +51,25 @@ def load(run_id):
     try:
         with open(path, encoding="utf-8") as fh:
             return json.load(fh), path
-    except json.JSONDecodeError as exc:
+    except ValueError as exc:
+        # UnicodeDecodeError and JSONDecodeError are both ValueError. PowerShell
+        # redirection writes UTF-16-with-BOM, which is the former, not the latter.
         die("malformed JSON in %s: %s" % (path, exc))
     except OSError as exc:
         die("cannot read %s: %s" % (path, exc))
+
+
+def load_template():
+    """The run template. A missing or broken one degrades to the empty-check alone."""
+    try:
+        with open(SCHEMA, encoding="utf-8") as fh:
+            template = json.load(fh)
+    except (OSError, ValueError) as exc:
+        sys.stderr.write("verify-state: WARNING: cannot read %s (%s) -- checking for "
+                         "empty values only, untouched placeholders will pass\n"
+                         % (SCHEMA, exc))
+        return {}
+    return template if isinstance(template, dict) else {}
 
 
 def resolve(state, key):
@@ -75,13 +96,19 @@ def main(argv):
     if not isinstance(state, dict):
         die("%s is not a JSON object" % path)
 
+    template = load_template()
+
     failures = []
     for key in keys:
         found, value = resolve(state, key)
+        placeheld, placeholder = resolve(template, key)
         if not found:
             failures.append("%s: key not present" % key)
         elif is_empty(value):
             failures.append("%s: present but empty -- the node did not write it" % key)
+        elif placeheld and value == placeholder:
+            failures.append("%s: still the schema placeholder -- the node did not "
+                            "write it" % key)
 
     if failures:
         for line in failures:
