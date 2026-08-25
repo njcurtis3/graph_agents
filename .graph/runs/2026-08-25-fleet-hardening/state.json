@@ -132,9 +132,118 @@
         "graph_agents/.graph/runs/2026-08-25-fleet-hardening/state.json (this builders.s1 entry)"
       ],
       "notes": "BRANCH IS `master`, not `main` -- git init produced it and it was left alone. Every later slice must use `master` when it records its own branch field (relevant to s3, which documents that field). ROLLBACK NOW WORKS: `git -C graph_agents checkout -- <path>` restores one file; `git -C graph_agents reset --hard HEAD` restores the whole fleet to the pre-hardening baseline (the single initial commit on `master`). Later slices should commit after each slice so the blast radius stays one slice. No remote configured, nothing pushed. The baseline commit tracks 18 files including .claude/ and .graph/runs/ on purpose. OUT OF SCOPE, NOT TOUCHED: git warns `LF will be replaced by CRLF` on 9 files because core.autocrlf is true globally; the index holds LF and the tree stays clean, but if a later slice wants determinism a .gitattributes with `* text=auto eol=lf` is the fix. Nobody in this plan owns that file."
+    },
+    "s2": {
+      "status": "done",
+      "branch": "master",
+      "changed": [
+        "graph_agents/.claude/agents/architect.md (Rules: state contract added; Then plan: 'one branch' made conditional on a git repo, done_when escape hatch for prose)",
+        "graph_agents/.claude/agents/reviewer.md (Protocol step 4 added: append to reviews.<slice> in the run's state.json)",
+        "graph_agents/.claude/agents/ops.md (Rules: first bullet added: read state.json, append to the ops key)",
+        "graph_agents/.claude/agents/scout.md (step 4 wording ONLY: names state.json, conditional preserved, + never-rewrite rule) -- ADDED BY ORCHESTRATOR EXTENSION, NOT IN THE APPROVED PLAN",
+        "graph_agents/.claude/agents/integrator.md (steps 1 and 5 wording ONLY: name state.json, + never-rewrite rule) -- ADDED BY ORCHESTRATOR EXTENSION, NOT IN THE APPROVED PLAN",
+        "graph_agents/.graph/runs/2026-08-25-fleet-hardening/state.json (this builders.s2 entry)"
+      ],
+      "notes": "Targeted edits only, no restructuring: architect.md's shape logic, fake-edge rule and Return block are byte-identical, and scout.md/integrator.md changed wording only. One idiom across all six nodes now: read the run's `state.json`, append to your OWN key, **never rewrite another node's key** (mirroring the $comment in _schema.json). architect.md and ops.md have no Protocol section so the contract went into their Rules list; scout, builder, reviewer and integrator have one, so it is a Protocol step there. scout.md keeps its conditional ('If a run `state.json` path was given') -- the read was NOT made unconditional. state.json is committed in the same commit as the agent files because run state is tracked (carry-forward from the s1 review); otherwise the clean-tree gate fails for unrelated reasons. OUT OF SCOPE, NOT TOUCHED: (1) builder.md is s3's, untouched -- the mid-run-reload question stays non-load-bearing. (2) The 'see feature-graph step 5' pointer added at architect.md:30 depends on s5 writing that degraded-mode paragraph; orchestrator confirmed s5 is approved and ruled the pointer fine. (3) The .gitattributes / core.autocrlf noise s1 flagged is still unowned -- all five agent files were LF on disk and I preserved LF explicitly when rewriting them, so the diffs are content-only. (4) FOR s5's ATTENTION: scout fact 6 as recorded in this state file is inaccurate and s5 should not copy it into CURRENT-STATE.md -- scout.md:15 and integrator.md:21 carried the contract in words but never the literal token; only builder.md did.",
+      "gate_results": {
+        "a_grep_state_json_count": "6 -- PASS (architect, builder, integrator, ops, reviewer, scout). Was 1 before s2; reached 4 within the approved file set and 6 after the authorized extension.",
+        "b_one_branch_line_has_git_repo": "PASS -- architect.md:28 '- One slice = one builder = one branch **only where the target is a git repo**. If the target'",
+        "c_grep_c_human_read": "PASS -- 1",
+        "d_status_porcelain_empty": "PASS -- empty",
+        "e_commit_touches_only_slice_files": "PASS -- 5 agent files + state.json, nothing else. builder.md, CURRENT-STATE.md, GRAPH.md, SKILL.md untouched."
+      },
+      "deviation_from_approved_plan": "s2's approved file set was THREE files (architect.md, reviewer.md, ops.md). The orchestrator extended it mid-slice to FIVE, adding scout.md and integrator.md, and asked that this be recorded rather than quietly absorbed. Why: done_when (a) demanded `grep -l state.json .claude/agents/*.md | wc -l` == 6, which was unsatisfiable from the approved set. The real pre-s2 count was 1 (builder.md only), not 3 -- scout fact 6 conflated 'mentions the contract' with 'contains the string state.json'. The orchestrator's ruling was to make the files honest rather than weaken the gate, since an unsatisfiable grep gate is exactly the fake-check failure this run exists to eliminate, and one consistent idiom across all six nodes is what makes any future mechanical check over them meaningful. Extension was strictly wording: neither node's behaviour, responsibilities, model tier, or Return block changed. Reported to the user as a deviation by the orchestrator; visible to the reviewer here.",
+      "blocked_then_unblocked": "done_when (a) `grep -l state.json graph_agents/.claude/agents/*.md | wc -l` returns 4, not 6, and cannot reach 6 from inside this slice's file set. The premise 'currently 3' is wrong: before s2 exactly ONE agent file contained the literal token `state.json` (builder.md:12,16). Scout fact 6 said scout.md:15 and integrator.md:21 mention state.json -- they carry the CONTRACT but not the literal string: scout.md:15 reads 'If a state file path was given...' and integrator.md:12/21 read 'Read state.' / 'Append to `integrator` in state:'. My three files now all carry the literal token, so the count went 1 -> 4. Getting to 6 requires a one-word edit to scout.md:15 and integrator.md:12 or :21, both explicitly outside my file set (s2 was told not to touch them because 'they already have the contract' -- semantically true, literally false for this grep). Not taking those files. Options for the orchestrator: (i) hand scout.md + integrator.md to a follow-up slice, or (ii) restate the gate as 6 files carrying the contract, in which case it already passes at 6/6."
     }
   },
-  "reviews": {},
+  "reviews": {
+    "s1": {
+      "verdict": "PASS",
+      "attempt": 1,
+      "reviewer_reran_all_four_gates": true,
+      "gate_results": {
+        "a_is_inside_work_tree": "true, exit 0",
+        "b_status_porcelain": "empty, exit 0",
+        "c_log_oneline": "1 commit: 3406db5 Initial commit: baseline snapshot of the agent fleet",
+        "d_repos_not_a_repo": "fatal: not a git repository, exit 128 -- constitution intact"
+      },
+      "findings": [
+        {
+          "file": "graph_agents/.git",
+          "line": "n/a",
+          "severity": "verified",
+          "issue": "Repo root is exactly C:/Users/natha/Desktop/repos/graph_agents (rev-parse --show-toplevel). Not rooted at repos/. No .git at repos/. The five app repos are untouched and outside it."
+        },
+        {
+          "file": "graph_agents (18 tracked files)",
+          "line": "n/a",
+          "severity": "verified",
+          "issue": "ls-files = 18, matches builder claim exactly: 6 agents, 2 skills, hook, settings.json, .gitignore, both run states, _schema.json, CLAUDE.md, CURRENT-STATE.md, GRAPH.md, registry.json. check-ignore on .claude/agents/scout.md, .claude/settings.json and the fleet-hardening state.json exits 1 (not ignored). status --porcelain --ignored is empty: nothing untracked, nothing ignored."
+        },
+        {
+          "file": "graph_agents/.gitignore",
+          "line": "1-15",
+          "severity": "verified",
+          "issue": "Ignores only __pycache__/, *.pyc, *.pyo, Thumbs.db, desktop.ini, .DS_Store, and carries an explicit comment that .claude/ and .graph/runs/ must never be added. No pattern excludes any fleet definition file. The builder's reported heredoc/&&-chain anomaly left no trace: the end state is correct and tracked."
+        },
+        {
+          "file": "graph_agents/CURRENT-STATE.md",
+          "line": "121",
+          "severity": "verified",
+          "issue": "Exactly one Decisions row added, at the end of the table: '2026-08-25 | graph_agents/ is its own git repo -- repos/ still is not | The prohibition in CLAUDE.md is on repos/, and its stated reason is avoiding a monorepo. graph_agents/ is a node holding zero app code, so a repo of its own is the same rule every app node already follows -- and it is the only rollback path for fleet self-edits'. Reasoning is coherent and matches architect.isolation_decision.b_git_init."
+        },
+        {
+          "file": "graph_agents/CURRENT-STATE.md",
+          "line": "68, 91-95, 125-135, 3, 34-43",
+          "severity": "verified",
+          "issue": "No s5 scope creep. Gap #1 line 68 still carries the stale claim 'have never actually run as registered Claude Code entities'. Changelog still 7 rows, none about git. Runs table still 1 row. Node roster unchanged. 'Last verified: 2026-08-25' not re-stamped. Proof of zero line drift: every scout/architect line reference into this file still resolves -- :114 monorepo decision, :119 auto-stamp decision, :75 gap #2, :86-87 hand-written state. The new row sits below all of them."
+        },
+        {
+          "file": "graph_agents",
+          "line": "n/a",
+          "severity": "verified",
+          "issue": "Rollback proven live, not assumed. Corrupted .gitignore -> status showed ' M .gitignore' -> git checkout -- .gitignore restored the content and returned the tree to clean. git show HEAD:.claude/agents/scout.md returns correct content. Blob for .gitignore is LF (hash-object of the worktree file matches the index blob 127ef4d). Both claimed recovery commands work."
+        },
+        {
+          "file": "repos/.claude",
+          "line": "n/a",
+          "severity": "note",
+          "issue": "Bonus verification: git rev-parse --show-toplevel from inside the repos/.claude junction resolves to graph_agents/, so agent files edited through the junction path are tracked by the same repo. No blind spot."
+        },
+        {
+          "file": "graph_agents/.graph/runs/**/state.json",
+          "line": "n/a",
+          "severity": "note",
+          "issue": "Consequence for s2-s5, not a defect: run state is tracked on purpose, so every node that appends to state.json dirties the repo. This review's own reviews.s1 append does. Later slices reusing done_when 'status --porcelain is empty' must commit state.json in the same commit as their code, or the check will fail for a reason unrelated to their work."
+        },
+        {
+          "file": "graph_agents (no .gitattributes)",
+          "line": "n/a",
+          "severity": "note",
+          "issue": "Out of scope per the plan, confirmed reasonable to leave. core.autocrlf=true is global and no .gitattributes exists, so git checkout -- <path> restores content correctly but rewrites the file with CRLF endings. Content-safe for .md/.json/.py; rollback is not compromised. Second-order effect observed: after an mtime-only touch git briefly reported ' M .gitignore' while git diff --raw showed no diff. Cosmetic, resolved by checkout, does not affect any recovery path. A future slice owning '* text=auto eol=lf' would remove the noise."
+        },
+        {
+          "file": "graph_agents",
+          "line": "n/a",
+          "severity": "note",
+          "issue": "Out of scope, confirmed reasonable: branch is 'master' from git init, left alone, and builders.s1.branch honestly records 'master'. s3 documents the branch field and must match this reality rather than assume 'main'."
+        },
+        {
+          "file": "graph_agents/.graph/runs/2026-08-25-fleet-hardening/state.json",
+          "line": "n/a",
+          "severity": "note",
+          "issue": "The baseline commit contains the post-s1 CURRENT-STATE.md and the builders.s1 entry, so it is a pre-s2 baseline rather than a literally pre-s1 one. This is forced by done_when (b), which requires a clean tree. It still gives every later slice something to revert to, which is the stated purpose. Not a defect."
+        },
+        {
+          "file": "reviewer-side",
+          "line": "n/a",
+          "severity": "note",
+          "issue": "Disclosure: proving rollback required writing to .gitignore and then checking it out, and I checked out GRAPH.md as well. Both are byte-content-identical to HEAD and the tree is git-clean, but both now carry CRLF endings in the working tree instead of LF. No content change."
+        }
+      ],
+      "summary": "All four gate checks re-run verbatim and all four pass, including the constitutional check (d). Repo root is graph_agents/ exactly, all 18 fleet files are tracked with .claude/ and .graph/runs/ genuinely not ignored, rollback was proven live rather than asserted, and the CURRENT-STATE.md edit is a single appended Decisions row with zero line drift and no s5 scope creep. PASS."
+    }
+  },
   "integrator": {
     "merged": [],
     "conflicts": [],
@@ -149,6 +258,9 @@
     "scout: investigated fleet architecture. Key finding: fleet has no git repo but feature-graph assumes worktree isolation—diamond cannot work for self-modification. See scout.facts/unknowns/risks.",
     "orchestrator: read scout facts. Confirmed blocker: no .git anywhere, so isolation:\"worktree\" in SKILL.md:63 is unexecutable for a fleet-targeted run. Spawning architect with that as a hard constraint.",
     "architect: SHAPE=single-loop, parallel_safe=false. Diamond rejected on TWO independent grounds: file overlap (CURRENT-STATE.md and GRAPH.md are touched by multiple work items, so the slices are not disjoint) and no-isolation/no-rollback. Isolation constraint answered with option b + d: git init INSIDE graph_agents/ only (argued from CLAUDE.md:3-4 + Decisions log as doctrinally permitted, NOT a reversal) plus honest degraded-mode docs; snapshot-copy (c) rejected. 5 sequential slices: s1 git repo + rollback, s2 state contract in architect/reviewer/ops, s3 branch field ownership, s4 verify-state.py, s5 doc honesty incl. correcting stale gap #1. builder.md edited only additively (s3) so the mid-run-reload unknown never becomes load-bearing. s5 is explicitly human-read, not machine-verifiable. Parked at HUMAN GATE.",
-    "HUMAN GATE PASSED 2026-08-25: user approved all four decisions - (1) git init inside graph_agents/ only, (2) single-loop shape, (3) scope line: gap #5 and gaps #2/#3 stay open, (4) s5 kept, user is the human-read check on CURRENT-STATE.md accuracy. Executing s1-s5 sequentially, builder then fresh reviewer per slice."
+    "HUMAN GATE PASSED 2026-08-25: user approved all four decisions - (1) git init inside graph_agents/ only, (2) single-loop shape, (3) scope line: gap #5 and gaps #2/#3 stay open, (4) s5 kept, user is the human-read check on CURRENT-STATE.md accuracy. Executing s1-s5 sequentially, builder then fresh reviewer per slice.",
+    "builder s2: state contract added to architect.md, reviewer.md and ops.md (append to your own key, never rewrite another's). architect.md:28 'one slice = one branch' made conditional on the target being a git repo, with single-loop as the stated fallback. done_when rule gained an honest escape hatch: disk-verifiable condition for prose, or labelled human-read -- no fake commands. builder.md/scout.md/integrator.md untouched.",
+    "builder s2: BLOCKED on done_when (a). Contract wording landed in all three target files and all other gates pass, but the literal-token count is 4/6, not 6/6 -- scout.md and integrator.md carry the contract in words without the string `state.json`, and both are outside s2's file set. Scout fact 6 (and the 'currently 3' baseline) was inaccurate: the real pre-s2 count was 1.",
+    "builder s2: UNBLOCKED and done. Orchestrator authorized a mid-slice file-set extension from 3 files to 5, adding scout.md and integrator.md for wording only, after confirming done_when (a) was unsatisfiable as written (real pre-s2 count was 1, not 3). Ruling was to fix the files rather than weaken the gate. All six agent files now state the contract in one idiom; all five gates pass; recorded as a deviation from the approved plan, not absorbed silently."
   ]
 }

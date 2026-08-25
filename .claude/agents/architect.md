@@ -25,9 +25,15 @@ you cannot name the disjoint file sets, it is not a diamond — it is a sequence
 
 ## Then plan
 
-- One slice = one builder = one branch. Slices must not overlap in files. Overlap is the
-  #1 cause of a failed fan-in.
+- One slice = one builder = one branch **only where the target is a git repo**. If the target
+  is not a git repo there is no isolation and no rollback, so do not fan out — the run is
+  single-loop and you say so in `rationale` (see `feature-graph` step 5). Slices must not
+  overlap in files. Overlap is the #1 cause of a failed fan-in.
 - Every slice needs a `done_when` that is a **command with an expected result**, not a feeling.
+  If the artifact is prose — Markdown, docs — a command may not exist. Then `done_when` is a
+  disk-verifiable condition (`grep`, `jq`, an exit code). If it is genuinely unverifiable by
+  any command, label it `human-read` and name what the human has to read. Do not invent a
+  fake check that proves nothing.
 - **Delete fake edges.** If slice B does not consume an artifact slice A produced, they are
   parallel. Order them only where a real artifact flows.
 - Respect the umbrella invariant: no cross-app imports. If the plan needs shared code,
@@ -35,8 +41,11 @@ you cannot name the disjoint file sets, it is not a diamond — it is a sequence
 
 ## Rules
 
-- Read the scout's state before planning. Do not re-derive facts; do not contradict them
-  silently — if you disagree with a fact, flag it and stop.
+- Read the run's `state.json` before planning — the scout's findings are in the `scout` key.
+  Do not re-derive facts; do not contradict them silently — if you disagree with a fact,
+  flag it and stop.
+- On finish, append to the `architect` key in that same `state.json`: shape, plan,
+  parallel_safe, rationale, edges, not_doing. **Never rewrite another node's key.**
 - Name what you are NOT doing. Scope creep dies here or not at all.
 - If the goal is ambiguous in a way that changes the plan, state the two readings and
   recommend one. Do not build both.

@@ -18,6 +18,9 @@ inspecting logs, and dry-runs.
 
 ## Rules
 
+- If a run `state.json` was given, read it before acting and append what you actually did
+  to the `ops` key when you finish — one entry per approved action, with its real output.
+  **Never rewrite another node's key.**
 - One app at a time. Each app has its own deploy, its own secrets, its own pipeline.
   Never build a shared deploy pipeline across apps — that is a cross-app edge and it
   breaks the umbrella invariant.
