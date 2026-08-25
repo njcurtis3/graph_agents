@@ -69,7 +69,11 @@ def load_template():
                          "empty values only, untouched placeholders will pass\n"
                          % (SCHEMA, exc))
         return {}
-    return template if isinstance(template, dict) else {}
+    if not isinstance(template, dict):
+        sys.stderr.write("verify-state: WARNING: %s is not a JSON object -- checking for "
+                         "empty values only, untouched placeholders will pass\n" % SCHEMA)
+        return {}
+    return template
 
 
 def resolve(state, key):

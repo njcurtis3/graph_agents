@@ -138,36 +138,23 @@ warns about. The hook creates the obligation; a real verification pass discharge
    passes; (6) partial placeholders — a key whose `status` is filled while `branch` is
    still template text passes; (7) it is advisory, not enforcing — nothing fires it
    automatically. The orchestrator still hand-writes every state update.
-8. **`builder.md:3` promises isolation the fleet cannot always deliver.** Its frontmatter
-   says the builder runs "in isolation" and "in parallel with sibling builders",
-   unconditionally. That is false whenever the target is not a git repo: a worktree
-   requires a repo, so there is no isolation and no rollback. `GRAPH.md` and
-   `feature-graph` step 0.5 now state the degraded-mode rule, but `builder.md` itself was
-   in no slice's file set and still carries the unqualified claim. **Open.**
-9. **`builder.md:31` contradicts how the fleet actually commits.** It says "Do not commit
-   to a shared branch, push, or open a PR. The integrator owns merges." Every builder in
-   `2026-08-25-fleet-hardening` committed directly to `master`, the only branch, because
-   `single-loop` has no per-slice branch and no integrator. Honest for that shape, but the
-   line does not say so. **Open**, and it belongs with the `builder.md:3` fix.
-10. **`_schema.json` under-describes what nodes actually write.** `reviews.<slice>`
-    (line 23) has no `summary` field though every real review carries one;
-    `builders.<slice>` (line 20) has no `gate_results` and no
-    `deviation_from_approved_plan` though real builder entries carry both. Widening it
-    touches the reviewer and builder contracts and no slice owned it. **Open.**
-11. **`verify-state.py:72` has one silent failure path.**
-    `return template if isinstance(template, dict) else {}` drops a non-dict
-    `_schema.json` with no warning, unlike the `OSError`/`ValueError` branch above it,
-    which does warn. The effect is that placeholder detection switches off and the
-    operator sees a green gate with no hint why. It still degrades rather than crashing,
-    and a list-shaped `_schema.json` is not a shape the fleet produces. **Open**, one-line
-    fix for whoever next opens that file.
-12. **No `.gitattributes`, and `core.autocrlf` is `true` globally.** Confirmed this pass:
-    no `graph_agents/.gitattributes` exists and `git config --get core.autocrlf` prints
-    `true`. Git warns "LF will be replaced by CRLF" on checkout, and a `git checkout --`
-    restores content correctly but rewrites the file with CRLF endings. Content-safe, and
-    rollback is not compromised, but it produces phantom ` M ` entries in `git status`.
-    Flagged independently by four nodes across this run and owned by none. `* text=auto
-    eol=lf` is the fix. **Open.**
+8. ~~`builder.md:3` promises isolation the fleet cannot always deliver.~~ **Closed**
+   2026-08-25, direct edit (no graph run — five one-line fixes below the stop-rule
+   threshold). Frontmatter now reads: "Isolated by a git worktree and run in parallel with
+   sibling builders when the target is a git repo; otherwise sequential, single-loop
+   only."
+9. ~~`builder.md:31` contradicts how the fleet actually commits.~~ **Closed** 2026-08-25,
+   same pass. Now: "Do not push or open a PR. In diamond mode commit only on your own
+   worktree branch; in single-loop mode (no repo, or no isolation) commit directly."
+10. ~~`_schema.json` under-describes what nodes actually write.~~ **Closed** 2026-08-25,
+    same pass. `reviews.<slice>` gained `summary`; `builders.<slice>` gained
+    `gate_results` and `deviation_from_approved_plan`, both marked optional.
+11. ~~`verify-state.py:72` has one silent failure path.~~ **Closed** 2026-08-25, same
+    pass. A non-dict `_schema.json` now prints a WARNING to stderr before degrading to
+    the empty-check, matching the existing `OSError`/`ValueError` branch. Re-verified:
+    `["a","b"]` as the template now produces the warning and still exits correctly.
+12. ~~No `.gitattributes`, and `core.autocrlf` is `true` globally.~~ **Closed** 2026-08-25,
+    same pass. `graph_agents/.gitattributes` added: `* text=auto eol=lf`.
 
 ---
 
@@ -288,3 +275,4 @@ What `2026-08-25-refuge-freshness` found in huntstack, independent of the featur
 | 2026-08-25 | s5: degraded-mode rule (`no repo, no diamond`) written into `feature-graph` step 0.5 + step 5 and into `GRAPH.md`; `verify-state.py` documented with all seven blind spots; this file's gap list re-verified against disk — gaps #1 and #6 closed, #7 narrowed, #8–#12 newly booked |
 | 2026-08-25 | s5 REJECTED on attempt 1: its new run heading captured the refuge-freshness narrative below it, making four huntstack claims read as claims about this run. Re-anchored under a per-run heading on attempt 2 |
 | 2026-08-25 | Run close: reviewer count corrected to 7 (`s5`'s own second reviewer included) and scoped to the closed run; the four captured huntstack claims now all named |
+| 2026-08-25 | Direct fix (no graph run — below the stop-rule threshold): closed gaps #8–#12. `builder.md` frontmatter and step 31 made honest about degraded mode; `_schema.json` gained `summary`, `gate_results`, `deviation_from_approved_plan`; `verify-state.py:72` now warns on a non-dict template instead of failing silently; added `.gitattributes` |
