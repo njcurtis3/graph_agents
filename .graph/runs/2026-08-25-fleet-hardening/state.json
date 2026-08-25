@@ -1,0 +1,154 @@
+{
+  "$comment": "Shared state for ONE work-graph run. Every node reads this on start and appends to its OWN key on finish. Never rewrite another node's key.",
+  "run_id": "2026-08-25-fleet-hardening",
+  "goal": "lets work on improving the graph agent architecture and the subagents within it",
+  "app": "umbrella",
+  "status": "building",
+  "scout": {
+    "facts": [
+      "All 6 agent files exist with frontmatter exactly matching CURRENT-STATE.md roster: scout (haiku, 38 ln), architect (opus, 61 ln), builder (opus, 46 ln), reviewer (opus, 50 ln), integrator (opus, 40 ln), ops (opus, 40 ln) [graph_agents/.claude/agents/*.md:1-6]",
+      "flag-stale-state.py exists and configured in settings.json [graph_agents/.claude/hooks/flag-stale-state.py:1, graph_agents/.claude/settings.json:1-18]",
+      "repos/ is NOT a git repository: git rev-parse fails with fatal error",
+      "graph_agents/ is NOT a git repository: git rev-parse fails with fatal error",
+      "feature-graph/SKILL.md:63 requires builders to run with isolation: 'worktree' for parallel execution",
+      "State.json mentions: scout.md:15 (append scout key), builder.md:12+16 (read state.json, append builders.<slice>), integrator.md:21 (append integrator key); architect.md, reviewer.md, ops.md make NO mention",
+      "_schema.json:20 defines 'branch' field in builders.s1 but it is never populated anywhere in fleet docs",
+      "GRAPH.md:114 contract says every node appends to own key; CURRENT-STATE.md:86-87 contradicts: orchestrator writes all state by hand",
+      "architect.md:28 states One slice = one builder = one branch, but feature-graph/SKILL.md:63 never explains how to create branches when repo has no .git",
+      "Gap #1 PARTIAL: Agents ARE registered with correct frontmatter, but full diamond execution still unvalidated—only scout+architect have run"
+    ],
+    "unknowns": [
+      "When run target is graph_agents/ (no .git), how do builders create one branch per slice as required by architect.md:28?",
+      "Who populates the branch field in builders state: builder itself or orchestrator? (defined in _schema.json:20 but never set)",
+      "Does feature-graph step 5 gracefully degrade when target repo has no .git, or does it fail?",
+      "Are architect.md, reviewer.md, ops.md required by GRAPH.md:114 to read/append state.json, given they never mention it?"
+    ],
+    "risks": [
+      "CRITICAL BLOCKER: graph_agents/ has no .git but feature-graph/SKILL.md:63 requires worktree isolation for parallel builders. GRAPH.md:58 states without isolation they will collide. Fleet edits have NO safety net: no git backup, no branch rollback, no recovery. Diamond CANNOT WORK for fleet self-modification.",
+      "Gap #2 CONFIRMED: builders/reviewers/integrator/ops have never executed. Worktree isolation entirely untested (CURRENT-STATE.md:75). This run will be FIRST execution of these nodes directly on fleet with no isolation.",
+      "Protocol contradiction: GRAPH.md:114 says nodes append state; CURRENT-STATE.md:86 confirms orchestrator writes all by hand and nothing verifies nodes did. architect.md/reviewer.md/ops.md never mention state.json.",
+      "Gap #6 PARTIALLY IMPROVED: settings.json exists and hook configured, but hook unproven in fresh session. Hook will fire if you edit agents, but stale CURRENT-STATE won't re-verify.",
+      "Gap #7 CONFIRMED: state writes are convention only, no verification. Self-modification by builder/integrator of agent files mid-run could change definitions but no verification state was written.",
+      "Self-modification hazard: builder editing .claude/agents/*.md will fire stale-state hook but definitions already loaded in memory. Unclear when orchestrator re-reads files or if mid-run edits take effect."
+    ]
+  },
+  "architect": {
+    "shape": "single-loop",
+    "parallel_safe": false,
+    "rationale": "Two independent reasons, either one sufficient. (1) FILE OVERLAP, independent of isolation: four of the five work items must edit graph_agents/CURRENT-STATE.md (changelog / gap #1 correction / gap #7 closure / decisions row) and two must edit graph_agents/GRAPH.md (S3 state contract, S2 stop-rule note on degraded mode). Per architect.md:18-24 and GRAPH.md:84, slices that touch the same files are not a diamond, they are a sequence. I cannot name 3 disjoint file sets here, so it is not a diamond. (2) NO ISOLATION, NO ROLLBACK: scout facts 3+4 confirm neither repos/ nor graph_agents/ is a git repo, so feature-graph/SKILL.md:63 isolation worktree is unexecutable and architect.md:28 (one slice = one builder = one branch) is unsatisfiable for this target. Even after s1 creates a repo, this run would be the first-ever execution of builder/reviewer/integrator (CURRENT-STATE gap #2) AND a self-modification of the agent definitions the orchestrator spawns from. Proving worktrees, proving three untested nodes, and rewriting the spawn definitions in one run is stacking three unvalidated things on each other. Single-loop, sequential, one commit per slice.",
+    "isolation_decision": {
+      "chosen": "option b (git init in graph_agents only) + option d (honest degraded-mode docs); option c rejected; option a adopted narrowly as a rule for fleet-targeted runs",
+      "b_git_init": "git init INSIDE graph_agents/ only. Doctrinally permitted, NOT a reversal of a logged decision. The logged decision (CURRENT-STATE.md:114) is 'Holding company, not monorepo - each app its own git repo', and CLAUDE.md:3-4 says repos/ is deliberately not a repo. The stated reason is that a root repo would swallow all five apps into a monorepo. graph_agents/ is itself a node in the portfolio graph (CLAUDE.md:41-43, GRAPH.md:18-20) and contains zero app code, so giving it its own repo is the SAME rule every other node already follows, not an exception to it. repos/ stays un-repo'd and s1 asserts that as a done_when check.",
+      "d_docs": "Fix feature-graph/SKILL.md and architect.md to describe degraded mode honestly instead of promising isolation they cannot deliver.",
+      "c_snapshot_copy_rejected": "A copy-the-directory substitute reintroduces every problem git worktrees solve (merge, conflict detection, diff) with none of the tooling, and it is a second mechanism to maintain forever. Once s1 lands, real worktrees are available for FUTURE fleet runs; this run does not need them because it is single-loop.",
+      "a_force_single_loop_partially_adopted": "Adopted as a standing rule for any run whose target is .claude/agents/** or .claude/skills/** - not because of git (s1 fixes that) but because of self-modification. Written into feature-graph/SKILL.md by s5.",
+      "what_happens_when_a_builder_corrupts_an_agent_file": "Before s1: nothing. The file is gone and must be retyped from memory. That is exactly why s1 runs first and alone, before any agent file is touched. After s1: `git -C graph_agents checkout -- .claude/agents/<file>.md` restores one file and `git -C graph_agents reset --hard HEAD` restores the whole fleet. The builder commits after each slice, so the blast radius of any single bad edit is one slice."
+    },
+    "self_modification_protocol": {
+      "unknown_being_designed_around": "scout risk 6: whether Claude Code re-reads .claude/agents/*.md mid-session is UNVERIFIED and this plan treats it as unknown, not false.",
+      "rule": "The plan is correct under BOTH answers because no slice's correctness depends on an edited definition taking effect during this run. s2 rewrites architect.md/reviewer.md/ops.md and s5 touches feature-graph/SKILL.md; no later slice in this run spawns an architect, an ops node, or re-enters the skill. The only agent spawned after s2 is the reviewer for the whole loop, and it reviews a DIFF - it reads the new reviewer.md as data either way, and its verdict does not change depending on which copy of its own definition was loaded at session start. Concretely: builder.md is edited by exactly one slice (s3) and only additively (record a branch field), so the question 'does a later builder see the new builder.md' never becomes load-bearing.",
+      "handoff": "s5 must write into CURRENT-STATE.md an explicit rule: after any run that edits .claude/agents/** or .claude/skills/**, START A FRESH SESSION before running the fleet again, because registration happens at session start (CURRENT-STATE.md:70-72). Do not assume this session is running the definitions now on disk."
+    },
+    "plan": [
+      {
+        "slice": "s1",
+        "intent": "Give the fleet a safety net. Run git init inside graph_agents/ ONLY (never in repos/). Add graph_agents/.gitignore ignoring __pycache__/ and *.pyc; .graph/runs/** IS tracked on purpose - run history is the fleet memory and it is small. Make one initial commit of the current, pre-change fleet so every later slice has something to revert to. Do not create a remote, do not push, do not add graph_agents/ to any parent workspace. Then add ONE row to the CURRENT-STATE.md Decisions log dated 2026-08-25: graph_agents/ gets its own git repo, repos/ still does not - with the why (per-node repo, not a monorepo; fleet self-edits need rollback).",
+        "files": [
+          "graph_agents/.gitignore (NEW)",
+          "graph_agents/CURRENT-STATE.md (Decisions log row ONLY - do not touch the gaps section in this slice)"
+        ],
+        "done_when": "ALL of: (a) git -C graph_agents rev-parse --is-inside-work-tree prints true, exit 0; (b) git -C graph_agents status --porcelain prints nothing; (c) git -C graph_agents log --oneline | wc -l is >= 1; (d) run from repos/, git rev-parse --is-inside-work-tree still exits NONZERO with not a git repository. Check (d) is the one that proves we did not accidentally create a monorepo.",
+        "verification_type": "machine - fully verifiable by command"
+      },
+      {
+        "slice": "s2",
+        "intent": "Close scout fact 6 / risk 3: make the state contract real in every node. Add a State section to .claude/agents/architect.md, .claude/agents/reviewer.md and .claude/agents/ops.md, matching the existing pattern at scout.md:15 and integrator.md:21 - on start, read the run state.json you were given; on finish, append your result to your OWN key (architect / reviews.<slice> / ops); never rewrite another node key. Also fix architect.md:28: One slice = one builder = one branch becomes One slice = one builder = one branch WHERE THE TARGET IS A GIT REPO; if the target has no repo there is no isolation and no rollback, so the run is single-loop (see feature-graph step 5). Also add to the Then plan section of architect.md an honest escape hatch: if the artifact is prose (Markdown, docs), a command may not exist - then done_when is a disk-verifiable condition (grep, jq, exit code), or if genuinely unverifiable it is labelled human-read. Say so; do not invent a fake check. Do NOT edit builder.md, scout.md or integrator.md in this slice.",
+        "files": [
+          "graph_agents/.claude/agents/architect.md",
+          "graph_agents/.claude/agents/reviewer.md",
+          "graph_agents/.claude/agents/ops.md"
+        ],
+        "done_when": "(a) grep -l state.json graph_agents/.claude/agents/*.md | wc -l returns 6 (it is 3 today); (b) grep -n one branch graph_agents/.claude/agents/architect.md - the matched line also contains git repo; (c) grep -c human-read graph_agents/.claude/agents/architect.md is >= 1; (d) git -C graph_agents diff --name-only HEAD lists exactly those three paths and nothing else. Presence is machine-checked; the WORDING is human-read at the gate.",
+        "verification_type": "machine for presence + human-read for wording"
+      },
+      {
+        "slice": "s3",
+        "intent": "Close scout fact 7 / unknown 2: the orphaned branch field that nothing populates. Decide and document that THE BUILDER populates it, not the orchestrator. Edit .graph/runs/_schema.json:20 so builders.s1.branch reads: branch name if the target is a git repo, else empty string. Extend the top-level $comment to say the builder writes its own builders.<slice> key. Add one line to builder.md Protocol step 4: branch is the branch you worked on, or empty string if the target has no repo. This is the ONLY edit to builder.md in the entire plan and it is purely additive - it changes what a builder records, never how it behaves - so it is safe whether or not mid-run definition reloads happen.",
+        "files": [
+          "graph_agents/.graph/runs/_schema.json",
+          "graph_agents/.claude/agents/builder.md"
+        ],
+        "done_when": "(a) python -c import json, json.load of graph_agents/.graph/runs/_schema.json exits 0 - still valid JSON; (b) reading builders.s1.branch from that file prints a non-empty descriptive string, not an empty one; (c) grep -c branch graph_agents/.claude/agents/builder.md is >= 1.",
+        "verification_type": "machine - fully verifiable by command"
+      },
+      {
+        "slice": "s4",
+        "intent": "Close gap #7 with machinery instead of more prose. Write graph_agents/.graph/verify-state.py: it takes a run-id (or a path to a state.json) plus one or more required node key names, and exits 0 only if every named key exists AND is non-empty - where a dict whose values are all empty strings or empty lists counts as NOT written, which is exactly the current shape of the untouched integrator key. On failure it exits 1 and prints one line naming the missing key. Pure stdlib, no dependencies, no network, and it never writes - it is a checker. Then wire it into feature-graph/SKILL.md at steps 2, 3, 5 and 6: after each node returns, the orchestrator runs it and does not advance until it exits 0. This does not stop the orchestrator hand-writing state (CURRENT-STATE.md:86-87); it makes silent non-writing detectable, which is the actual gap.",
+        "files": [
+          "graph_agents/.graph/verify-state.py (NEW)",
+          "graph_agents/.claude/skills/feature-graph/SKILL.md (steps 2, 3, 5, 6 - add the verify call)"
+        ],
+        "done_when": "(a) python graph_agents/.graph/verify-state.py 2026-08-25-fleet-hardening scout architect exits 0; (b) python graph_agents/.graph/verify-state.py 2026-08-25-fleet-hardening integrator exits 1 and names integrator - a REAL negative test, since that key is genuinely still empty, not a fixture; (c) python graph_agents/.graph/verify-state.py 2026-08-25-refuge-freshness scout exits 0, proving it works against the parked run too. This is the only slice in the plan with a genuinely executable test.",
+        "verification_type": "machine - fully verifiable by command"
+      },
+      {
+        "slice": "s5",
+        "intent": "Make the docs honest about degraded mode and about themselves. THREE edits. (a) feature-graph/SKILL.md step 5 - add a No repo, no diamond paragraph: before fanning out, run git -C <target> rev-parse --is-inside-work-tree; if it fails, worktree isolation is unavailable, so DO NOT fan out - run single-loop and say why in the final summary. Also add a step 0.5: if the target is the fleet own .claude/agents/** or .claude/skills/**, force single-loop regardless of slice count, and tell the user to start a fresh session before the next fleet run because agent registration happens at session start. (b) GRAPH.md - one line under the stop rule in section 2 pointing at that degraded mode, and one line in section 3 stating that verify-state.py enforces the append-to-your-own-key contract. (c) CURRENT-STATE.md - rewrite gap #1, which is STALE AND NOW WRONG: the six agents ARE registered and spawnable, and scout and architect were both spawned as registered nodes in run 2026-08-25-fleet-hardening. Narrow gap #1 to what is still untrue (no diamond has run; builder, reviewer and integrator still unexecuted). Update gap #7 to point at verify-state.py. Update gap #6 with what actually happened to the hook during this run - the builder will have tripped it by editing agent files, so record the observed behaviour rather than never fired. Add this run to the Runs table. Add changelog rows. Bump Last verified ONLY after actually re-checking - the standing user-confirmed decision at CURRENT-STATE.md:119 forbids auto-stamping and this plan does not revisit it.",
+        "files": [
+          "graph_agents/.claude/skills/feature-graph/SKILL.md",
+          "graph_agents/GRAPH.md",
+          "graph_agents/CURRENT-STATE.md"
+        ],
+        "done_when": "Machine-checkable parts: (a) grep -c rev-parse graph_agents/.claude/skills/feature-graph/SKILL.md is >= 1; (b) grep -c verify-state graph_agents/GRAPH.md is >= 1; (c) grep -c have never actually run as registered graph_agents/CURRENT-STATE.md returns 0, i.e. the false sentence is gone; (d) grep -c 2026-08-25-fleet-hardening graph_agents/CURRENT-STATE.md is >= 1. HONEST CAVEAT: whether the rewritten gap list is ACCURATE, and whether the degraded-mode guidance is correct, CANNOT be checked by any command. This slice is HUMAN-READ at the review gate. I am not inventing a check for it.",
+        "verification_type": "machine for presence + HUMAN-READ for accuracy - this slice cannot be fully verified by a command"
+      }
+    ],
+    "edges": "STRICTLY SEQUENTIAL s1 -> s2 -> s3 -> s4 -> s5. One builder, one context, one commit per slice. s1 -> everything: the real artifact is the git repo plus the initial commit, which is the ONLY rollback path for every later edit; nothing may edit a fleet file before it exists. s2 and s3 -> s5: the real artifact is the changed agent and schema files that the CURRENT-STATE.md changelog and gap list must describe - writing the snapshot before the changes exist would make it fiction. s4 -> s5: the real artifact is verify-state.py, which must exist on disk before GRAPH.md section 3 and gap #7 can point at it. Honest note on fake edges: s2, s3 and s4 have nearly disjoint file sets and would be parallel if isolation existed. They are ordered here because there is one builder and no isolation, so ordering costs nothing and removes the last collision surface. s1 and s5 are real edges; the s2/s3/s4 ordering is a degraded-mode concession and is labelled as such rather than dressed up as a dependency.",
+    "not_doing": [
+      "NOT enforcing the umbrella invariant (gap #5). A cross-app-import linter is real engineering with its own design questions - which languages, what counts as an import, where it runs with no CI - and it is about APPS, not about the agent graph. It deserves its own run. Explicitly out of scope.",
+      "NOT running a diamond to prove diamonds work. Gaps #2 and #3 stay open on purpose. Proving fan-out belongs on a real app with a real git repo and a real test suite - huntstack - not on the fleet own definitions.",
+      "NOT touching the staleness hook or flag-stale-state.py. CURRENT-STATE.md:119 records a user-confirmed decision that it flags and never auto-stamps. Not revisiting it, not extending it, not making it block.",
+      "NOT adding, removing, renaming or re-tiering any node. Six nodes stay six nodes, scout stays haiku, nothing is downgraded, and no new critic or planner node is invented.",
+      "NOT rewriting architect.md wholesale. Judged honestly: its shape logic (lines 11-24), its delete-fake-edges rule and its Return block are sound and were load-bearing in this very run. Its real defects are exactly three - no state contract, a false claim about branches, and a done_when rule with no answer for Markdown - and s2 fixes those three. A rewrite would churn a file that mostly works.",
+      "NOT changing human gate placement or adding new gates.",
+      "NOT creating a git remote, pushing, or making repos/ a git repository. s1 explicitly asserts repos/ is still not a repo.",
+      "NOT touching anything outside graph_agents/. None of the five app repos are read or modified by any slice.",
+      "NOT building a snapshot-copy isolation mechanism (option c). Rejected with reasons recorded in isolation_decision.",
+      "NOT resolving whether Claude Code reloads agent definitions mid-session (scout risk 6). The plan is designed to be correct under either answer instead of depending on the answer. Resolving it is a separate experiment run.",
+      "NOT auto-updating CURRENT-STATE.md Last verified without a real re-check.",
+      "NOT touching portfolio/registry.json or the new-app skill."
+    ],
+    "human_gate": "Approve or reject these four things specifically. (1) GIT INIT INSIDE graph_agents/ - the one decision with lasting consequences, and it sits next to a logged decision. I read the docs and concluded it is permitted and not a reversal: the prohibition at CLAUDE.md:3-4 is on repos/ and its stated reason is do-not-become-a-monorepo; graph_agents/ is a node like any other and holds no app code. If you read that prohibition as covering the whole tree, say so and I will replan around options (a) plus (d) only - but then the fleet permanently has no rollback and every future fleet-targeted run is single-loop by necessity, not by choice. (2) SINGLE-LOOP rather than diamond for this run, accepting the wall-clock cost. (3) THE SCOPE LINE: five slices closing gap #1, gap #7 and scout facts 6 and 7. Gap #5 and gaps #2/#3 deliberately left open. (4) s5 IS NOT MACHINE-VERIFIABLE and you are the check on it - its accuracy depends on you reading the rewritten gap list. If you will not read it, cut s5 part (c) and CURRENT-STATE.md stays knowingly stale rather than confidently wrong."
+  },
+  "approved_by_human": true,
+  "builders": {
+    "s1": {
+      "status": "done",
+      "branch": "master",
+      "changed": [
+        "graph_agents/.gitignore (NEW)",
+        "graph_agents/CURRENT-STATE.md (Decisions log: one row added, nothing else touched)",
+        "graph_agents/.git/ (NEW repo, root = graph_agents/, one commit, no remote)",
+        "graph_agents/.graph/runs/2026-08-25-fleet-hardening/state.json (this builders.s1 entry)"
+      ],
+      "notes": "BRANCH IS `master`, not `main` -- git init produced it and it was left alone. Every later slice must use `master` when it records its own branch field (relevant to s3, which documents that field). ROLLBACK NOW WORKS: `git -C graph_agents checkout -- <path>` restores one file; `git -C graph_agents reset --hard HEAD` restores the whole fleet to the pre-hardening baseline (the single initial commit on `master`). Later slices should commit after each slice so the blast radius stays one slice. No remote configured, nothing pushed. The baseline commit tracks 18 files including .claude/ and .graph/runs/ on purpose. OUT OF SCOPE, NOT TOUCHED: git warns `LF will be replaced by CRLF` on 9 files because core.autocrlf is true globally; the index holds LF and the tree stays clean, but if a later slice wants determinism a .gitattributes with `* text=auto eol=lf` is the fix. Nobody in this plan owns that file."
+    }
+  },
+  "reviews": {},
+  "integrator": {
+    "merged": [],
+    "conflicts": [],
+    "verification": ""
+  },
+  "ops": {
+    "gated": true,
+    "actions": []
+  },
+  "log": [
+    "orchestrator: run opened, app=umbrella (graph_agents is a tooling node, not a product), status=scouting",
+    "scout: investigated fleet architecture. Key finding: fleet has no git repo but feature-graph assumes worktree isolation—diamond cannot work for self-modification. See scout.facts/unknowns/risks.",
+    "orchestrator: read scout facts. Confirmed blocker: no .git anywhere, so isolation:\"worktree\" in SKILL.md:63 is unexecutable for a fleet-targeted run. Spawning architect with that as a hard constraint.",
+    "architect: SHAPE=single-loop, parallel_safe=false. Diamond rejected on TWO independent grounds: file overlap (CURRENT-STATE.md and GRAPH.md are touched by multiple work items, so the slices are not disjoint) and no-isolation/no-rollback. Isolation constraint answered with option b + d: git init INSIDE graph_agents/ only (argued from CLAUDE.md:3-4 + Decisions log as doctrinally permitted, NOT a reversal) plus honest degraded-mode docs; snapshot-copy (c) rejected. 5 sequential slices: s1 git repo + rollback, s2 state contract in architect/reviewer/ops, s3 branch field ownership, s4 verify-state.py, s5 doc honesty incl. correcting stale gap #1. builder.md edited only additively (s3) so the mid-run-reload unknown never becomes load-bearing. s5 is explicitly human-read, not machine-verifiable. Parked at HUMAN GATE.",
+    "HUMAN GATE PASSED 2026-08-25: user approved all four decisions - (1) git init inside graph_agents/ only, (2) single-loop shape, (3) scope line: gap #5 and gaps #2/#3 stay open, (4) s5 kept, user is the human-read check on CURRENT-STATE.md accuracy. Executing s1-s5 sequentially, builder then fresh reviewer per slice."
+  ]
+}

@@ -1,0 +1,87 @@
+{
+  "run_id": "2026-08-25-refuge-freshness",
+  "goal": "Show how stale refuge counts are on the migration dashboard, with a green/amber/red badge, so users can tell whether the weekly survey data is current.",
+  "app": "huntstack",
+  "status": "parked",
+  "scout": {
+    "facts": [
+      "GET /api/refuges/migration/dashboard returns currentCounts[].surveyDate but NO ingestion timestamp (apps/api/src/routes/refuges.ts:262-291)",
+      "refuge_counts table has BOTH survey_date and created_at; created_at exists in schema but is never selected by any route (packages/db/src/schema/index.ts:233-251)",
+      "MigrationPage already computes latestDate = max(surveyDate) and renders a 'Latest Survey' stat card \u2014 natural badge site (apps/web/src/pages/MigrationPage.tsx:1732-1734, 2374-2379)",
+      "No shared type: dashboard response shape is hand-duplicated in apps/web/src/lib/api.ts:281-323; API and web can silently drift",
+      "No Badge/Pill component exists; ad-hoc Tailwind pills driven by STATUS_CONFIG lookup (MigrationPage.tsx:157-164)",
+      "No date-fns/dayjs/moment anywhere in the monorepo; dates use toLocaleDateString()",
+      "apps/api has vitest (63 tests) but none cover refuges.ts; apps/web has zero test files",
+      "tsc --noEmit clean in both apps/api and apps/web"
+    ],
+    "unknowns": [
+      "Does 'stalled' mean survey_date age, created_at-vs-survey_date gap, or actual scraper run success? Only survey_date age is derivable today",
+      "One aggregate badge or per-refuge/per-source? The 6 sources have different cadences (weekly/biweekly/monthly/annual)",
+      "Should the new badge interact with the existing season-rollover isStale logic, or stay separate?"
+    ],
+    "risks": [
+      "PLAN-KILLER: currentCounts mixes surveyType 'weekly' and 'mwi_annual' rows (refuges.ts:230-233). A naive days-since-surveyDate badge shows RED for annual-survey refuges when nothing is wrong. Must filter by surveyType before computing freshness.",
+      "NAME COLLISION: codebase already uses isStale/hasStaleData to mean 'previous hunting season' (60-day / Feb-1 thresholds) at MigrationPage.tsx:1715-1735. A 7-14 day badge needs a distinct name.",
+      "Scraper health is not in the DB at all \u2014 only flat-file logs + optional webhook. 'Stalled scraper' detection has no data source today.",
+      "LIVE ISSUE: scripts/logs/refuge-counts-2026-08-10.log:27 and refuge-counts-2026-08-18.log:27 both show 'Refuge scraper FAILED (exit 1)' \u2014 two consecutive weekly runs failed",
+      "Duplicated response type means adding an API field requires manually editing apps/web/src/lib/api.ts \u2014 no compiler-enforced link",
+      "No test coverage on refuges.ts or anywhere in apps/web \u2014 new threshold logic would ship with no regression net"
+    ]
+  },
+  "architect": {
+    "shape": "single-loop",
+    "parallel_safe": false,
+    "rationale": "~150 lines across 4 files; s2 strictly consumes the dataFreshness contract s1 produces. A sequence, not a diamond. No 3+ disjoint slices exist.",
+    "plan": [
+      {
+        "slice": "s1",
+        "intent": "apps/api/src/lib/freshness.ts: SURVEY_CADENCE_DAYS map + computeDataFreshness(). Per-row age scored against its OWN cadence (green<=1x, amber<=2x, red>2x). Null-cadence rows excluded+counted. Unknown types excluded fail-safe. Expose created_at as advisory ingestedAt. Wire dataFreshness into /migration/dashboard.",
+        "files": [
+          "apps/api/src/lib/freshness.ts (new)",
+          "apps/api/src/lib/freshness.test.ts (new)",
+          "apps/api/src/routes/refuges.ts"
+        ],
+        "done_when": "pnpm --filter @huntstack/api test -> exit 0, count>63, covers weekly@5d=current, weekly@10d=aging, weekly@20d=overdue, aerial_monthly@20d=current, annual@300d=excluded, unknown=excluded; AND tsc --noEmit clean"
+      },
+      {
+        "slice": "s2",
+        "intent": "Extend hand-written response type in api.ts; render green/amber/red pill in existing 'Latest Survey' stat card using the STATUS_CONFIG Tailwind idiom. Labels Current/Aging/Overdue, tooltip carries days + trackedSources + last ingest.",
+        "files": [
+          "apps/web/src/lib/api.ts",
+          "apps/web/src/pages/MigrationPage.tsx"
+        ],
+        "done_when": "pnpm --filter @huntstack/web exec tsc --noEmit -> no output AND build exits 0 AND dashboard shows exactly one pill; with today's live data it must read Overdue"
+      }
+    ],
+    "edges": "s1 -> s2 (real artifact: the dataFreshness JSON shape). Parallel would guarantee type drift.",
+    "new_fact": "survey_type is NOT two-valued. Schema comment at packages/db/src/schema/index.ts:233 is WRONG. Live values: weekly, aerial_biweekly, aerial_monthly, annual_midwinter, mwi_annual. A binary surveyType==='weekly' filter silently drops biweekly+monthly refuges. Correct primitive is a cadence map, not a filter.",
+    "not_doing": [
+      "shared response type in packages/shared",
+      "<Badge> component",
+      "vitest for apps/web",
+      "fixing the 2 failed scraper runs",
+      "correcting the wrong survey_type comment in packages/db",
+      "date-fns",
+      "per-refuge badges"
+    ]
+  },
+  "approved_by_human": false,
+  "builders": {},
+  "reviews": {},
+  "integrator": {
+    "merged": [],
+    "conflicts": [],
+    "verification": ""
+  },
+  "ops": {
+    "gated": true,
+    "actions": []
+  },
+  "log": [
+    "orchestrator: run opened, status=scouting",
+    "scout: 8 facts, 3 unknowns, 6 risks. Plan-killer found: surveyType mixes weekly+annual in currentCounts.",
+    "architect: SHAPE=single-loop. Escalated the plan-killer: survey_type has 5 live values, schema comment wrong. Cadence map replaces flat 7/14 thresholds. Awaiting human gate.",
+    "orchestrator: parked at human gate by user. Test run complete, no code written."
+  ],
+  "parked_note": "Stopped deliberately at the human gate on 2026-08-25 \u2014 this was a shakedown run of the graph, not a commitment to build the feature. No code was written. Plan is complete and reviewable. To resume: read this file, re-present the gate, and continue from step 5 of feature-graph. Independent of this feature: two weekly scraper runs failed (logs 2026-08-10, 2026-08-18) and nothing surfaces it in the product. Also, roadmap's 'late Aug' OK/AR + LDWF re-scrape window is now open."
+}

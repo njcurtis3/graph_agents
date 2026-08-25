@@ -1,0 +1,15 @@
+# graph_agents — the agent fleet.
+#
+# Deliberately NOT ignored, and do not add them:
+#   .claude/        the agents and skills ARE the product of this repo
+#   .graph/runs/    run state is the fleet's memory; it is small and it is history
+
+# Python bytecode (the hooks are stdlib Python)
+__pycache__/
+*.pyc
+*.pyo
+
+# OS cruft
+Thumbs.db
+desktop.ini
+.DS_Store
