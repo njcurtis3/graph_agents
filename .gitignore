@@ -13,3 +13,9 @@ __pycache__/
 Thumbs.db
 desktop.ini
 .DS_Store
+
+# portfolio/registry.json is untracked on purpose: its path/entry_docs fields
+# name real app directories on disk (personal names among them). It still
+# exists locally and the fleet still reads it for routing — it is just not
+# published. A fresh clone of this repo will not have it; see CURRENT-STATE.md.
+portfolio/registry.json
