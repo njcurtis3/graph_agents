@@ -31,6 +31,13 @@ If the goal spans two apps, it is two runs. Split it.
 Spawn `scout` with the run path. It appends verified facts. Read them yourself before
 continuing — you are the one who has to notice if the facts kill the goal.
 
+Do not advance until this exits 0 — a node that returned a summary without writing
+its key has not run:
+
+```bash
+python graph_agents/.graph/verify-state.py $RUN scout
+```
+
 **Write the brief tightly.** `scout` runs on haiku (see GRAPH.md § Model tiering), which
 is cheap but does not self-scope well. Hand it:
 
@@ -46,6 +53,10 @@ cheap scout stops being cheap.
 ## Step 3 — architect
 
 Spawn `architect` with the run path. It returns a shape and slices.
+
+```bash
+python graph_agents/.graph/verify-state.py $RUN architect
+```
 
 ## Step 4 — HUMAN GATE ⛔
 
@@ -66,6 +77,16 @@ As each builder returns, immediately spawn its `reviewer` — do **not** wait fo
 builders. That barrier is the most common way these runs waste wall-clock. A slice that
 finished in 2 minutes should be under review while a slow slice is still building.
 
+After each builder returns, and again after each reviewer, verify the key landed
+before moving on:
+
+```bash
+python graph_agents/.graph/verify-state.py $RUN builders.<slice>
+python graph_agents/.graph/verify-state.py $RUN reviews.<slice>
+```
+
+An empty key exits 1. Re-prompt that node to write it; do not write it for them.
+
 On `REJECT`: send the findings back to that slice's builder. Re-review with a **fresh**
 reviewer. Max 2 attempts, then stop and escalate to the user.
 
@@ -73,6 +94,10 @@ reviewer. Max 2 attempts, then stop and escalate to the user.
 
 When every slice is `PASS`, spawn `integrator` once. It merges and runs the **full** suite.
 If it comes back `blocked`, report which merge turned it red — do not paper over it.
+
+```bash
+python graph_agents/.graph/verify-state.py $RUN integrator
+```
 
 ## Step 7 — ops
 
