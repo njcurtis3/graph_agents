@@ -89,6 +89,25 @@ and verification genuinely needs a context that never saw the code being written
 
 Rough line: **3+ independent slices, or a change you would not merge unreviewed.**
 
+**No repo, no diamond.** Before choosing a diamond, check that the target is a git repo:
+
+```bash
+git -C <target> rev-parse --is-inside-work-tree
+```
+
+If that exits non-zero, `isolation: "worktree"` is unexecutable — a worktree requires a
+git repo — so the fan-out above has **no isolation and no rollback**. Builders write into
+one tree and collide, `builders.<slice>.branch` is the empty string because there is no
+branch, and a corrupted file cannot be restored because there is nothing to restore from.
+Force **`single-loop`**, or make the target its own repo first. `repos/` is deliberately
+not a repo (`CLAUDE.md`), so anything targeting it is permanently in degraded mode. Full
+pre-flight: `feature-graph` step 0.5.
+
+One case forces `single-loop` even *with* a repo: a run that edits
+`graph_agents/.claude/agents/**` or `.claude/skills/**` is rewriting the definitions it
+spawns from. Registration happens at session start, so start a fresh session before the
+next fleet run.
+
 ### Delete fake edges
 
 An edge exists only if a real artifact moves along it. If node B doesn't consume
@@ -113,6 +132,18 @@ Contract for every node:
 2. **On finish:** append your result to your own key. Never rewrite another node's key.
 3. Return a short summary as your final text (that is what the orchestrator sees).
 
+**Checking that a node actually wrote its key:** `graph_agents/.graph/verify-state.py`
+takes a run id plus key names and exits 0 only if each key is present, non-empty, and not
+still the `_schema.json` placeholder. It catches the one failure that matters most here —
+a node that returned a summary without writing anything.
+
+It does **not** enforce the contract above. It cannot see *who* wrote a key, because
+`state.json` records no authorship, so rule 2's "never rewrite another node's key" is
+invisible to it and an orchestrator hand-writing every key passes cleanly. It also does
+not check content, key shape, staleness, or partially-filled placeholders, and nothing
+fires it automatically — it is a check the orchestrator chooses to run, not a gate. The
+full list of what it misses is in `feature-graph` § `verify-state.py`.
+
 Schema in `graph_agents/.graph/runs/_schema.json`. Because state is on disk, a run survives a
 crashed session, a `/clear`, or you walking away — pick it back up by pointing a fresh
 orchestrator at the run directory.
@@ -125,10 +156,16 @@ orchestrator at the run directory.
 |---|---|---|---|---|
 | `scout` | haiku | read-only | no | Find the facts. What exists, where, what breaks. |
 | `architect` | opus | read-only | no | Goal + facts → plan + graph shape. The router. |
-| `builder` | opus | isolated worktree | yes | Implement exactly one slice. |
+| `builder` | opus | isolated worktree † | yes | Implement exactly one slice. |
 | `reviewer` | opus | fresh, never the builder's | no | Adversarial. Has authority to REJECT. |
 | `integrator` | opus | main tree | yes | The one owned merge point. Resolves conflicts. |
 | `ops` | opus | main tree | yes | CI, env, deploy. Always behind a human gate. |
+
+† **Only where the target is a git repo.** In degraded mode the builder runs in the main
+tree with no isolation and no rollback, which is why that case is `single-loop` and one
+builder. `builder.md`'s own frontmatter still claims it runs "in isolation" and "in
+parallel with sibling builders" unconditionally; that is a known open gap, recorded in
+`CURRENT-STATE.md`, not a second source of truth.
 
 **Reviewer independence is non-negotiable.** A builder reviewing its own work is not a
 verification edge, it's a fake edge. Always a separate agent invocation.

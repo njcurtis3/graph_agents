@@ -15,6 +15,44 @@ Before anything: is this actually a graph? One file, one bug, one endpoint, or s
 you could describe in a paragraph is a **single loop**. Say so, do it directly, and skip
 this skill. Graphs cost tokens and wall-clock; make them earn it.
 
+## Step 0.5 — pre-flight: can this target hold a diamond?
+
+Two checks. Both run **before** you pick a shape, and neither is optional. This step is
+numbered `0.5` on purpose: nothing downstream may renumber.
+
+**1. Is the target a git repo?**
+
+```bash
+git -C <target> rev-parse --is-inside-work-tree
+```
+
+A worktree requires a git repo. If that exits non-zero there is **no isolation and no
+rollback** — parallel builders write into one tree and collide (`GRAPH.md` § the stop
+rule), and a bad edit cannot be reverted because there is nothing to revert to. Two
+allowed responses, never a third:
+
+- run **`single-loop`** regardless of slice count, and say in the final summary that the
+  shape was *forced* by the absence of a repo rather than chosen; or
+- make the target a repo first (`git init` in that directory alone, one baseline commit),
+  then the diamond is on the table again.
+
+`repos/` is deliberately not a repo (`CLAUDE.md`), so a run whose target is `repos/` — or
+any directory that is not itself a repo — is always in degraded mode.
+
+**What degraded mode costs, stated plainly:** no `isolation: "worktree"`, so no parallel
+builders. No branch per slice, so `builders.<slice>.branch` is the empty string. No
+`git checkout --` and no `reset --hard`, so a builder that corrupts a file has destroyed
+it. The blast radius of one bad edit is the whole target.
+
+**2. Is the target the fleet's own definitions?**
+
+If the run edits `graph_agents/.claude/agents/**` or `graph_agents/.claude/skills/**`,
+force **`single-loop`** regardless of slice count and regardless of the repo check. You
+are rewriting the definitions you spawn from. Tell the user to **start a fresh session
+before the next fleet run**: agent registration happens at session start, so what is
+running now is what was on disk when the session opened — not necessarily what is on
+disk after the run.
+
 ## Step 1 — open the run
 
 ```bash
@@ -70,6 +108,18 @@ Set `approved_by_human: true` only after they actually say so.
 
 **If `single-loop`:** spawn one `builder`, then one `reviewer`. Done. No integrator needed.
 
+**No repo, no diamond.** Re-run the step 0.5 check before you fan out:
+
+```bash
+git -C <target> rev-parse --is-inside-work-tree
+```
+
+If it exits non-zero, `isolation: "worktree"` is **unexecutable** — a worktree requires a
+git repo. Do not fan out. Run the single-loop branch above, sequentially, and state in the
+final summary that the shape was forced by the missing repo. Never fan out without
+isolation and hope the file sets stay disjoint; that is how two builders overwrite each
+other with no way back.
+
 **If `diamond`:** spawn **all builders in one message** so they run concurrently, each with
 `isolation: "worktree"` (they edit files in parallel; without isolation they will collide).
 
@@ -102,6 +152,35 @@ python graph_agents/.graph/verify-state.py $RUN integrator
 ## Step 7 — ops
 
 Only if the user asks. Behind its own gate.
+
+## `verify-state.py` — what it checks, and what it does not
+
+`graph_agents/.graph/verify-state.py` is a read-only, stdlib-only checker. Give it a run
+id (or a direct path to a `state.json`) plus one or more key names — dotted keys like
+`builders.s2` work — and it exits 0 only if every named key is **present**, **non-empty**,
+and **not still the `_schema.json` placeholder**. On failure it exits 1 and prints one
+line naming the key. It never writes.
+
+That is the whole of it. **It is a check, not a gate.** Nothing fires it automatically:
+no hook invokes it, and the only references to it in the fleet are the call sites in this
+file. It runs because the orchestrator chooses to run it.
+
+Seven things it does **not** check. Do not oversell it:
+
+1. **Content correctness.** A key holding `{"status": "done"}` and nothing else passes.
+2. **Key shape.** It consults `_schema.json` for placeholder *identity* only, never for
+   structure — a missing `branch`, a missing `verdict`, or an invented field all pass.
+3. **Who wrote the key.** `state.json` records no authorship, so the
+   never-rewrite-another-node's-key contract is invisible to it, and an orchestrator
+   hand-writing every key still passes.
+4. **Staleness.** No timestamps, so a key left over from a previous attempt passes.
+5. **Numbers and booleans are non-empty by design** — a real `parallel_safe: false` must
+   not look unwritten — so a hand-written `{"gated": false}` that differs from the
+   template passes.
+6. **Partial placeholders.** Identity is compared on the whole value, so a
+   `builders.<slice>` whose `status` was filled in while `branch` is still the template's
+   description passes.
+7. **It is advisory, not enforcing.** See above: nothing fires it for you.
 
 ## Orchestrator rules
 
