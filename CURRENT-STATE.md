@@ -25,8 +25,8 @@ Built 2026-08-25 in a single session. Two runs so far:
 
 - `2026-08-25-refuge-freshness` against `huntstack` — deliberately parked at the human gate.
 - `2026-08-25-fleet-hardening` against the fleet itself — approved and **executed**, five
-  slices, one commit each except `s4`, which took two after a REJECT. Every slice was
-  reviewed by a fresh `reviewer`.
+  slices, one commit each except `s4` and `s5`, which took two apiece after a REJECT.
+  Every slice was reviewed by a fresh `reviewer`, `s5` included.
 
 **No agent in this fleet has written a line of product code yet.** Everything written so
 far is fleet tooling operating on itself.
@@ -56,14 +56,15 @@ far is fleet tooling operating on itself.
 | `scout` | haiku | Read, Glob, Grep, Bash, WebSearch, WebFetch | 39 | yes, 2 runs |
 | `architect` | opus | Read, Glob, Grep, Bash | 70 | yes, 2 runs |
 | `builder` | opus | Read, Write, Edit, Glob, Grep, Bash | 49 | yes, 5 slices |
-| `reviewer` | opus | Read, Glob, Grep, Bash | 52 | yes, 5 reviews |
+| `reviewer` | opus | Read, Glob, Grep, Bash | 52 | yes, 6 reviews |
 | `integrator` | opus | Read, Write, Edit, Glob, Grep, Bash | 40 | **no** |
 | `ops` | opus | Read, Write, Edit, Glob, Grep, Bash | 43 | **no** |
 
 Model tiers and tool grants were re-read from frontmatter this pass and are unchanged
 since creation. Line counts grew where `2026-08-25-fleet-hardening` edited the file.
-Execution counts are as of the end of slice `s5` of that run — `s5`'s own reviewer had
-not yet been spawned when this line was written, so it is not counted.
+Execution counts are as of the end of slice `s5` of that run, `s5`'s own review included:
+6 reviews over 5 slices, because `s4` and `s5` were each REJECTED once and re-reviewed by
+a second, fresh `reviewer`.
 
 Tiering rationale: `GRAPH.md` § Model tiering. Short version — spend on judgment, not
 retrieval. `reviewer` and `architect` are never-downgrade.
@@ -119,7 +120,8 @@ warns about. The hook creates the obligation; a real verification pass discharge
    things are still *not* established: whether the hook fired during slices `s1`–`s4`
    (those builders ran in their own contexts and none of them recorded it either way),
    and whether it fires for `Write` as well as `Edit` — only the `Edit` path was
-   exercised.
+   exercised. The original six-case routing pipe-test that this gap used to rest on was
+   not re-run this pass; it is superseded by the live observation, not confirmed by it.
 7. **State-file writes are convention, not machinery — now partially checkable.**
    `graph_agents/.graph/verify-state.py` (added 2026-08-25) exits 0 only if a named key
    is present, non-empty, and not still the `_schema.json` placeholder, and
@@ -188,9 +190,10 @@ grounds (file overlap and no isolation/no rollback) and answered the isolation p
 with `git init` inside `graph_agents/` only, plus honest degraded-mode docs. A
 snapshot-copy substitute for worktrees was considered and rejected. The human gate held.
 
-Five sequential slices, each built then reviewed by a fresh `reviewer`: `s1` git repo and
-rollback · `s2` the state contract in every node · `s3` an owner for the `branch` field ·
-`s4` `verify-state.py` · `s5` this file, `GRAPH.md` and `feature-graph`.
+Five sequential slices, each built then reviewed by a fresh `reviewer` — `s4` and `s5`
+were each REJECTED once and re-reviewed: `s1` git repo and rollback · `s2` the state
+contract in every node · `s3` an owner for the `branch` field · `s4` `verify-state.py` ·
+`s5` this file, `GRAPH.md` and `feature-graph`.
 
 **`s4` was REJECTED on its first attempt and is the run's most useful result.** The
 reviewer reproduced `feature-graph` step 1 exactly — `cp _schema.json` into a new run
@@ -208,9 +211,10 @@ approved set. The ruling was to make the files honest rather than weaken the gat
 extension was strictly wording: no node's behaviour, responsibilities, model tier or
 `Return` block changed. Full detail in `builders.s2.deviation_from_approved_plan`.
 
-**One recorded fact in that run's `state.json` is wrong, and is corrected here rather than
-copied forward.** The scout's fact 6 credited `scout.md:15` and `integrator.md:21` with
-mentioning `state.json`; they carried the contract in words but not the literal token.
+**One recorded fact in `2026-08-25-fleet-hardening`'s own `state.json` is wrong, and is
+corrected here rather than copied forward.** The scout's fact 6 credited `scout.md:15`
+and `integrator.md:21` with mentioning `state.json`; they carried the contract in words
+but not the literal token.
 Before `s2`, exactly **one** agent file contained the string `state.json` — `builder.md`.
 That error is what made `s2`'s gate unsatisfiable as approved.
 
@@ -219,11 +223,26 @@ explicitly instead of inventing a check, and the user agreed to be that check. T
 machine-checkable parts of `s5` are greps for presence; the accuracy of the gap list above
 is not machine-checkable and never was.
 
-What that run proved: routing through the index worked; `scout` returned `file:line`
-facts; `architect` correctly refused to fan out a 2-slice sequence; the human gate held
-with `git status` clean on huntstack.
+**`s5` was itself REJECTED on its first attempt, and the reason is worth keeping.** Its
+first attempt added the `2026-08-25-fleet-hardening` heading above but left the
+refuge-freshness narrative below it untouched, so that heading captured the other run's
+paragraphs: this file briefly claimed that *this* run refused to fan out a 2-slice
+sequence, held its gate with `git status` clean on huntstack, and found two failed
+huntstack scraper runs — all four claims false of this run, one of them contradicting the
+run's own "not touching anything outside `graph_agents/`". No grep could catch it, because
+every sentence was individually well-formed and had been accurate about a different run.
+A heading inserted above existing prose changes what that prose refers to. Both runs now
+have their own heading and the passages name their run instead of saying "that run".
 
-What it found, independent of the feature — **both still open**:
+### `2026-08-25-refuge-freshness` — what happened
+
+What `2026-08-25-refuge-freshness` proved: routing through the index worked; `scout`
+returned `file:line` facts; `architect` correctly refused to fan out a 2-slice sequence;
+the human gate held with `git status` clean on huntstack. Every claim in this subsection
+is about `2026-08-25-refuge-freshness` and about huntstack — not about the fleet.
+
+What `2026-08-25-refuge-freshness` found in huntstack, independent of the feature —
+**both still open**:
 - Two consecutive huntstack scraper runs failed (`scripts/logs/refuge-counts-2026-08-10.log:27`,
   `-2026-08-18.log:27`). Nothing surfaces this in the product.
 - huntstack roadmap's "late Aug" OK/AR + LDWF re-scrape window opened 2026-08-25.
@@ -265,3 +284,4 @@ What it found, independent of the feature — **both still open**:
 | 2026-08-25 | s3: `branch` field given an owner (the builder); `_schema.json` `$comment` and `builders.s1.branch` say so; `builder.md` step 4 matches |
 | 2026-08-25 | s4: added `.graph/verify-state.py` and wired it into `feature-graph` steps 2/3/5/6. REJECTED on attempt 1 for passing on an untouched template; fixed with placeholder-identity detection |
 | 2026-08-25 | s5: degraded-mode rule (`no repo, no diamond`) written into `feature-graph` step 0.5 + step 5 and into `GRAPH.md`; `verify-state.py` documented with all seven blind spots; this file's gap list re-verified against disk — gaps #1 and #6 closed, #7 narrowed, #8–#12 newly booked |
+| 2026-08-25 | s5 REJECTED on attempt 1: its new run heading captured the refuge-freshness narrative below it, making four huntstack claims read as claims about this run. Re-anchored under a per-run heading on attempt 2 |
