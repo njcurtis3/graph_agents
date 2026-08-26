@@ -18,12 +18,16 @@ Nodes are **apps**. This graph is intentionally almost edgeless.
  │ graph_agents │──────────┘                              │
  │  the fleet   │  operates ON apps; no app depends on it │
  └──────────────┘                                         │
-        ┌───────────┬───────────┬───────────┬─────────────┘
-        ▼           ▼           ▼           ▼           ▼
-   ┌─────────┐ ┌─────────┐ ┌─────────┐ ┌────────┐ ┌───────────┐
-   │  App 1  │ │  App 2  │ │  App 3  │ │ App 4  │ │   App 5   │
-   └─────────┘ └─────────┘ └─────────┘ └────────┘ └───────────┘
+        ┌─────────┬─────────┬─────────┬─────────┬─────────┘
+        ▼         ▼         ▼         ▼         ▼         ▼
+    ┌───────┐ ┌───────┐ ┌───────┐ ┌───────┐ ┌───────┐ ┌───────┐
+    │ App 1 │ │ App 2 │ │ App 3 │ │ App 4 │ │ App 5 │ │ App 6 │
+    └───────┘ └───────┘ └───────┘ └───────┘ └───────┘ └───────┘
 ```
+
+Some of those nodes are tools rather than products (`kind` in the registry). The graph does
+not care: a tool node is still standalone, still owns its own repo, and still gets zero
+edges to its siblings.
 
 Edges umbrella→app are **template edges**: one-time copy, then the app owns it and is
 allowed to drift. There are **no app↔app edges**. Ever. See `CLAUDE.md`.

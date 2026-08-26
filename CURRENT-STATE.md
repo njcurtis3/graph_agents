@@ -39,15 +39,16 @@ far is fleet tooling operating on itself.
 |---|---|---|
 | Umbrella constitution | live | `graph_agents/CLAUDE.md` (74 ln) |
 | Graph spec | live | `graph_agents/GRAPH.md` (215 ln) |
-| Portfolio index | live, 5 apps, paths verified | `graph_agents/portfolio/registry.json` (120 ln) |
+| Portfolio index | live, 6 apps (5 products/sites + 1 tool), paths verified | `graph_agents/portfolio/registry.json` (139 ln) |
 | Run-state schema | live | `graph_agents/.graph/runs/_schema.json` (28 ln) |
 | Root memory shim | live, `@`-imports the constitution | `repos/CLAUDE.md` |
 | `.claude` junction | live, verified same-dir | `repos/.claude` → `graph_agents/.claude` |
 | 6 agent nodes | live; 4 of 6 have executed as registered agents | `.claude/agents/` |
-| 2 skills | `feature-graph` exercised twice (198 ln); `new-app` still unused (65 ln) | `.claude/skills/` |
+| 3 skills | `feature-graph` exercised twice (198 ln); `new-app` still unused (65 ln); `fleetview` new, unexercised (56 ln) | `.claude/skills/` |
 | Staleness hook | live, **observed firing** 2026-08-25 | `.claude/settings.json`, `.claude/hooks/flag-stale-state.py` |
 | State verifier | live, advisory only — a check, not a gate | `graph_agents/.graph/verify-state.py` (125 ln) |
 | Fleet git repo | live, root = `graph_agents/`, branch `master`, no remote | `graph_agents/.git` |
+| FleetView | live, but **not in this repo** — standalone app, own git repo. Launched by `/fleetview` | `repos/fleetview/` |
 
 ### Node roster (frontmatter verified)
 
@@ -253,6 +254,8 @@ What `2026-08-25-refuge-freshness` found in huntstack, independent of the featur
 | 2026-08-25 | Runs that edit `.claude/agents/**` or `.claude/skills/**` are always `single-loop`, and the next fleet run needs a fresh session | You are rewriting the definitions you spawn from, and registration happens at session start |
 | 2026-08-25 | The **builder** writes its own `builders.<slice>` key, including `branch` — empty string when the target has no repo | The field existed in the schema with no owner. Whoever does the work knows the branch |
 | 2026-08-25 | `verify-state.py` is advisory — a check the orchestrator runs, not a gate that fires itself | Making it blocking would need a hook, and its seven blind spots mean a green result must not be read as "the state is correct" |
+| 2026-08-25 | FleetView is a standalone app in `repos/fleetview/`, not a directory in the fleet | A viewer is a product with its own lifecycle, not tooling that operates on apps. Keeping it here would have made the fleet ship a UI |
+| 2026-08-25 | FleetView depends on the run-state **format**, never on a path into `graph_agents/` — fleet location is runtime config (`--fleet`, `$FLEETVIEW_FLEET`, then auto-detect) | `CLAUDE.md` says no app depends on the fleet. A hardcoded `../graph_agents` would be exactly that dependency. A convention may cross the boundary; an import may not — and the app must still run with no fleet present, which it does |
 
 ---
 
@@ -273,5 +276,6 @@ What `2026-08-25-refuge-freshness` found in huntstack, independent of the featur
 | 2026-08-25 | s4: added `.graph/verify-state.py` and wired it into `feature-graph` steps 2/3/5/6. REJECTED on attempt 1 for passing on an untouched template; fixed with placeholder-identity detection |
 | 2026-08-25 | s5: degraded-mode rule (`no repo, no diamond`) written into `feature-graph` step 0.5 + step 5 and into `GRAPH.md`; `verify-state.py` documented with all seven blind spots; this file's gap list re-verified against disk — gaps #1 and #6 closed, #7 narrowed, #8–#12 newly booked |
 | 2026-08-25 | s5 REJECTED on attempt 1: its new run heading captured the refuge-freshness narrative below it, making four huntstack claims read as claims about this run. Re-anchored under a per-run heading on attempt 2 |
+| 2026-08-25 | FleetView built (stdlib-Python read-only viewer for run graphs, roster, portfolio), first under `graph_agents/viz/`, then moved out to `repos/fleetview/` as a standalone app before any commit. Fleet keeps only the `/fleetview` skill that launches it |
 | 2026-08-25 | Run close: reviewer count corrected to 7 (`s5`'s own second reviewer included) and scoped to the closed run; the four captured huntstack claims now all named |
 | 2026-08-25 | Direct fix (no graph run — below the stop-rule threshold): closed gaps #8–#12. `builder.md` frontmatter and step 31 made honest about degraded mode; `_schema.json` gained `summary`, `gate_results`, `deviation_from_approved_plan`; `verify-state.py:72` now warns on a non-dict template instead of failing silently; added `.gitattributes` |

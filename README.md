@@ -71,6 +71,24 @@ graph_agents/
     verify-state.py        checks a node actually wrote its result
 ```
 
+## Seeing a run
+
+Run state is JSON on disk, and you can read it as JSON. To look at it instead:
+
+```bash
+python fleetview/serve.py        # from the umbrella root
+```
+
+**FleetView** is a separate standalone app (`fleetview/`, its own repo) that renders each
+run's work graph from its own `state.json` — the real shape, the real per-slice verdicts,
+the REJECT loops — plus the portfolio graph and the node roster read live from agent
+frontmatter. It is a *viewer*: read-only, and it never writes to a run.
+
+It is not part of this repo and this repo does not depend on it. FleetView reads the
+run-state format described above — a convention, not an import — and takes the fleet
+location as runtime config, so it works against any fleet and the fleet works without it.
+`/fleetview` launches it when it is present.
+
 ## `portfolio/registry.json` is intentionally not in this repo
 
 The index that routes a task to an app lists real, local directory paths — including a
