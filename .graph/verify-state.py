@@ -212,6 +212,37 @@ def slices(state):
     return ordered
 
 
+def real_slices(state, template):
+    """`slices()` minus ids that are nothing but `_schema.json` template noise.
+
+    `slices()` sweeps every key under `builders`/`reviews`, so an untouched template
+    example -- `s1` in the shipped schema -- is indistinguishable from a real slice and
+    carries the literal verdict "PASS|REJECT". That made the fan-in check below fire on
+    EVERY run that reached an integrator: no diamond could ever close with a green audit.
+    Found 2026-08-26 by run `archive-adapters`, the first run to reach fan-in.
+
+    A slice is real if the architect PLANNED it, or if some node actually WROTE its
+    builders/reviews key. Both halves are load-bearing and neither may be dropped:
+
+      - planned-but-unwritten must stay in, or `status: done` with a slice never built
+        stops being detectable -- the check that catches a dropped slice.
+      - written-but-unplanned must stay in, or a slice a node invented off-plan goes
+        unaudited. That is exactly `builders.closing_fix` in 2026-08-25-fleet-hardening,
+        the defect this audit was built to catch.
+
+    Only the intersection of neither -- unplanned AND unwritten -- is template noise.
+    """
+    planned = set()
+    _, plan = resolve(state, "architect.plan")
+    if isinstance(plan, list):
+        planned = {e["slice"] for e in plan
+                   if isinstance(e, dict) and isinstance(e.get("slice"), str)}
+    return [s for s in slices(state)
+            if s in planned
+            or not unwritten(state, template, "builders.%s" % s)
+            or not unwritten(state, template, "reviews.%s" % s)]
+
+
 def audit(state, template):
     """Edge violations visible in the state file alone. Empty list == nothing wrong.
 
@@ -222,7 +253,7 @@ def audit(state, template):
     problems = []
     approved = resolve(state, "approved_by_human")[1] is True
     status = str(resolve(state, "status")[1] or "").strip().lower()
-    known = slices(state)
+    known = real_slices(state, template)
 
     for s in known:
         built = not unwritten(state, template, "builders.%s" % s)
