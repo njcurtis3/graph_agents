@@ -32,6 +32,12 @@
 > `verify-invariant.py` was re-run clean across all 7. Verified directly for that pass: the
 > new repo's `git log` and tracked file list, its 6 tests passing, its CLI's three
 > subcommands run by hand, and the verbatim no-sibling-import line matched with `grep -Fxq`.
+> A **seventh** pass ran `archive-adapters`, the first diamond. Verified directly for that pass:
+> both fleet fixes driven through fixtures (14 payloads for the guard, 5 for the audit) with the
+> must-still-fail cases tested BEFORE the must-now-pass case; all four prior runs re-audited and
+> confirmed byte-identical; `personal-archive` `master` at `e126dd5` with 32 tests green together;
+> the roster line counts for the two changed files re-measured. Not re-checked: everything else in
+> the roster, unchanged since the sixth pass.
 >
 > **Not** re-checked this pass: `verify-state.py`'s four *named-key* exit paths, the portfolio
 > `entry_docs` sweep, and FleetView — all three were verified 2026-08-26 by the audit that
@@ -39,9 +45,9 @@
 
 ---
 
-## Status: four runs, three of them executed, first product code shipped
+## Status: five runs, four of them executed; the first diamond has run
 
-Built 2026-08-25 in a single session. Four runs so far:
+Built 2026-08-25 in a single session. Five runs so far:
 
 - `2026-08-25-refuge-freshness` against `huntstack` — deliberately parked at the human gate.
 - `2026-08-25-fleet-hardening` against the fleet itself — approved and **executed**, five
@@ -52,6 +58,23 @@ Built 2026-08-25 in a single session. Four runs so far:
 - `2026-08-26-invariant-check` against the fleet itself — approved and **executed**, one
   slice, PASS on attempt 1. Closed gap #5: the umbrella invariant is now checked, not just
   asserted in prose.
+- `2026-08-26-archive-adapters` against `personal-archive` — approved and **executed**, and
+  the **first diamond**: three concurrent builders in three linked worktrees, three
+  independent reviewers, one integrator. `s2`/`s3` PASS on attempt 1; `s1` took three
+  attempts and two REJECTs, both for real personal health data surviving redaction into a
+  committed fixture. Merged to `master` (`e126dd5`), 32 tests green together.
+
+**The graph's fan-in earns its keep, and now there is evidence rather than a diagram.** The
+diamond's integrator did not merely merge text: it settled a conflict that existed *only between
+two independently-correct slices* — github swallowing a bad config while roam raised on one, each
+blessed by its own reviewer, neither wrong alone. No single-loop run can manufacture that defect,
+and no reviewer looking at one branch can see it.
+
+**The review layer is load-bearing, and this run is the proof.** `s1-whoop` passed its own test
+suite on every one of its three attempts — including the attempt that was committing a real heart
+rate of the machine owner's into git. Both leaks were found by reviewers hand-walking every leaf
+against the source, and both times the builder had already certified a "systematic" audit. A green
+gate was never evidence for the property that mattered.
 
 **The fleet has now written product code.** Run 3's builder wrote
 `quartz/plugins/transformers/linkpreviews.ts` plus 12 tests in a real app repo, an
@@ -75,11 +98,11 @@ this fleet has written a line of product code yet**", eleven hours after one had
 | Run-state schema | live | `graph_agents/.graph/runs/_schema.json` (31 ln) |
 | Root memory shim | live, `@`-imports the constitution | `repos/CLAUDE.md` |
 | `.claude` junction | live, verified same-dir | `repos/.claude` → `graph_agents/.claude` |
-| 6 agent nodes | live; 4 of 6 have executed as registered agents | `.claude/agents/` |
+| 6 agent nodes | live; **5 of 6** have executed as registered agents — `integrator` first ran 2026-08-26 (`archive-adapters`). **`ops` is the only node never executed** | `.claude/agents/` |
 | 3 skills | `feature-graph` exercised 3× (290 ln); `new-app` **exercised once** 2026-08-26, creating `personal-archive` (72 ln); `fleetview` exercised (56 ln) | `.claude/skills/` |
 | Staleness hook | live, **observed firing** 2026-08-25; rewritten 2026-08-26 (junction paths, run-close, `.py`) — 20 synthetic payloads pass | `.claude/settings.json`, `.claude/hooks/flag-stale-state.py` (114 ln) |
-| State verifier | live, **two modes**. Named-key mode: advisory, a check the orchestrator runs. `--audit` mode (added 2026-08-26): fires from a hook, checks edge ordering, 12 synthetic cases pass | `graph_agents/.graph/verify-state.py` (389 ln) |
-| Plan-scope guard | live, **the fleet's first blocking hook** — a `PreToolUse` `Write\|Edit` entry that DENIES a `builder` writing outside `architect.plan[].files`. 12 synthetic cases pass. Never fired in a real run yet: no run has been opened since it existed | `.claude/settings.json`, `.claude/hooks/guard-builder-scope.py` (164 ln) |
+| State verifier | live, **two modes**. Named-key mode: advisory, a check the orchestrator runs. `--audit` mode: fires from a hook, checks edge ordering. **Fixed 2026-08-26 (`319121f`)** — it counted `_schema.json`'s example slice as real, so the fan-in check fired on *every* run reaching an integrator and no diamond could close green. 5 new fixtures + byte-identical output on all four prior runs | `graph_agents/.graph/verify-state.py` (420 ln) |
+| Plan-scope guard | live. **Fixed 2026-08-26 (`d75d2a7`) to be worktree-aware** — it resolved plan entries against `repos/`, so it denied *every* write by *every* builder in a diamond. 14 synthetic cases. **Exercised for real** across 5 builder runs with zero false denials. ⚠️ **Matcher is `Write\|Edit` only, so a Bash write bypasses it entirely** — see gap #13 | `.claude/settings.json`, `.claude/hooks/guard-builder-scope.py` (235 ln) |
 | Node heartbeat | live — `SubagentStart`/`SubagentStop` + a `*`-matcher `PostToolUse` entry append one line per node event to `.graph/runs/<run>/activity.jsonl`. Verified: events recorded with agent/tool, main-session writes recorded as `orchestrator`, silent on a closed run and with no open run | `.claude/settings.json`, `.claude/hooks/record-activity.py` (101 ln) |
 | Open-run pointer | live, untracked — written by `feature-graph` step 1, read by the scope guard. A pointer to a closed run is ignored | `graph_agents/.graph/CURRENT` |
 | State-audit hook | live, third `PostToolUse` entry — fires `--audit` on every `Write`/`Edit` of a `state.json`, silent on `_schema.json`, on non-run files, and on a merely half-filled run. **Caught a real defect on first run** (see gap #7) | `.claude/settings.json`, `.claude/hooks/flag-state-gap.py` (125 ln) |
@@ -182,31 +205,30 @@ header warns about. The hook creates the obligation; a real verification pass di
    registered nodes launched from `repos/`. No frontmatter or discovery debugging was
    needed. What is still unvalidated is narrower and is gaps #2 and #3 below: two of the
    six nodes have still never run, and no diamond has ever been built.
-2. **`integrator` and `ops` have never executed.** `builder` and `reviewer` now have —
-   that half of this gap closed on 2026-08-25 — but the fan-**in** end of the diamond is
-   untested, and so is `ops`. Both keys are still the untouched template in **every** run
-   on disk, runs 3 and 4 included, which is why `verify-state.py` exits 1 on them.
-   `--audit` stays silent on them, correctly: it flags an `integrator` that ran too early,
-   never one that has not run. Correctly so:
-   all four runs were `single-loop`, and under the 2026-08-26 merge ruling a single-loop
-   run reaches `integrator` only when its merge conflicts. Run 3's did not. Closing this
-   gap now needs either a real diamond or a conflicting merge — it will not close by
-   accident. **A vehicle now exists** (2026-08-26): `personal-archive` was scaffolded with
-   `src/adapters/__init__.py` as the one file every adapter slice must touch, so three
-   parallel adapter slices are expected to conflict there and drag `integrator` in for real.
-   Still open until a run actually does it.
-3. **No diamond has ever run.** All four runs resolved to `single-loop`, all four
-   correctly — run 3's architect refused to fan out because its three candidate slices were
-   producer/consumer, not independent: `s2` consumed the exact `data-*` contract `s1` emitted
-   and `s3`'s `done_when` needed both. Disjoint file sets are not sufficient for a diamond;
-   independently checkable `done_when` is the real test, and that is now on the record twice.
-   Worktree isolation has therefore still never been exercised, and see the note under
-   gap #8: on a target with no git repo it *cannot* be. **A vehicle now exists**
-   (2026-08-26): `personal-archive` is its own git repo, so worktrees are executable there,
-   and its record contract was frozen *at scaffold time* precisely so adapter slices consume
-   the contract rather than each other — the producer/consumer trap run 3 fell into. Each
-   adapter's `done_when` is "its own test passes alone against its own fixture". Untested
-   until a run actually fans out.
+2. **`ops` has never executed.** — *`integrator` half CLOSED 2026-08-26.* `integrator` ran for the
+   first time in `2026-08-26-archive-adapters`, and it did real work rather than ceremonial work: it
+   resolved a two-place merge conflict in `src/adapters/__init__.py` and then ruled a **semantic**
+   cross-slice conflict that no reviewer could have seen — two slices had adopted opposite error
+   policies for configured-but-wrong input, and each slice's own reviewer had ruled its slice
+   correct. It also ran the one check no reviewer could: that no `REGISTRY` line was silently
+   dropped in conflict resolution, since each reviewer only ever saw a branch carrying one line.
+   **`ops` remains the single node this fleet has never run**, and by design: it sits behind its own
+   human gate and is never invoked automatically at the end of a graph.
+3. ~~No diamond has ever run.~~ **CLOSED 2026-08-26**, `2026-08-26-archive-adapters` against
+   `personal-archive`: three slices, three builders concurrent in three linked worktrees, three
+   independent reviewers, one integrator. **Worktree isolation is exercised at last** — zero
+   collisions, zero guard denials, and the three branches merged with exactly the conflict the
+   architect predicted in the one file every slice had to touch.
+   The architect's fan-out test is now on the record as something that *passed* rather than
+   something that refused: it did not rely on disjoint file sets, which run 3 correctly rejected as
+   insufficient. It relied on each slice's test importing `src.adapters.<name>` **directly as a
+   module**, never through `REGISTRY` — so every slice was green on its own branch against a tree
+   where the other two adapters were absent files. It checked the one thing that could have
+   falsified that (`test_contract.py:47` does not assert registry emptiness despite its name) rather
+   than assuming it.
+   **The decisive precondition was set a run earlier, not in this run**: `personal-archive`'s record
+   contract was frozen at scaffold time, so the slices consumed a contract rather than each other.
+   That is what made three producers genuinely independent, and it is the reusable lesson.
 4. ~~`new-app` has never been used.~~ **CLOSED 2026-08-26.** Run directly, not through a
    graph run — the skill *is* the procedure, and it carries its own human gate at step 1, so
    wrapping it in `feature-graph` would have produced two gates for one decision. Created
@@ -357,6 +379,36 @@ header warns about. The hook creates the obligation; a real verification pass di
     `["a","b"]` as the template now produces the warning and still exits correctly.
 12. ~~No `.gitattributes`, and `core.autocrlf` is `true` globally.~~ **Closed** 2026-08-25,
     same pass. `graph_agents/.gitattributes` added: `* text=auto eol=lf`.
+13. **The plan-scope guard covers `Write`/`Edit` only, so a Bash write bypasses it entirely.**
+    `settings.json` registers the `PreToolUse` matcher as `Write|Edit`, and every `builder` has
+    `Bash`. A builder writing through `sed`, a heredoc or `python -c` never reaches the hook: no
+    denial, no record, no trace. The approved file set is presented to a human at the step-4 gate as
+    a permission boundary; it is a boundary on **two write paths out of several**. **Raised by a
+    builder itself, unprompted** — `s1-whoop` reported that it had deliberately kept using `Edit`
+    *because* a Bash edit would have evaded the guard silently. That is simultaneously the best
+    evidence the fleet's norms hold and the clearest statement that the machinery does not. Open;
+    it is the most serious gap on this list.
+14. **`--audit` parses the untouched `scope_exceptions` placeholder as a file path.**
+    `approved_paths()` skips prose with a heuristic — a space and no separator — and the
+    `_schema.json` placeholder contains `/` (in "Write/Edit"), so it slips through, becomes a bogus
+    allowed path, and pollutes the `Approved:` list a denied builder is shown. Matches no real file,
+    so it opens nothing. Worked around in `archive-adapters` by setting that run's
+    `scope_exceptions` to `[]`; the general fix — a placeholder-aware filter — is **not** done.
+15. **The staleness hook fires on app files edited inside a builder worktree.**
+    Reported twice by `s1-whoop`: every fixture edit under `personal-archive`'s worktree returned
+    "you changed the agent architecture's definition, `CURRENT-STATE.md` is now STALE". Nothing
+    about the fleet changed. The worktrees live under `graph_agents/.graph/worktrees/` only because
+    `repos/` is not a repo, and the hook matches on that prefix. Same path-matching class as the
+    guard bug closed in `d75d2a7`. Noise rather than damage — but it trains agents to ignore a hook
+    that exists to be heeded, which is how a real staleness warning gets missed later.
+16. **A green test suite is not evidence that `fixtures/whoop/` is redacted, and never was.**
+    Carried forward verbatim from the third `s1-whoop` reviewer and re-stated by the integrator,
+    because it is the single most load-bearing thing this run learned. `test_fixture_is_redacted`
+    checks three rules; small integer leaves under `score` fall outside all three. **The suite was
+    green through all three attempts, including the attempt that was committing a real heart rate.**
+    Two builder self-certifications of a "systematic" audit were both wrong, and both were caught
+    only by a reviewer hand-walking the tree. Any future edit under `fixtures/whoop/` needs a human
+    leaf-walk, not a test run. This is a permanent property of that fixture, not a defect to close.
 
 ---
 
@@ -367,9 +419,50 @@ header warns about. The hook creates the obligation; a real verification pass di
 | `2026-08-25-refuge-freshness` | huntstack | single-loop | **parked** at human gate | Plan complete, unapproved, no code written |
 | `2026-08-25-fleet-hardening` | umbrella (the fleet itself) | single-loop, 5 slices | **executed**, approved at the gate — but its **state file is an incomplete record**: see gap #7 | Fleet got a git repo, a state contract in all 6 nodes, an owner for `branch`, `verify-state.py`, and this snapshot corrected. `reviews.s4`/`s5` still hold attempt 1's `REJECT` and `builders.closing_fix` was never reviewed; found 2026-08-26 by the new state audit, left unedited on purpose |
 | `2026-08-25-transclusion-external-previews` | App 1 | single-loop, 1 slice | **executed**, approved at the gate | First product code by this fleet. External-link popovers no longer surface browser frame-block errors. Merged to `main` as `79c3c32` |
+| `2026-08-26-archive-adapters` | `personal-archive` | **diamond, 3 slices** | **executed**, approved at the gate. s2/s3 PASS on attempt 1; **s1 took 3 attempts, two REJECTs, both real data leaks** | The fleet's **first diamond**. Three concurrent worktree builders, three independent reviewers, one integrator that resolved both a textual and a **semantic** cross-slice conflict. Merged to `master` (`e126dd5`), 32 tests green together. Closed gap #3 and the `integrator` half of #2; found gaps #13–#16 and fixed two fleet defects (`d75d2a7`, `319121f`) |
 | `2026-08-26-invariant-check` | umbrella (the fleet itself) | single-loop, 1 slice | **executed**, approved at the gate, PASS on attempt 1 | Closed gap #5: `verify-invariant.py` + `flag-cross-app-import.py` make the umbrella invariant a live, automated check instead of prose. Committed directly to `graph_agents` `master` (`9899e85`) — no branch, nothing to merge |
 
 Run state lives at `graph_agents/.graph/runs/<run-id>/state.json` for each of the four.
+
+### `2026-08-26-archive-adapters` — what happened
+
+Goal: three service adapters for `personal-archive` — whoop, github, roam — each
+fixture-driven and independently testable. Shape: **diamond**, the fleet's first.
+
+**What it proved.** Worktree isolation works: three builders wrote concurrently in three linked
+worktrees with zero collisions and zero guard denials. The architect's independence test held —
+each slice's test imports `src.adapters.<name>` directly rather than through `REGISTRY`, so every
+slice was green on its own branch against a tree where the siblings were absent files.
+
+**What only a diamond could produce.** The integrator's real work was not the merge text. Two
+slices had adopted **opposite error policies** for configured-but-wrong input — github swallowed a
+404 and archived nothing forever, roam raised — and *each slice's own reviewer had ruled its slice
+correct*, because each saw exactly one branch. The incoherence existed only in the space between
+two independently-correct slices. The integrator ruled (configured-but-wrong raises; absent config
+stays skipped) on two arguments it could only make on the merged tree: whoop already used
+`raise_for_status`, so github was the sole outlier and "swallow" would have meant inventing
+behaviour at the seam; and under swallow, `cli._write` still writes an empty ndjson
+indistinguishable from a genuinely quiet week.
+
+**What the review layer caught.** `s1-whoop` was REJECTED twice, both times for real personal
+health data surviving redaction into a committed fixture — first a real `max_heart_rate`, then two
+sleep-need values whose zeros the builder had argued were "absence, not measurement" (they are
+model outputs; zero is a value). Both were invisible to the test and found only by a reviewer
+hand-walking every leaf against the source. The builder eventually diagnosed its own root cause
+better than either reviewer had: its audit script contained a literal `isinstance(value, bool):
+continue`, so its judgement was compiled into the tool it was certifying with. Attempt 3 required
+it to **paste the enumeration rather than certify the audit**, and a third fresh reviewer
+independently confirmed the numbers.
+
+**Human decisions.** Readwise dropped (token-only) and replaced with Roam at the human's choice;
+Roam scoped to a graph export file rather than its token-gated API; both fixtures redacted under an
+explicit privacy ruling; the 2-attempt ceiling overridden once, explicitly, for `s1` attempt 3.
+
+**Two fleet defects fixed mid-run, both blocking.** `d75d2a7` made the plan-scope guard
+worktree-aware — it had denied every builder write in a diamond, undetected since the day it was
+written. `319121f` stopped `--audit` counting `_schema.json`'s example slice as real, which had
+made a green close impossible for *any* run reaching an integrator. Neither was fixed by weakening
+a check: both were driven through fixtures where the cases that must still fail were tested first.
 
 ### `2026-08-26-invariant-check` — what happened
 
@@ -597,5 +690,9 @@ What `2026-08-25-refuge-freshness` found in huntstack, independent of the featur
 | 2026-08-26 | Direct fix (below the stop-rule threshold): `verify-state.py --audit` + `flag-state-gap.py` make the graph's **edge ordering** enforced instead of advisory. Gap #7 blind spots (6) and (7) closed, (1)–(5) explicitly still open. The audit's first run found `fleet-hardening`'s state file contradicting its own log |
 | 2026-08-26 | Node heartbeat: `record-activity.py` logs `SubagentStart`/`SubagentStop`/`PostToolUse` to `activity.jsonl`, and FleetView (`ed7b6c2`, separate repo) renders it as a live lane. This is the **overseer** idea, built where it can actually see — an overseer *agent* was rejected as unimplementable and as a fake edge |
 | 2026-08-26 | `.graph/CURRENT` (untracked pointer to the open run) + `guard-builder-scope.py`: the fleet's **first blocking hook**. A `builder`'s `Write`/`Edit` outside `architect.plan[].files` is now DENIED, making the human gate's file set a permission grant. Escape hatch is `scope_exceptions`, which `--audit` flags when unexplained |
+| 2026-08-26 | **First diamond.** Run `archive-adapters` against `personal-archive`: 3 concurrent worktree builders, 3 independent reviewers, 1 integrator. Merged `e126dd5`, 32 tests green together. Closes gap #3 and the `integrator` half of #2 — `ops` is now the only node never executed |
+| 2026-08-26 | `d75d2a7` — plan-scope guard made worktree-aware. It resolved plan entries against `repos/`, so it denied EVERY builder write in a diamond; undetected since written because the guard had never fired and worktrees had never run. 14 synthetic payloads |
+| 2026-08-26 | `319121f` — `--audit` stopped counting `_schema.json`'s example slice as real. The fan-in check fired on every run reaching an integrator, so no diamond could close green. 5 fixtures; all four prior runs byte-identical |
+| 2026-08-26 | Gaps #13–#16 booked from the diamond: the guard's `Write\|Edit`-only matcher (a Bash write bypasses it — **raised by a builder that declined to use it**), the `scope_exceptions` placeholder parsed as a path, the staleness hook firing on app files in worktrees, and the standing rule that a green suite never evidences whoop fixture redaction |
 | 2026-08-26 | `/new-app` exercised for the first time (gap #4): `personal-archive`, own repo, initial commit `709dba3`, registered as the 7th app. Gate surfaced an unanticipated environment case — no `uv` — resolved by matching the sibling Python convention. Scaffolded deliberately as a **diamond vehicle**: contract frozen up front, `src/adapters/__init__.py` the single expected merge point. Gaps #2 and #3 stay open until a run uses it |
 | 2026-08-26 | Authorship: `written_by` on all six node keys in `_schema.json`, stamped by each node, checked by `--audit` against an owner map. Gap #7 blind spot (3) closed — a `builders.*` key stamped `orchestrator`, or a `reviews.*` key stamped `builder`, now fails. Placeholder detection rewritten as `is_untouched()` after the new field broke whole-value template identity on older runs |
