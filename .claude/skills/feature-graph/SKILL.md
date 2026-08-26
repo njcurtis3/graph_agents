@@ -106,7 +106,25 @@ Set `approved_by_human: true` only after they actually say so.
 
 ## Step 5 — execute
 
-**If `single-loop`:** spawn one `builder`, then one `reviewer`. Done. No integrator needed.
+**If `single-loop`:** spawn one `builder`, then one `reviewer`.
+
+**Then merge it — this step is yours.** A single-loop run still leaves a branch behind, and
+until 2026-08-26 nothing here said who lands it. The ruling: on `PASS`, and only on `PASS`,
+the orchestrator merges the one reviewed branch itself.
+
+```bash
+git -C <target> merge --no-ff <branch-from-builders.<slice>.branch>
+```
+
+If the merge **conflicts, stop.** Do not resolve it. Spawn `integrator`, which owns conflict
+resolution, and let it write the `integrator` key. A clean merge of already-reviewed work is
+bookkeeping; a conflict is a judgment call about code, and that is a different node's job.
+
+In degraded mode (no repo, or the builder committed directly to the main branch —
+`builders.<slice>.branch` is an empty string) there is nothing to merge. Skip this and say
+so in the final summary.
+
+Record the merge commit in `log`. No integrator otherwise.
 
 **No repo, no diamond.** Re-run the step 0.5 check before you fan out:
 
@@ -141,6 +159,8 @@ On `REJECT`: send the findings back to that slice's builder. Re-review with a **
 reviewer. Max 2 attempts, then stop and escalate to the user.
 
 ## Step 6 — fan-in
+
+**Diamond only** — single-loop lands its own branch in step 5 and skips this.
 
 When every slice is `PASS`, spawn `integrator` once. It merges and runs the **full** suite.
 If it comes back `blocked`, report which merge turned it red — do not paper over it.
@@ -185,7 +205,9 @@ Seven things it does **not** check. Do not oversell it:
 ## Orchestrator rules
 
 - **Never implement anything yourself.** The moment you edit a file you have destroyed the
-  independence the graph is built on.
+  independence the graph is built on. **Merging an already-reviewed branch is not
+  implementing** — it writes no code and makes no choice, and step 5 assigns it to you.
+  *Resolving a conflict is*, and that is `integrator`'s job, not yours.
 - **Never review a slice yourself.** You have seen the builder's summary; your context is
   contaminated. Always a fresh `reviewer`.
 - Append to `log` in state at every transition. That log is how a fresh session resumes.

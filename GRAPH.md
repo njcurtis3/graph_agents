@@ -167,9 +167,9 @@ orchestrator at the run directory.
 
 † **Only where the target is a git repo.** In degraded mode the builder runs in the main
 tree with no isolation and no rollback, which is why that case is `single-loop` and one
-builder. `builder.md`'s own frontmatter still claims it runs "in isolation" and "in
-parallel with sibling builders" unconditionally; that is a known open gap, recorded in
-`CURRENT-STATE.md`, not a second source of truth.
+builder. `builder.md`'s frontmatter says the same thing in the same words — that gap was
+closed 2026-08-25 (`6630dc1`), and this row and that file are no longer two sources of
+truth.
 
 **Reviewer independence is non-negotiable.** A builder reviewing its own work is not a
 verification edge, it's a fake edge. Always a separate agent invocation.

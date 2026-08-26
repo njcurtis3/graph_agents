@@ -19,6 +19,10 @@ The only things that legitimately cross app boundaries:
 - **Conventions** (how we name things, how we structure a repo)
 - **Templates** (a starting point, copied once, then owned locally and allowed to drift)
 - **The agent fleet** in `graph_agents/` (tooling that operates *on* apps, never *inside* the product)
+- **Prose cross-references** — an app's `CLAUDE.md` may *name* a path here for a reader.
+  The test is mechanical: if removing `graph_agents/` from disk breaks the app's build,
+  test or deploy, it was an edge. If it only breaks a reader's convenience, it was a
+  reference, and references are allowed.
 
 An arrow from app A to app B is a **fake edge**. Delete it.
 

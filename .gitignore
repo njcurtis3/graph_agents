@@ -17,5 +17,13 @@ desktop.ini
 # portfolio/registry.json is untracked on purpose: its path/entry_docs fields
 # name real app directories on disk (personal names among them). It still
 # exists locally and the fleet still reads it for routing — it is just not
-# published. A fresh clone of this repo will not have it; see CURRENT-STATE.md.
+# published.
+#
+# CONSEQUENCE, and it is not obvious: a fresh clone of this repo has NO registry.
+# `scout.md` step 1 and `feature-graph` step 1 both make it the mandatory first
+# read, so routing fails on a clone with no visible reason. Rebuild it before the
+# first run — see CURRENT-STATE.md § "What is live", the registry row.
 portfolio/registry.json
+
+# Live session state written by the harness, not by the fleet. Holds a pid.
+.claude/scheduled_tasks.lock

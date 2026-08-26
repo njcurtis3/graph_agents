@@ -44,6 +44,13 @@ Every app is the authority on itself. Write `<id>/CLAUDE.md` covering:
 - this line, verbatim:
   `Standalone app under the repos/ umbrella. Never import from a sibling app; see ../graph_agents/CLAUDE.md.`
 
+  That line names a path outside the app, which looks like the dependency the constitution
+  forbids. It is not one: it is a **prose cross-reference for a human or an agent reading
+  the file**, and nothing the app builds, imports, runs or ships resolves it. The app must
+  still clone, install, test and deploy with `graph_agents/` absent from the disk. If you
+  ever find yourself making code read that path, you have turned a convention into an
+  edge — delete it. See `CLAUDE.md` § The one invariant.
+
 ## Step 4 — register it
 
 Add an entry to `graph_agents/portfolio/registry.json`, with `path` and `entry_docs` relative to `repos/`. Unregistered apps are invisible to the fleet —
