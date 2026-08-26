@@ -2,10 +2,24 @@
 """Verify that a node actually wrote its key in a run's state.json.
 
     python graph_agents/.graph/verify-state.py <run-id> <key> [<key> ...]
+    python graph_agents/.graph/verify-state.py --audit <run-id>
 
 Exit 0 only if EVERY named key exists and is non-empty. Anything else exits 1 and
 names the offending key on stderr. Dotted keys walk nested objects: `reviews.s1`,
 `builders.s2`.
+
+`--audit` is the hook-firable half, added 2026-08-26. The named-key mode above can
+only run when someone already knows WHICH node just finished, so it can only ever be
+called by hand. A PostToolUse hook sees a file path and nothing else, so it cannot ask
+that question at all. `--audit` asks the one a lone state.json can answer instead:
+given everything written so far, did the graph's EDGES hold? Builders before the human
+gate, a review with no build behind it, a fan-in over a slice that never passed, a run
+closed with a slice still unreviewed, a key filled in around template text still left
+in place. It names no node and needs no argument beyond the run.
+
+The two modes are complementary, not redundant: `--audit` never reports a key as
+merely unwritten mid-run (that is what a run in progress looks like), and the named-key
+mode never notices ordering. Keep both.
 
 "Non-empty" is the whole point. A node that wrote `{}`, `[]`, `""`, or a dict whose
 values are all empty did NOT do its job. Presence alone is not evidence of work.
@@ -91,9 +105,164 @@ def die(message):
     raise SystemExit(1)
 
 
+# ---------------------------------------------------------------- audit mode
+
+# `_schema.json` describes ONE generic slice, `s1`. A real run has s1..sN, all of the
+# same shape, so placeholder identity for `builders.s7` is judged against `builders.s1`.
+GENERIC = {"builders": "s1", "reviews": "s1"}
+
+
+def template_slot(template, key):
+    """The template value a real key should be compared against. (found, value)."""
+    parts = key.split(".")
+    if len(parts) == 2 and parts[0] in GENERIC:
+        parts[1] = GENERIC[parts[0]]
+    return resolve(template, ".".join(parts))
+
+
+def unwritten(state, template, key):
+    """True when a key is absent, empty, or still verbatim template text."""
+    found, value = resolve(state, key)
+    if not found or is_empty(value):
+        return True
+    placeheld, placeholder = template_slot(template, key)
+    return bool(placeheld and value == placeholder)
+
+
+def _leftover_placeholders(value, tpl, path, out):
+    """Template STRINGS still sitting inside an otherwise-written key.
+
+    Strings only, on purpose. A real `attempt: 1` or `gated: true` is byte-identical to
+    the template's and always will be, so comparing numbers or booleans would report
+    correct work as unfinished. `slice` is excluded for the same reason: the architect
+    legitimately writes `"slice": "s1"`, which is exactly what the template says.
+    """
+    if isinstance(value, dict) and isinstance(tpl, dict):
+        for k, v in value.items():
+            if k in tpl and k not in ("slice", "$comment"):
+                _leftover_placeholders(v, tpl[k], "%s.%s" % (path, k) if path else k, out)
+    elif isinstance(value, list) and isinstance(tpl, list) and tpl:
+        for i, item in enumerate(value):
+            _leftover_placeholders(item, tpl[0], "%s[%d]" % (path, i), out)
+    elif isinstance(value, str) and isinstance(tpl, str):
+        if value.strip() and value == tpl:
+            out.append(path)
+
+
+def slices(state):
+    """Every slice id this run knows about, from the plan and from what nodes wrote."""
+    found = []
+    _, plan = resolve(state, "architect.plan")
+    if isinstance(plan, list):
+        for entry in plan:
+            if isinstance(entry, dict) and isinstance(entry.get("slice"), str):
+                found.append(entry["slice"])
+    for group in ("builders", "reviews"):
+        _, node = resolve(state, group)
+        if isinstance(node, dict):
+            found.extend(k for k in node)
+    seen, ordered = set(), []
+    for s in found:
+        if s not in seen:
+            seen.add(s)
+            ordered.append(s)
+    return ordered
+
+
+def audit(state, template):
+    """Edge violations visible in the state file alone. Empty list == nothing wrong.
+
+    Only VIOLATIONS. A half-filled run is what work in progress looks like, so a key
+    that is merely not written yet is never reported -- a hook that cried at every
+    intermediate write would be turned off within a day, and then it checks nothing.
+    """
+    problems = []
+    approved = resolve(state, "approved_by_human")[1] is True
+    status = str(resolve(state, "status")[1] or "").strip().lower()
+    known = slices(state)
+
+    for s in known:
+        built = not unwritten(state, template, "builders.%s" % s)
+        reviewed = not unwritten(state, template, "reviews.%s" % s)
+        verdict = str(resolve(state, "reviews.%s.verdict" % s)[1] or "").strip().upper()
+
+        # The human gate is the one edge in this graph that exists to be blocking.
+        if built and not approved:
+            problems.append(
+                "builders.%s is written but approved_by_human is not true -- the human "
+                "gate (feature-graph step 4) was skipped or is recorded wrongly" % s)
+        if reviewed and not built:
+            problems.append(
+                "reviews.%s is written but builders.%s is not -- a review with no build "
+                "behind it reviews nothing" % (s, s))
+        if status == "done" and not built:
+            problems.append(
+                "run is status 'done' but builders.%s was never written -- a planned "
+                "slice was dropped, or the run closed early" % s)
+        elif status == "done" and verdict != "PASS":
+            problems.append(
+                "run is status 'done' but reviews.%s is %s -- only PASS closes a slice"
+                % (s, verdict or "unwritten"))
+
+    if not unwritten(state, template, "integrator"):
+        for s in known:
+            v = str(resolve(state, "reviews.%s.verdict" % s)[1] or "").strip().upper()
+            if v != "PASS":
+                problems.append(
+                    "integrator is written but reviews.%s is %s -- fan-in (step 6) runs "
+                    "only when EVERY slice has passed" % (s, v or "unwritten"))
+
+    _, ops_actions = resolve(state, "ops.actions")
+    if not is_empty(ops_actions) and not approved:
+        problems.append(
+            "ops.actions is non-empty but approved_by_human is not true -- ops always "
+            "runs behind its own gate (feature-graph step 7)")
+
+    # Blind spot (6) from the list below: a key filled in AROUND template text.
+    for key in ["scout", "architect", "integrator", "ops"] + \
+               ["builders.%s" % s for s in known] + ["reviews.%s" % s for s in known]:
+        if unwritten(state, template, key):
+            continue
+        found, value = resolve(state, key)
+        placeheld, tpl = template_slot(template, key)
+        if not (found and placeheld):
+            continue
+        leftovers = []
+        _leftover_placeholders(value, tpl, key, leftovers)
+        for path in leftovers:
+            problems.append(
+                "%s is still verbatim template text inside an otherwise-written key -- "
+                "the node filled in around it" % path)
+
+    for key in ("run_id", "goal", "app", "status"):
+        if unwritten(state, template, key):
+            problems.append("%s is unwritten or still the template's -- step 1 fills "
+                            "these when the run is opened" % key)
+
+    return problems
+
+
 def main(argv):
+    if argv and argv[0] == "--audit":
+        if len(argv) != 2:
+            die("usage: verify-state.py --audit <run-id>")
+        run_id = argv[1]
+        state, path = load(run_id)
+        if not isinstance(state, dict):
+            die("%s is not a JSON object" % path)
+        problems = audit(state, load_template())
+        if problems:
+            for line in problems:
+                sys.stderr.write("verify-state: %s\n" % line)
+            sys.stderr.write("verify-state: %s -- %d edge violation(s)\n"
+                             % (run_id, len(problems)))
+            return 1
+        print("verify-state: %s -- audit clean" % run_id)
+        return 0
+
     if len(argv) < 2:
-        die("usage: verify-state.py <run-id> <key> [<key> ...]")
+        die("usage: verify-state.py <run-id> <key> [<key> ...]\n"
+            "       verify-state.py --audit <run-id>")
 
     run_id, keys = argv[0], argv[1:]
     state, path = load(run_id)

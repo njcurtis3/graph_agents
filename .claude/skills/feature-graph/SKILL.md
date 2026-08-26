@@ -181,11 +181,39 @@ id (or a direct path to a `state.json`) plus one or more key names — dotted ke
 and **not still the `_schema.json` placeholder**. On failure it exits 1 and prints one
 line naming the key. It never writes.
 
-That is the whole of it. **It is a check, not a gate.** Nothing fires it automatically:
-no hook invokes it, and the only references to it in the fleet are the call sites in this
-file. It runs because the orchestrator chooses to run it.
+That is the whole of the named-key mode, and **it is a check, not a gate** — it runs
+because the orchestrator chooses to run it. It has to be that way: it needs to be told
+which key to look at, and only the orchestrator knows which node just returned.
 
-Seven things it does **not** check. Do not oversell it:
+### `--audit` — the half that fires itself
+
+```bash
+python graph_agents/.graph/verify-state.py --audit $RUN
+```
+
+Added 2026-08-26. Takes no key, because it asks a different question: given everything
+written so far, **did the edges hold?** It reports only violations —
+
+- `builders.<slice>` written while `approved_by_human` is not `true` (step 4 skipped)
+- `reviews.<slice>` written with no `builders.<slice>` behind it
+- `integrator` written while any slice is `REJECT` or unreviewed (step 6 jumped)
+- `ops.actions` non-empty with no approval (step 7's gate skipped)
+- `status: done` with a planned slice unbuilt, or a review that is not `PASS`
+- template text still sitting inside an otherwise-written key (blind spot 6 below)
+
+`.claude/hooks/flag-state-gap.py` fires this on every `Write`/`Edit` of any
+`state.json`, subagent writes included, so a node that breaks an edge is told
+immediately rather than at the next time someone remembers to check. You can still run
+it by hand; you mostly will not need to.
+
+It is silent on a half-filled run — mid-run, most keys are unwritten and that is what
+work in progress looks like. It is **not** a substitute for the named-key calls above:
+those catch a node that returned a summary without writing anything, which mid-run
+`--audit` deliberately says nothing about.
+
+Seven things the named-key mode does **not** check. Do not oversell it — and note that
+`--audit` now covers (6) and fires itself, so (7) is no longer true of the script as a
+whole:
 
 1. **Content correctness.** A key holding `{"status": "done"}` and nothing else passes.
 2. **Key shape.** It consults `_schema.json` for placeholder *identity* only, never for
@@ -199,8 +227,11 @@ Seven things it does **not** check. Do not oversell it:
    template passes.
 6. **Partial placeholders.** Identity is compared on the whole value, so a
    `builders.<slice>` whose `status` was filled in while `branch` is still the template's
-   description passes.
-7. **It is advisory, not enforcing.** See above: nothing fires it for you.
+   description passes. — **`--audit` catches this**, on string leaves.
+7. ~~**It is advisory, not enforcing.**~~ — **superseded 2026-08-26.** `--audit` fires
+   from `flag-state-gap.py` on every `state.json` write. Ordering is now enforced;
+   **content still is not**, and (1)–(5) above are untouched by it. A node that writes
+   confident nonsense into its own key on schedule still sails through both modes.
 
 ## Orchestrator rules
 
@@ -211,6 +242,11 @@ Seven things it does **not** check. Do not oversell it:
 - **Never review a slice yourself.** You have seen the builder's summary; your context is
   contaminated. Always a fresh `reviewer`.
 - Append to `log` in state at every transition. That log is how a fresh session resumes.
+- **Before you set `status: done`, run `verify-state.py --audit $RUN` and get exit 0.**
+  The hook will tell you anyway, but at that point you have already written the close.
+  `2026-08-25-fleet-hardening` is the cautionary case: its log says "5/5 slices PASS"
+  while its `reviews.s4`/`s5` keys still record attempt 1's `REJECT` and `builders.closing_fix`
+  has no reviewer at all. Nothing caught it for a day, because nothing was looking.
 - Report faithfully. If a slice was skipped, a test failed, or you dropped scope, say so
   explicitly in the final summary.
 

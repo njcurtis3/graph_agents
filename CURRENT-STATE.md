@@ -14,7 +14,13 @@
 > repo's `git log`; `builder.md:3` against the `GRAPH.md` §4 footnote that described it;
 > and the staleness hook, by running 20 synthetic payloads through it (both `tool_input`
 > and `tool_response` shapes, junction and canonical paths, closed and parked runs).
-> **Not** re-checked this pass: `verify-state.py`'s four exit paths, the portfolio
+> **Second 2026-08-26 pass** (direct edit, no graph run — one hook plus one script mode is
+> below the stop-rule threshold): `verify-state.py --audit` and `flag-state-gap.py`, both
+> driven through 12 synthetic cases, plus every line count in the tables below re-measured
+> with `wc -l`. That pass also read all four run `state.json` files through the new audit,
+> which is how gap #7's `fleet-hardening` finding surfaced.
+>
+> **Not** re-checked this pass: `verify-state.py`'s four *named-key* exit paths, the portfolio
 > `entry_docs` sweep, and FleetView — all three were verified 2026-08-26 by the audit that
 > produced this pass's fixes, and are recorded below as that audit found them.
 
@@ -51,15 +57,16 @@ this fleet has written a line of product code yet**", eleven hours after one had
 | Thing | State | Path |
 |---|---|---|
 | Umbrella constitution | live | `graph_agents/CLAUDE.md` (78 ln) |
-| Graph spec | live | `graph_agents/GRAPH.md` (219 ln) |
+| Graph spec | live | `graph_agents/GRAPH.md` (231 ln) |
 | Portfolio index | live, 6 nodes — 3 products/sites, 2 tools, 1 vendor drop — ids and `kind` verified | `graph_agents/portfolio/registry.json` (139 ln), **untracked on purpose** — see below |
 | Run-state schema | live | `graph_agents/.graph/runs/_schema.json` (28 ln) |
 | Root memory shim | live, `@`-imports the constitution | `repos/CLAUDE.md` |
 | `.claude` junction | live, verified same-dir | `repos/.claude` → `graph_agents/.claude` |
 | 6 agent nodes | live; 4 of 6 have executed as registered agents | `.claude/agents/` |
-| 3 skills | `feature-graph` exercised 3× (220 ln); `new-app` still unused (72 ln); `fleetview` exercised (56 ln) | `.claude/skills/` |
+| 3 skills | `feature-graph` exercised 3× (256 ln); `new-app` still unused (72 ln); `fleetview` exercised (56 ln) | `.claude/skills/` |
 | Staleness hook | live, **observed firing** 2026-08-25; rewritten 2026-08-26 (junction paths, run-close, `.py`) — 20 synthetic payloads pass | `.claude/settings.json`, `.claude/hooks/flag-stale-state.py` (114 ln) |
-| State verifier | live, advisory only — a check, not a gate. All four exit paths re-proven 2026-08-26 | `graph_agents/.graph/verify-state.py` (129 ln) |
+| State verifier | live, **two modes**. Named-key mode: advisory, a check the orchestrator runs. `--audit` mode (added 2026-08-26): fires from a hook, checks edge ordering, 12 synthetic cases pass | `graph_agents/.graph/verify-state.py` (298 ln) |
+| State-audit hook | live, third `PostToolUse` entry — fires `--audit` on every `Write`/`Edit` of a `state.json`, silent on `_schema.json`, on non-run files, and on a merely half-filled run. **Caught a real defect on first run** (see gap #7) | `.claude/settings.json`, `.claude/hooks/flag-state-gap.py` (125 ln) |
 | Invariant checker | live, advisory only, **observed catching a violation** — clean across all 6 apps 2026-08-26, builder and reviewer each independently confirmed it flags synthetic cross-app imports and ignores `registry.json`/doc prose/`@huntstack/*` | `graph_agents/.graph/verify-invariant.py` |
 | Cross-app-import hook | live, second `PostToolUse` entry alongside the staleness hook — fires on `Write`/`Edit` inside a registered app dir, reuses the checker's `check_file()` | `.claude/settings.json`, `.claude/hooks/flag-cross-app-import.py` |
 | Fleet git repo | live, root = `graph_agents/`, branch `master`, no remote | `graph_agents/.git` |
@@ -160,12 +167,14 @@ header warns about. The hook creates the obligation; a real verification pass di
 2. **`integrator` and `ops` have never executed.** `builder` and `reviewer` now have —
    that half of this gap closed on 2026-08-25 — but the fan-**in** end of the diamond is
    untested, and so is `ops`. Both keys are still the untouched template in **every** run
-   on disk, run 3 included, which is why `verify-state.py` exits 1 on them. Correctly so:
-   all three runs were `single-loop`, and under the 2026-08-26 merge ruling a single-loop
+   on disk, runs 3 and 4 included, which is why `verify-state.py` exits 1 on them.
+   `--audit` stays silent on them, correctly: it flags an `integrator` that ran too early,
+   never one that has not run. Correctly so:
+   all four runs were `single-loop`, and under the 2026-08-26 merge ruling a single-loop
    run reaches `integrator` only when its merge conflicts. Run 3's did not. Closing this
    gap now needs either a real diamond or a conflicting merge — it will not close by
    accident.
-3. **No diamond has ever run.** All three runs resolved to `single-loop`, all three
+3. **No diamond has ever run.** All four runs resolved to `single-loop`, all four
    correctly — run 3's architect refused to fan out because its three candidate slices were
    producer/consumer, not independent: `s2` consumed the exact `data-*` contract `s1` emitted
    and `s3`'s `done_when` needed both. Disjoint file sets are not sufficient for a diamond;
@@ -231,6 +240,39 @@ header warns about. The hook creates the obligation; a real verification pass di
    passes; (6) partial placeholders — a key whose `status` is filled while `branch` is
    still template text passes; (7) it is advisory, not enforcing — nothing fires it
    automatically. The orchestrator still hand-writes every state update.
+
+   **Update 2026-08-26 — ordering is now machinery; content still is not.**
+   `verify-state.py` gained a second mode, `--audit <run-id>`, and
+   `graph_agents/.claude/hooks/flag-state-gap.py` fires it as a third `PostToolUse` entry
+   on every `Write`/`Edit` of any `state.json`, subagent writes included. The named-key
+   mode could never be hook-fired for a structural reason worth recording: it must be told
+   *which* key to check, and a hook sees only a file path. `--audit` asks the question a
+   lone state file can answer instead — **did the edges hold?** It reports builders written
+   while `approved_by_human` is false, a review with no build behind it, an `integrator`
+   over a slice that is `REJECT` or unreviewed, `ops.actions` with no approval, a run
+   closed `done` with a slice unbuilt or not `PASS`, and template strings left inside an
+   otherwise-written key. That last one closes blind spot (6) above; the hook closes (7).
+   **(1)–(5) are untouched** — a node writing confident nonsense into its own key, on
+   schedule, still passes both modes.
+
+   Verified by 12 synthetic cases: 8 hook payloads (non-run file, `_schema.json`, clean
+   run, violating run, `Write`-shape `tool_response.filePath`, gate-skip fixture,
+   unparseable state file, missing path — the first three silent, the rest firing
+   correctly) and 4 audit fixtures (leftover placeholder, fan-in over a `REJECT`, a
+   `done` run with a planned slice never built, and a healthy `done` run that must stay
+   clean). Deliberately silent mid-run: a half-filled state file is what work in progress
+   looks like, and a hook that complained at every intermediate write would be disabled
+   inside a day.
+
+   **It caught a real defect on its first run, in this fleet's own history.**
+   `2026-08-25-fleet-hardening` is `status: done` and its `log` says "5/5 slices PASS",
+   but on disk `reviews.s4` and `reviews.s5` still record attempt 1's `REJECT`, and
+   `builders.closing_fix` — a sixth slice, not in the architect's plan — has no reviewer
+   key at all. The attempt-2 PASSes CURRENT-STATE.md has been reporting since 2026-08-25
+   were never written into state by anyone. The historical run files are left **as they
+   are**: they are a record, and rewriting another node's key to make an audit green is
+   the precise failure the contract exists to prevent. `feature-graph`'s orchestrator
+   rules now require `--audit` to exit 0 before `status: done` is written.
 8. ~~`builder.md:3` promises isolation the fleet cannot always deliver.~~ **Closed**
    2026-08-25, direct edit (no graph run — five one-line fixes below the stop-rule
    threshold). Frontmatter now reads: "Isolated by a git worktree and run in parallel with
@@ -256,7 +298,7 @@ header warns about. The hook creates the obligation; a real verification pass di
 | Run | App | Shape | Status | Outcome |
 |---|---|---|---|---|
 | `2026-08-25-refuge-freshness` | huntstack | single-loop | **parked** at human gate | Plan complete, unapproved, no code written |
-| `2026-08-25-fleet-hardening` | umbrella (the fleet itself) | single-loop, 5 slices | **executed**, approved at the gate | Fleet got a git repo, a state contract in all 6 nodes, an owner for `branch`, `verify-state.py`, and this snapshot corrected |
+| `2026-08-25-fleet-hardening` | umbrella (the fleet itself) | single-loop, 5 slices | **executed**, approved at the gate — but its **state file is an incomplete record**: see gap #7 | Fleet got a git repo, a state contract in all 6 nodes, an owner for `branch`, `verify-state.py`, and this snapshot corrected. `reviews.s4`/`s5` still hold attempt 1's `REJECT` and `builders.closing_fix` was never reviewed; found 2026-08-26 by the new state audit, left unedited on purpose |
 | `2026-08-25-transclusion-external-previews` | App 1 | single-loop, 1 slice | **executed**, approved at the gate | First product code by this fleet. External-link popovers no longer surface browser frame-block errors. Merged to `main` as `79c3c32` |
 | `2026-08-26-invariant-check` | umbrella (the fleet itself) | single-loop, 1 slice | **executed**, approved at the gate, PASS on attempt 1 | Closed gap #5: `verify-invariant.py` + `flag-cross-app-import.py` make the umbrella invariant a live, automated check instead of prose. Committed directly to `graph_agents` `master` (`9899e85`) — no branch, nothing to merge |
 
@@ -446,6 +488,8 @@ What `2026-08-25-refuge-freshness` found in huntstack, independent of the featur
 | 2026-08-26 | **In `single-loop`, the orchestrator merges the one reviewed branch itself; on conflict it stops and spawns `integrator`** — user ruling | The merge was previously unassigned work that the orchestrator did anyway, in a skill that says "never implement anything yourself." Merging already-reviewed work writes no code and makes no choice, so it is bookkeeping and belongs to the orchestrator. Resolving a conflict *is* a judgment call about code, so it stays with the node that owns merges. Cheaper than spawning `integrator` on every single-loop run |
 | 2026-08-26 | The staleness hook flags **history** drift as well as definition drift, but only at `status: "done"` | A closed run is what falsified this file's headline claim. Firing on every mid-run write would restore the noise the original `.graph/runs/**` skip existed to prevent; firing once at close costs nothing and catches the only run event that changes what is true |
 | 2026-08-26 | The hook resolves paths with `os.path.realpath()` before routing | `repos/.claude` is a junction, so fleet files have two absolute paths — and `GRAPH.md` §2 documents the one that did *not* contain `/graph_agents/`. A textual guard was silent on the documented path |
+| 2026-08-26 | **The hook fires `--audit`, not the named-key check** — and it stays silent mid-run | The named-key mode is unhookable by construction: it must be told which key to inspect, and a `PostToolUse` hook knows only a file path, never which node just returned. So the hook asks the question a lone `state.json` *can* answer — did the edges hold? Reporting merely-unwritten keys mid-run was rejected outright: that is what a run in progress looks like, and a hook that fires on every intermediate write gets disabled, after which it enforces nothing. This supersedes the 2026-08-25 "advisory, not a gate" decision for **ordering only**; content correctness is still unchecked and deliberately so |
+| 2026-08-26 | `fleet-hardening`'s stale `reviews.s4`/`s5` keys are **left as they are** | The audit found a closed run whose state contradicts its own log. Editing those keys to make the audit green would be the orchestrator writing a reviewer's key — the exact contract violation the state file exists to prevent — and would destroy the evidence that the fleet ran for a day with an unverified close. The record stands; the gap list carries the finding |
 | 2026-08-26 | A prose cross-reference from an app to `graph_agents/` is **not** a forbidden edge; the test is whether deleting `graph_agents/` breaks the app's build, test or deploy | `new-app` mandates apps carry `see ../graph_agents/CLAUDE.md` verbatim, which read as a violation of "no app depends on the fleet". The distinction was real but unwritten, so the constitution now states it mechanically instead of leaving it to be re-litigated |
 
 ---
@@ -479,3 +523,4 @@ What `2026-08-25-refuge-freshness` found in huntstack, independent of the featur
 | 2026-08-26 | Constitution and root `CLAUDE.md`: prose cross-references named as allowed with a mechanical test; "standalone product" → "standalone node", since `fleetview` is a tool and `thrml` a vendor drop |
 | 2026-08-26 | Roster line counts re-measured — `GRAPH.md` 215→219, `verify-state.py` 125→129, `builder.md` 49→50 had drifted; registry count corrected 5→6 |
 | 2026-08-26 | Run `invariant-check` against the fleet itself: `verify-invariant.py` + `flag-cross-app-import.py` close gap #5. PASS on attempt 1, committed directly to `graph_agents` `master` as `9899e85` |
+| 2026-08-26 | Direct fix (below the stop-rule threshold): `verify-state.py --audit` + `flag-state-gap.py` make the graph's **edge ordering** enforced instead of advisory. Gap #7 blind spots (6) and (7) closed, (1)–(5) explicitly still open. The audit's first run found `fleet-hardening`'s state file contradicting its own log |

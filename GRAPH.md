@@ -144,9 +144,21 @@ a node that returned a summary without writing anything.
 It does **not** enforce the contract above. It cannot see *who* wrote a key, because
 `state.json` records no authorship, so rule 2's "never rewrite another node's key" is
 invisible to it and an orchestrator hand-writing every key passes cleanly. It also does
-not check content, key shape, staleness, or partially-filled placeholders, and nothing
-fires it automatically — it is a check the orchestrator chooses to run, not a gate. The
-full list of what it misses is in `feature-graph` § `verify-state.py`.
+not check content, key shape, or staleness. The full list of what it misses is in
+`feature-graph` § `verify-state.py`.
+
+**The edges, however, are now machinery.** `verify-state.py --audit <run-id>` asks the
+question a state file can answer without being told which node just ran: did the edges
+hold? Builders written while `approved_by_human` is still false, a review with no build
+behind it, a fan-in over a slice that never passed, a run closed `done` with a slice
+unbuilt or not `PASS`, template text left sitting inside an otherwise-written key. That
+mode is fired automatically by `.claude/hooks/flag-state-gap.py` on every `Write`/`Edit`
+of a `state.json` — including writes made by subagents, so the complaint lands on the
+node that just wrote. It is silent on a merely half-filled run, because that is what work
+in progress looks like.
+
+So the split is: **ordering is enforced, content is not.** A node can still write
+nonsense into its own key on schedule and nothing will notice.
 
 Schema in `graph_agents/.graph/runs/_schema.json`. Because state is on disk, a run survives a
 crashed session, a `/clear`, or you walking away — pick it back up by pointing a fresh
