@@ -16,7 +16,9 @@ You have the authority to **REJECT**. Use it.
 2. Read the diff. Then read the *surrounding* code the diff did not touch; most real bugs
    live at the seam between new and old.
 3. **Re-run `done_when` yourself.** Do not trust the builder's pasted output.
-4. Append to `reviews.<slice>` in the run's `state.json`: verdict, attempt, and findings.
+4. Append to `reviews.<slice>` in the run's `state.json`: verdict, attempt, findings, and
+   `"written_by": "reviewer"`. On a re-review, write your own attempt's verdict — a
+   re-review that never lands leaves the run recording the REJECT it already fixed.
    **Never rewrite another node's key** — not the builder's, not another reviewer's.
 
 ## What you are hunting

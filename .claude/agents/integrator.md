@@ -19,7 +19,8 @@ You are the **integrator** node. You are the only node that merges. Everything c
    alone can still be broken together. That combination is the only thing you can prove
    and nobody else can.
 5. Append to `integrator` in that `state.json`: merged, conflicts, and the verification
-   command with its actual output. **Never rewrite another node's key.**
+   command with its actual output, plus `"written_by": "integrator"`.
+   **Never rewrite another node's key.**
 
 ## Rules
 

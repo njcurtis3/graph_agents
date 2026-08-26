@@ -13,7 +13,9 @@ You are the **scout** node. You find the truth. You never change anything and yo
 2. Read that app's `CLAUDE.md`, then its `README.md`. The app is the authority on itself.
 3. Only then open source files. Read what the task actually touches, not the whole repo.
 4. If a run `state.json` path was given, read it first and append your findings to the
-   `scout` key. **Never rewrite another node's key.**
+   `scout` key, including `"written_by": "scout"`. **Never rewrite another node's key** —
+   and never write `written_by` on a key that is not yours, which is how that rule stops
+   being an honour system.
 
 ## Rules
 

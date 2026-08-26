@@ -18,7 +18,11 @@
 > below the stop-rule threshold): `verify-state.py --audit` and `flag-state-gap.py`, both
 > driven through 12 synthetic cases, plus every line count in the tables below re-measured
 > with `wc -l`. That pass also read all four run `state.json` files through the new audit,
-> which is how gap #7's `fleet-hardening` finding surfaced.
+> which is how gap #7's `fleet-hardening` finding surfaced. A **third** 2026-08-26 pass
+> added `written_by` authorship: 6 more fixtures (healthy, orchestrator-forged builder key,
+> builder-stamped review, partly unstamped, legacy unstamped, template text left in), all
+> 10 earlier fixtures re-run as regressions, both CLI modes re-proven against all four real
+> runs, and every roster line count re-measured again.
 >
 > **Not** re-checked this pass: `verify-state.py`'s four *named-key* exit paths, the portfolio
 > `entry_docs` sweep, and FleetView — all three were verified 2026-08-26 by the audit that
@@ -57,15 +61,15 @@ this fleet has written a line of product code yet**", eleven hours after one had
 | Thing | State | Path |
 |---|---|---|
 | Umbrella constitution | live | `graph_agents/CLAUDE.md` (78 ln) |
-| Graph spec | live | `graph_agents/GRAPH.md` (231 ln) |
+| Graph spec | live | `graph_agents/GRAPH.md` (237 ln) |
 | Portfolio index | live, 6 nodes — 3 products/sites, 2 tools, 1 vendor drop — ids and `kind` verified | `graph_agents/portfolio/registry.json` (139 ln), **untracked on purpose** — see below |
-| Run-state schema | live | `graph_agents/.graph/runs/_schema.json` (28 ln) |
+| Run-state schema | live | `graph_agents/.graph/runs/_schema.json` (30 ln) |
 | Root memory shim | live, `@`-imports the constitution | `repos/CLAUDE.md` |
 | `.claude` junction | live, verified same-dir | `repos/.claude` → `graph_agents/.claude` |
 | 6 agent nodes | live; 4 of 6 have executed as registered agents | `.claude/agents/` |
-| 3 skills | `feature-graph` exercised 3× (256 ln); `new-app` still unused (72 ln); `fleetview` exercised (56 ln) | `.claude/skills/` |
+| 3 skills | `feature-graph` exercised 3× (265 ln); `new-app` still unused (72 ln); `fleetview` exercised (56 ln) | `.claude/skills/` |
 | Staleness hook | live, **observed firing** 2026-08-25; rewritten 2026-08-26 (junction paths, run-close, `.py`) — 20 synthetic payloads pass | `.claude/settings.json`, `.claude/hooks/flag-stale-state.py` (114 ln) |
-| State verifier | live, **two modes**. Named-key mode: advisory, a check the orchestrator runs. `--audit` mode (added 2026-08-26): fires from a hook, checks edge ordering, 12 synthetic cases pass | `graph_agents/.graph/verify-state.py` (298 ln) |
+| State verifier | live, **two modes**. Named-key mode: advisory, a check the orchestrator runs. `--audit` mode (added 2026-08-26): fires from a hook, checks edge ordering, 12 synthetic cases pass | `graph_agents/.graph/verify-state.py` (375 ln) |
 | State-audit hook | live, third `PostToolUse` entry — fires `--audit` on every `Write`/`Edit` of a `state.json`, silent on `_schema.json`, on non-run files, and on a merely half-filled run. **Caught a real defect on first run** (see gap #7) | `.claude/settings.json`, `.claude/hooks/flag-state-gap.py` (125 ln) |
 | Invariant checker | live, advisory only, **observed catching a violation** — clean across all 6 apps 2026-08-26, builder and reviewer each independently confirmed it flags synthetic cross-app imports and ignores `registry.json`/doc prose/`@huntstack/*` | `graph_agents/.graph/verify-invariant.py` |
 | Cross-app-import hook | live, second `PostToolUse` entry alongside the staleness hook — fires on `Write`/`Edit` inside a registered app dir, reuses the checker's `check_file()` | `.claude/settings.json`, `.claude/hooks/flag-cross-app-import.py` |
@@ -86,18 +90,20 @@ this explanation and this explanation did not exist; both ends were fixed 2026-0
 
 | Node | Model | Tools | Lines | Has executed? |
 |---|---|---|---|---|
-| `scout` | haiku | Read, Glob, Grep, Bash, WebSearch, WebFetch | 39 | yes, 2 runs |
-| `architect` | opus | Read, Glob, Grep, Bash | 70 | yes, 2 runs |
-| `builder` | opus | Read, Write, Edit, Glob, Grep, Bash | 50 | yes, 6 slices |
-| `reviewer` | opus | Read, Glob, Grep, Bash | 52 | yes, 9 reviews |
-| `integrator` | opus | Read, Write, Edit, Glob, Grep, Bash | 40 | **no** |
+| `scout` | haiku | Read, Glob, Grep, Bash, WebSearch, WebFetch | 41 | yes, 2 runs |
+| `architect` | opus | Read, Glob, Grep, Bash | 72 | yes, 2 runs |
+| `builder` | opus | Read, Write, Edit, Glob, Grep, Bash | 51 | yes, 6 slices |
+| `reviewer` | opus | Read, Glob, Grep, Bash | 54 | yes, 9 reviews |
+| `integrator` | opus | Read, Write, Edit, Glob, Grep, Bash | 41 | **no** |
 | `ops` | opus | Read, Write, Edit, Glob, Grep, Bash | 43 | **no** |
 
 Model tiers and tool grants were re-read from frontmatter this pass and are unchanged
 since creation. Line counts were re-counted with `wc -l` on 2026-08-26 — three had drifted
 (`GRAPH.md` 215→219, `verify-state.py` 125→129, `builder.md` 49→50) because the direct fix
 that closed gaps #8–#12 edited those files without re-counting. `scout` and `architect` are
-now 3 runs each.
+now 3 runs each. Re-counted again after the authorship pass, which added a `written_by`
+line to all six node files: `scout` 39→41, `architect` 70→72, `builder` 50→51, `reviewer`
+52→54, `integrator` 40→41, `ops` unchanged at 43.
 
 Execution counts run through the end of run `2026-08-25-transclusion-external-previews`:
 **6 builder slices** (5 in fleet-hardening + 1 in run 3) and **9 reviews** — fleet-hardening
@@ -225,7 +231,8 @@ header warns about. The hook creates the obligation; a real verification pass di
    identically to `tool_input.file_path` on all 10 path cases. That is a synthetic payload,
    not a live `Write` from Claude Code, so it proves the branch works and not that the
    harness sends that shape. Whether the hook fired during `s1`–`s4` remains unknowable.
-7. **State-file writes are convention, not machinery — now partially checkable.**
+7. **State-file writes were convention, not machinery — ordering and authorship are now
+   enforced; content is not.**
    `graph_agents/.graph/verify-state.py` (added 2026-08-25) exits 0 only if a named key
    is present, non-empty, and not still the `_schema.json` placeholder, and
    `feature-graph` steps 2, 3, 5 and 6 call it. That is a real narrowing: a node that
@@ -252,8 +259,35 @@ header warns about. The hook creates the obligation; a real verification pass di
    over a slice that is `REJECT` or unreviewed, `ops.actions` with no approval, a run
    closed `done` with a slice unbuilt or not `PASS`, and template strings left inside an
    otherwise-written key. That last one closes blind spot (6) above; the hook closes (7).
-   **(1)–(5) are untouched** — a node writing confident nonsense into its own key, on
-   schedule, still passes both modes.
+
+   **Update 2026-08-26, same day, second pass — blind spot (3), authorship, is closed
+   too.** `_schema.json` gained a `written_by` field on all six node keys, each node's
+   `.md` now tells it to stamp its own, and `--audit` maps key → owning node
+   (`builders.*` → `builder`, `reviews.*` → `reviewer`, and so on) and rejects any other
+   name. The two forgeries that matter are now detected by name: `builders.s1` stamped
+   `orchestrator`, and `reviews.s1` stamped `builder` — a builder reviewing itself, which
+   `GRAPH.md` calls a fake edge and which nothing could previously see. This also
+   constrains the orchestrator directly: filling a node's key in itself now fails the
+   audit whether it stamps honestly (`orchestrator` is not the owner) or dishonestly
+   (that is forgery). **Runs opened before this are not retro-fitted** — all four report
+   exactly one line saying the run carries no authorship at all, which is true and is the
+   point; back-dating stamps would manufacture evidence.
+
+   **(1), (2), (4) and (5) remain open** — content correctness, key shape, staleness, and
+   the numbers/booleans exemption. A node writing confident nonsense into its own key, on
+   schedule, under its own name, still passes both modes.
+
+   One regression was found and fixed during this pass, and it is the general hazard of
+   placeholder-identity checking: adding `written_by` to `_schema.json` meant every older
+   run's *untouched* `integrator` key stopped being byte-identical to the template, so
+   both modes began treating it as written — `--audit` then complained about the template
+   text inside it, and the named-key mode started **passing** `integrator` on all four
+   runs, contradicting gap #2 above. Whole-value equality was replaced with
+   `is_untouched()`, which looks for evidence of writing (a string leaf differing from
+   the template, a key the template lacks, content in a list the template left empty)
+   rather than exact identity. Re-verified after the fix: `integrator ops` exits 1 on all
+   four runs, a fresh copy of the template fails all 6 keys, and run 4's four written
+   keys still pass.
 
    Verified by 12 synthetic cases: 8 hook payloads (non-run file, `_schema.json`, clean
    run, violating run, `Write`-shape `tool_response.filePath`, gate-skip fixture,
@@ -489,6 +523,7 @@ What `2026-08-25-refuge-freshness` found in huntstack, independent of the featur
 | 2026-08-26 | The staleness hook flags **history** drift as well as definition drift, but only at `status: "done"` | A closed run is what falsified this file's headline claim. Firing on every mid-run write would restore the noise the original `.graph/runs/**` skip existed to prevent; firing once at close costs nothing and catches the only run event that changes what is true |
 | 2026-08-26 | The hook resolves paths with `os.path.realpath()` before routing | `repos/.claude` is a junction, so fleet files have two absolute paths — and `GRAPH.md` §2 documents the one that did *not* contain `/graph_agents/`. A textual guard was silent on the documented path |
 | 2026-08-26 | **The hook fires `--audit`, not the named-key check** — and it stays silent mid-run | The named-key mode is unhookable by construction: it must be told which key to inspect, and a `PostToolUse` hook knows only a file path, never which node just returned. So the hook asks the question a lone `state.json` *can* answer — did the edges hold? Reporting merely-unwritten keys mid-run was rejected outright: that is what a run in progress looks like, and a hook that fires on every intermediate write gets disabled, after which it enforces nothing. This supersedes the 2026-08-25 "advisory, not a gate" decision for **ordering only**; content correctness is still unchecked and deliberately so |
+| 2026-08-26 | **Authorship is stamped by the node itself, and pre-2026-08-26 runs are not retro-fitted** — they report one line saying they carry no stamps | `written_by` is self-reported, so it stops an honest orchestrator taking a shortcut, not a determined liar; that is still the whole gap, because the failure mode here is convenience, not malice. Back-filling stamps onto the four existing runs would manufacture evidence about who wrote keys nobody recorded — and one of those runs (`fleet-hardening`) is already known to misreport itself. One line per legacy run, not one per key, so the runs that have *specific* violations stay readable |
 | 2026-08-26 | `fleet-hardening`'s stale `reviews.s4`/`s5` keys are **left as they are** | The audit found a closed run whose state contradicts its own log. Editing those keys to make the audit green would be the orchestrator writing a reviewer's key — the exact contract violation the state file exists to prevent — and would destroy the evidence that the fleet ran for a day with an unverified close. The record stands; the gap list carries the finding |
 | 2026-08-26 | A prose cross-reference from an app to `graph_agents/` is **not** a forbidden edge; the test is whether deleting `graph_agents/` breaks the app's build, test or deploy | `new-app` mandates apps carry `see ../graph_agents/CLAUDE.md` verbatim, which read as a violation of "no app depends on the fleet". The distinction was real but unwritten, so the constitution now states it mechanically instead of leaving it to be re-litigated |
 
@@ -524,3 +559,4 @@ What `2026-08-25-refuge-freshness` found in huntstack, independent of the featur
 | 2026-08-26 | Roster line counts re-measured — `GRAPH.md` 215→219, `verify-state.py` 125→129, `builder.md` 49→50 had drifted; registry count corrected 5→6 |
 | 2026-08-26 | Run `invariant-check` against the fleet itself: `verify-invariant.py` + `flag-cross-app-import.py` close gap #5. PASS on attempt 1, committed directly to `graph_agents` `master` as `9899e85` |
 | 2026-08-26 | Direct fix (below the stop-rule threshold): `verify-state.py --audit` + `flag-state-gap.py` make the graph's **edge ordering** enforced instead of advisory. Gap #7 blind spots (6) and (7) closed, (1)–(5) explicitly still open. The audit's first run found `fleet-hardening`'s state file contradicting its own log |
+| 2026-08-26 | Authorship: `written_by` on all six node keys in `_schema.json`, stamped by each node, checked by `--audit` against an owner map. Gap #7 blind spot (3) closed — a `builders.*` key stamped `orchestrator`, or a `reviews.*` key stamped `builder`, now fails. Placeholder detection rewritten as `is_untouched()` after the new field broke whole-value template identity on older runs |

@@ -15,8 +15,9 @@ You are a **builder** node. You implement exactly one slice. Not the plan — yo
 3. Implement. Run your slice's `done_when` command. It must actually pass.
 4. Append to `builders.<your-slice>` in the run's `state.json`: status, branch, files
    changed, notes. `branch` is the branch your slice's work landed on, or an empty
-   string when the target is not a git repo at all.
-   **Never rewrite another node's key.**
+   string when the target is not a git repo at all. Stamp `"written_by": "builder"` —
+   `verify-state.py --audit` rejects that key written by anyone else, orchestrator
+   included. **Never rewrite another node's key.**
 
 ## Hard boundaries
 

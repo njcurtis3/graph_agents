@@ -111,6 +111,19 @@ def die(message):
 # same shape, so placeholder identity for `builders.s7` is judged against `builders.s1`.
 GENERIC = {"builders": "s1", "reviews": "s1"}
 
+# Which node is allowed to write which key. `written_by` (added 2026-08-26) is the only
+# authorship this file has ever recorded; before it, "never rewrite another node's key"
+# was unverifiable by construction -- an orchestrator hand-writing all six keys read
+# exactly like six nodes doing their jobs.
+OWNER = {"scout": "scout", "architect": "architect", "integrator": "integrator",
+         "ops": "ops", "builders": "builder", "reviews": "reviewer"}
+
+
+def owner_of(key):
+    """The node that must have written this key, or None if nobody owns it."""
+    head = key.split(".")[0]
+    return OWNER.get(head)
+
 
 def template_slot(template, key):
     """The template value a real key should be compared against. (found, value)."""
@@ -120,13 +133,40 @@ def template_slot(template, key):
     return resolve(template, ".".join(parts))
 
 
+def is_untouched(value, tpl):
+    """True when nothing in `value` is evidence that a node wrote it.
+
+    Byte-equality against the template is not enough, and 2026-08-26 proved it: adding
+    `written_by` to `_schema.json` made every OLD run's untouched `integrator` key stop
+    matching the new template, so the audit called it written and then complained about
+    the template text inside it. A template that may grow cannot be compared whole.
+
+    So: evidence of writing is a string leaf that differs from the template's, a key the
+    template does not have, or content in a list the template left empty. Numbers and
+    booleans are no evidence either way -- that is blind spot (5), still open.
+    """
+    if isinstance(value, dict):
+        if not isinstance(tpl, dict):
+            return False
+        return all(k in tpl and is_untouched(v, tpl[k]) for k, v in value.items())
+    if isinstance(value, list):
+        if not isinstance(tpl, list):
+            return False
+        if not tpl:
+            return not value            # no exemplar to match, so any content is writing
+        return all(is_untouched(item, tpl[0]) for item in value)
+    if isinstance(value, str):
+        return isinstance(tpl, str) and value == tpl
+    return True
+
+
 def unwritten(state, template, key):
-    """True when a key is absent, empty, or still verbatim template text."""
+    """True when a key is absent, empty, or still nothing but template text."""
     found, value = resolve(state, key)
     if not found or is_empty(value):
         return True
     placeheld, placeholder = template_slot(template, key)
-    return bool(placeheld and value == placeholder)
+    return bool(placeheld and is_untouched(value, placeholder))
 
 
 def _leftover_placeholders(value, tpl, path, out):
@@ -139,7 +179,10 @@ def _leftover_placeholders(value, tpl, path, out):
     """
     if isinstance(value, dict) and isinstance(tpl, dict):
         for k, v in value.items():
-            if k in tpl and k not in ("slice", "$comment"):
+            # `written_by` is excluded because the authorship check below judges it
+            # strictly harder -- it must equal the OWNING NODE's name, so leaving the
+            # template's description there is already reported, once, as a wrong owner.
+            if k in tpl and k not in ("slice", "$comment", "written_by"):
                 _leftover_placeholders(v, tpl[k], "%s.%s" % (path, k) if path else k, out)
     elif isinstance(value, list) and isinstance(tpl, list) and tpl:
         for i, item in enumerate(value):
@@ -212,6 +255,37 @@ def audit(state, template):
                     "integrator is written but reviews.%s is %s -- fan-in (step 6) runs "
                     "only when EVERY slice has passed" % (s, v or "unwritten"))
 
+    # -- authorship. Every written node key must name the node that wrote it.
+    node_keys = ["scout", "architect", "integrator", "ops"] + \
+                ["builders.%s" % s for s in known] + ["reviews.%s" % s for s in known]
+    written = [k for k in node_keys if not unwritten(state, template, k)]
+    stamped = [k for k in written
+               if isinstance(resolve(state, "%s.written_by" % k)[1], str)
+               and resolve(state, "%s.written_by" % k)[1].strip()]
+
+    if written and not stamped:
+        # A run from before `written_by` existed, or one where nobody stamped anything.
+        # ONE line, not one per key: the finding is "this run has no authorship at all",
+        # and repeating it six times would bury the violations that differ.
+        problems.append(
+            "no key in this run is authorship-stamped -- `written_by` was added to "
+            "_schema.json on 2026-08-26; runs opened before that are unverifiable on "
+            "the never-rewrite-another-node's-key contract and stay that way")
+    else:
+        for key in written:
+            expected = owner_of(key)
+            actual = resolve(state, "%s.written_by" % key)[1]
+            if key not in stamped:
+                problems.append(
+                    "%s is written but has no `written_by` -- an unstamped key in a run "
+                    "that stamps the others is the shape of a key written by the wrong "
+                    "node" % key)
+            elif expected and str(actual).strip() != expected:
+                problems.append(
+                    "%s.written_by is %r but only `%s` may write that key -- this is the "
+                    "contract violation `state.json` exists to prevent"
+                    % (key, str(actual).strip(), expected))
+
     _, ops_actions = resolve(state, "ops.actions")
     if not is_empty(ops_actions) and not approved:
         problems.append(
@@ -279,7 +353,10 @@ def main(argv):
             failures.append("%s: key not present" % key)
         elif is_empty(value):
             failures.append("%s: present but empty -- the node did not write it" % key)
-        elif placeheld and value == placeholder:
+        elif placeheld and is_untouched(value, placeholder):
+            # Not `value == placeholder`: the template can gain fields (it gained
+            # `written_by` on 2026-08-26), and whole-value equality silently passes
+            # every key copied from an older version of it.
             failures.append("%s: still the schema placeholder -- the node did not "
                             "write it" % key)
 

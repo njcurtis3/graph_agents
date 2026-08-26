@@ -199,6 +199,8 @@ written so far, **did the edges hold?** It reports only violations —
 - `integrator` written while any slice is `REJECT` or unreviewed (step 6 jumped)
 - `ops.actions` non-empty with no approval (step 7's gate skipped)
 - `status: done` with a planned slice unbuilt, or a review that is not `PASS`
+- a key whose `written_by` names the wrong node — `builders.<slice>` stamped
+  `orchestrator`, `reviews.<slice>` stamped `builder` (blind spot 3 below)
 - template text still sitting inside an otherwise-written key (blind spot 6 below)
 
 `.claude/hooks/flag-state-gap.py` fires this on every `Write`/`Edit` of any
@@ -212,15 +214,19 @@ those catch a node that returned a summary without writing anything, which mid-r
 `--audit` deliberately says nothing about.
 
 Seven things the named-key mode does **not** check. Do not oversell it — and note that
-`--audit` now covers (6) and fires itself, so (7) is no longer true of the script as a
-whole:
+`--audit` now covers (3) and (6) and fires itself, so (7) is no longer true of the script
+as a whole. **(1), (2), (4) and (5) are still open**: ordering and authorship are
+machinery now, content is not.
 
 1. **Content correctness.** A key holding `{"status": "done"}` and nothing else passes.
 2. **Key shape.** It consults `_schema.json` for placeholder *identity* only, never for
    structure — a missing `branch`, a missing `verdict`, or an invented field all pass.
-3. **Who wrote the key.** `state.json` records no authorship, so the
-   never-rewrite-another-node's-key contract is invisible to it, and an orchestrator
-   hand-writing every key still passes.
+3. **Who wrote the key.** — **closed 2026-08-26.** Every node key now carries
+   `written_by`, each node stamps its own, and `--audit` rejects a key naming any other
+   node. **This is a constraint on you**: hand-writing `builders.s1` yourself and
+   stamping it `builder` is forgery, and writing it honestly as `orchestrator` fails the
+   audit. Re-prompt the node instead. Runs opened before 2026-08-26 carry no stamps at
+   all and report exactly one line saying so; they are not retro-fitted.
 4. **Staleness.** No timestamps, so a key left over from a previous attempt passes.
 5. **Numbers and booleans are non-empty by design** — a real `parallel_safe: false` must
    not look unwritten — so a hand-written `{"gated": false}` that differs from the
@@ -241,6 +247,9 @@ whole:
   *Resolving a conflict is*, and that is `integrator`'s job, not yours.
 - **Never review a slice yourself.** You have seen the builder's summary; your context is
   contaminated. Always a fresh `reviewer`.
+- **Never write another node's key, and the audit can now tell.** If a node returned
+  without writing, re-prompt *it*. Filling the key in yourself and stamping it with that
+  node's name is forgery, not bookkeeping.
 - Append to `log` in state at every transition. That log is how a fresh session resumes.
 - **Before you set `status: done`, run `verify-state.py --audit $RUN` and get exit 0.**
   The hook will tell you anyway, but at that point you have already written the close.
