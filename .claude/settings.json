@@ -37,6 +37,38 @@
             "statusMessage": "auditing run-state edges"
           }
         ]
+      },
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python graph_agents/.claude/hooks/record-activity.py 2>/dev/null || true",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "SubagentStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python graph_agents/.claude/hooks/record-activity.py 2>/dev/null || true",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "SubagentStop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python graph_agents/.claude/hooks/record-activity.py 2>/dev/null || true",
+            "timeout": 5
+          }
+        ]
       }
     ]
   }

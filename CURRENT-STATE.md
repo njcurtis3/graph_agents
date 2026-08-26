@@ -25,7 +25,9 @@
 > runs, and every roster line count re-measured again. A **fourth** pass added
 > `.graph/CURRENT` and the plan-scope guard, driven through 12 synthetic cases covering
 > both what it blocks and the seven conditions under which it must stay silent, plus the
-> `scope_exceptions` audit rule in three states.
+> `scope_exceptions` audit rule in three states. A **fifth** pass added the node heartbeat
+> and FleetView's activity lane, verified end-to-end against a live server rather than by
+> fixture alone, and corrected the "no remote" claim in the git-repo row below.
 >
 > **Not** re-checked this pass: `verify-state.py`'s four *named-key* exit paths, the portfolio
 > `entry_docs` sweep, and FleetView — all three were verified 2026-08-26 by the audit that
@@ -64,7 +66,7 @@ this fleet has written a line of product code yet**", eleven hours after one had
 | Thing | State | Path |
 |---|---|---|
 | Umbrella constitution | live | `graph_agents/CLAUDE.md` (78 ln) |
-| Graph spec | live | `graph_agents/GRAPH.md` (243 ln) |
+| Graph spec | live | `graph_agents/GRAPH.md` (269 ln) |
 | Portfolio index | live, 6 nodes — 3 products/sites, 2 tools, 1 vendor drop — ids and `kind` verified | `graph_agents/portfolio/registry.json` (139 ln), **untracked on purpose** — see below |
 | Run-state schema | live | `graph_agents/.graph/runs/_schema.json` (31 ln) |
 | Root memory shim | live, `@`-imports the constitution | `repos/CLAUDE.md` |
@@ -74,12 +76,13 @@ this fleet has written a line of product code yet**", eleven hours after one had
 | Staleness hook | live, **observed firing** 2026-08-25; rewritten 2026-08-26 (junction paths, run-close, `.py`) — 20 synthetic payloads pass | `.claude/settings.json`, `.claude/hooks/flag-stale-state.py` (114 ln) |
 | State verifier | live, **two modes**. Named-key mode: advisory, a check the orchestrator runs. `--audit` mode (added 2026-08-26): fires from a hook, checks edge ordering, 12 synthetic cases pass | `graph_agents/.graph/verify-state.py` (389 ln) |
 | Plan-scope guard | live, **the fleet's first blocking hook** — a `PreToolUse` `Write\|Edit` entry that DENIES a `builder` writing outside `architect.plan[].files`. 12 synthetic cases pass. Never fired in a real run yet: no run has been opened since it existed | `.claude/settings.json`, `.claude/hooks/guard-builder-scope.py` (164 ln) |
+| Node heartbeat | live — `SubagentStart`/`SubagentStop` + a `*`-matcher `PostToolUse` entry append one line per node event to `.graph/runs/<run>/activity.jsonl`. Verified: events recorded with agent/tool, main-session writes recorded as `orchestrator`, silent on a closed run and with no open run | `.claude/settings.json`, `.claude/hooks/record-activity.py` (101 ln) |
 | Open-run pointer | live, untracked — written by `feature-graph` step 1, read by the scope guard. A pointer to a closed run is ignored | `graph_agents/.graph/CURRENT` |
 | State-audit hook | live, third `PostToolUse` entry — fires `--audit` on every `Write`/`Edit` of a `state.json`, silent on `_schema.json`, on non-run files, and on a merely half-filled run. **Caught a real defect on first run** (see gap #7) | `.claude/settings.json`, `.claude/hooks/flag-state-gap.py` (125 ln) |
 | Invariant checker | live, advisory only, **observed catching a violation** — clean across all 6 apps 2026-08-26, builder and reviewer each independently confirmed it flags synthetic cross-app imports and ignores `registry.json`/doc prose/`@huntstack/*` | `graph_agents/.graph/verify-invariant.py` |
 | Cross-app-import hook | live, second `PostToolUse` entry alongside the staleness hook — fires on `Write`/`Edit` inside a registered app dir, reuses the checker's `check_file()` | `.claude/settings.json`, `.claude/hooks/flag-cross-app-import.py` |
-| Fleet git repo | live, root = `graph_agents/`, branch `master`, no remote | `graph_agents/.git` |
-| FleetView | live, **exercised** 2026-08-26 (`/api/graph` → 200: 3 runs, 6 agents, 3 skills, portfolio). Not in this repo — standalone app, own git repo. Launched by `/fleetview` | `repos/fleetview/` |
+| Fleet git repo | live, root = `graph_agents/`, branch `master`, **remote `origin` at `github.com/njcurtis3/graph_agents`** — added since the 2026-08-25 entry that said "no remote"; pushed 2026-08-26 | `graph_agents/.git` |
+| FleetView | live, **exercised** 2026-08-26 (`/api/graph` → 200: 3 runs, 6 agents, 3 skills, portfolio). Gained an **activity lane** 2026-08-26 reading `activity.jsonl` — verified end-to-end against a live server on port 8791, including a deliberately torn line (counted and skipped) and the 4 runs with no heartbeat rendering no lane. `ed7b6c2`, 32 assertions, 0 failures. Not in this repo — standalone app, own git repo. Launched by `/fleetview` | `repos/fleetview/` |
 
 **The registry is untracked, and a fresh clone is therefore broken until you rebuild it.**
 `.gitignore` excludes `portfolio/registry.json` because its `path`/`entry_docs` fields name
@@ -567,5 +570,6 @@ What `2026-08-25-refuge-freshness` found in huntstack, independent of the featur
 | 2026-08-26 | Roster line counts re-measured — `GRAPH.md` 215→219, `verify-state.py` 125→129, `builder.md` 49→50 had drifted; registry count corrected 5→6 |
 | 2026-08-26 | Run `invariant-check` against the fleet itself: `verify-invariant.py` + `flag-cross-app-import.py` close gap #5. PASS on attempt 1, committed directly to `graph_agents` `master` as `9899e85` |
 | 2026-08-26 | Direct fix (below the stop-rule threshold): `verify-state.py --audit` + `flag-state-gap.py` make the graph's **edge ordering** enforced instead of advisory. Gap #7 blind spots (6) and (7) closed, (1)–(5) explicitly still open. The audit's first run found `fleet-hardening`'s state file contradicting its own log |
+| 2026-08-26 | Node heartbeat: `record-activity.py` logs `SubagentStart`/`SubagentStop`/`PostToolUse` to `activity.jsonl`, and FleetView (`ed7b6c2`, separate repo) renders it as a live lane. This is the **overseer** idea, built where it can actually see — an overseer *agent* was rejected as unimplementable and as a fake edge |
 | 2026-08-26 | `.graph/CURRENT` (untracked pointer to the open run) + `guard-builder-scope.py`: the fleet's **first blocking hook**. A `builder`'s `Write`/`Edit` outside `architect.plan[].files` is now DENIED, making the human gate's file set a permission grant. Escape hatch is `scope_exceptions`, which `--audit` flags when unexplained |
 | 2026-08-26 | Authorship: `written_by` on all six node keys in `_schema.json`, stamped by each node, checked by `--audit` against an owner map. Gap #7 blind spot (3) closed — a `builders.*` key stamped `orchestrator`, or a `reviews.*` key stamped `builder`, now fails. Placeholder detection rewritten as `is_untouched()` after the new field broke whole-value template identity on older runs |

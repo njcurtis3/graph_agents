@@ -166,6 +166,32 @@ So the split is: **ordering and authorship are enforced, content is not.** A nod
 still write nonsense into its own key, on schedule, under its own name, and nothing will
 notice.
 
+### The heartbeat — what the nodes *did*
+
+`state.json` records what each node **concluded**, and only when it finishes. Nothing in
+it moves while a node is working, so a run in flight is invisible.
+
+`.claude/hooks/record-activity.py` fills that in. On `SubagentStart`, `SubagentStop` and
+every `PostToolUse` it appends one compact line to
+`.graph/runs/<run-id>/activity.jsonl` — timestamp, event, `agent_type`, `agent_id`, tool
+name. FleetView renders it as a live lane; it is also the evidence base for four things
+this fleet has never been able to answer with data rather than assertion:
+
+- **model tiering** — §"Model tiering" argues cost hard and has never measured it. Tool
+  counts and durations per `agent_type` are the measurement.
+- **reviewer independence** — a re-review's `SubagentStart` carries a *new* `agent_id`,
+  which makes "a fresh reviewer" checkable rather than asserted.
+- **real parallelism** — when a diamond finally runs, overlapping timestamps are what
+  prove the builders ran concurrently rather than merely being spawned together.
+- **stalls** — the same tool repeating with no progress is visible in the tail.
+
+**Note what this is not: an overseer agent.** One was considered and rejected. A subagent
+is spawned, runs, returns text and ends — there is no loop for it to observe from, no
+channel to its siblings, and a node consuming nothing and producing nothing is exactly
+the fake edge §2 says to delete. The hook layer already runs alongside every node and is
+handed `agent_id`/`agent_type` on every tool event. Oversight belongs where it can
+actually see.
+
 Schema in `graph_agents/.graph/runs/_schema.json`. Because state is on disk, a run survives a
 crashed session, a `/clear`, or you walking away — pick it back up by pointing a fresh
 orchestrator at the run directory.
