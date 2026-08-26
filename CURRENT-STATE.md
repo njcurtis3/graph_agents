@@ -27,7 +27,11 @@
 > both what it blocks and the seven conditions under which it must stay silent, plus the
 > `scope_exceptions` audit rule in three states. A **fifth** pass added the node heartbeat
 > and FleetView's activity lane, verified end-to-end against a live server rather than by
-> fixture alone, and corrected the "no remote" claim in the git-repo row below.
+> fixture alone, and corrected the "no remote" claim in the git-repo row below. A **sixth**
+> pass ran `new-app` for `personal-archive` (gap #4) — the registry is now 7 apps, and
+> `verify-invariant.py` was re-run clean across all 7. Verified directly for that pass: the
+> new repo's `git log` and tracked file list, its 6 tests passing, its CLI's three
+> subcommands run by hand, and the verbatim no-sibling-import line matched with `grep -Fxq`.
 >
 > **Not** re-checked this pass: `verify-state.py`'s four *named-key* exit paths, the portfolio
 > `entry_docs` sweep, and FleetView — all three were verified 2026-08-26 by the audit that
@@ -67,12 +71,12 @@ this fleet has written a line of product code yet**", eleven hours after one had
 |---|---|---|
 | Umbrella constitution | live | `graph_agents/CLAUDE.md` (78 ln) |
 | Graph spec | live | `graph_agents/GRAPH.md` (269 ln) |
-| Portfolio index | live, 6 nodes — 3 products/sites, 2 tools, 1 vendor drop — ids and `kind` verified | `graph_agents/portfolio/registry.json` (139 ln), **untracked on purpose** — see below |
+| Portfolio index | live, 7 nodes — 3 products/sites, 3 tools, 1 vendor drop — ids and `kind` verified | `graph_agents/portfolio/registry.json` (139 ln), **untracked on purpose** — see below |
 | Run-state schema | live | `graph_agents/.graph/runs/_schema.json` (31 ln) |
 | Root memory shim | live, `@`-imports the constitution | `repos/CLAUDE.md` |
 | `.claude` junction | live, verified same-dir | `repos/.claude` → `graph_agents/.claude` |
 | 6 agent nodes | live; 4 of 6 have executed as registered agents | `.claude/agents/` |
-| 3 skills | `feature-graph` exercised 3× (290 ln); `new-app` still unused (72 ln); `fleetview` exercised (56 ln) | `.claude/skills/` |
+| 3 skills | `feature-graph` exercised 3× (290 ln); `new-app` **exercised once** 2026-08-26, creating `personal-archive` (72 ln); `fleetview` exercised (56 ln) | `.claude/skills/` |
 | Staleness hook | live, **observed firing** 2026-08-25; rewritten 2026-08-26 (junction paths, run-close, `.py`) — 20 synthetic payloads pass | `.claude/settings.json`, `.claude/hooks/flag-stale-state.py` (114 ln) |
 | State verifier | live, **two modes**. Named-key mode: advisory, a check the orchestrator runs. `--audit` mode (added 2026-08-26): fires from a hook, checks edge ordering, 12 synthetic cases pass | `graph_agents/.graph/verify-state.py` (389 ln) |
 | Plan-scope guard | live, **the fleet's first blocking hook** — a `PreToolUse` `Write\|Edit` entry that DENIES a `builder` writing outside `architect.plan[].files`. 12 synthetic cases pass. Never fired in a real run yet: no run has been opened since it existed | `.claude/settings.json`, `.claude/hooks/guard-builder-scope.py` (164 ln) |
@@ -187,18 +191,38 @@ header warns about. The hook creates the obligation; a real verification pass di
    all four runs were `single-loop`, and under the 2026-08-26 merge ruling a single-loop
    run reaches `integrator` only when its merge conflicts. Run 3's did not. Closing this
    gap now needs either a real diamond or a conflicting merge — it will not close by
-   accident.
+   accident. **A vehicle now exists** (2026-08-26): `personal-archive` was scaffolded with
+   `src/adapters/__init__.py` as the one file every adapter slice must touch, so three
+   parallel adapter slices are expected to conflict there and drag `integrator` in for real.
+   Still open until a run actually does it.
 3. **No diamond has ever run.** All four runs resolved to `single-loop`, all four
    correctly — run 3's architect refused to fan out because its three candidate slices were
    producer/consumer, not independent: `s2` consumed the exact `data-*` contract `s1` emitted
    and `s3`'s `done_when` needed both. Disjoint file sets are not sufficient for a diamond;
    independently checkable `done_when` is the real test, and that is now on the record twice.
    Worktree isolation has therefore still never been exercised, and see the note under
-   gap #8: on a target with no git repo it *cannot* be.
-4. **`new-app` has never been used.** All 6 registry entries were back-filled from
-   directories that already existed; all six directories are on disk beside `graph_agents/`,
-   and all six are git repos while `repos/` correctly is not. Re-checked this pass,
-   unchanged. (Earlier passes of this file said "5" — the count was stale, not the check.)
+   gap #8: on a target with no git repo it *cannot* be. **A vehicle now exists**
+   (2026-08-26): `personal-archive` is its own git repo, so worktrees are executable there,
+   and its record contract was frozen *at scaffold time* precisely so adapter slices consume
+   the contract rather than each other — the producer/consumer trap run 3 fell into. Each
+   adapter's `done_when` is "its own test passes alone against its own fixture". Untested
+   until a run actually fans out.
+4. ~~`new-app` has never been used.~~ **CLOSED 2026-08-26.** Run directly, not through a
+   graph run — the skill *is* the procedure, and it carries its own human gate at step 1, so
+   wrapping it in `feature-graph` would have produced two gates for one decision. Created
+   `personal-archive` (`tool`, python): own repo, own `CLAUDE.md` carrying the verbatim
+   no-sibling-import line, registered in `registry.json`, initial commit `709dba3` on
+   `master`, no remote. The gate was answered explicitly, including the question the skill
+   exists to force — why this is not a feature of `whoop-med-tracker` — and one environment
+   finding the skill does not anticipate: **`uv` is not installed**, so "scaffold with the
+   ecosystem's own tool" had no tool to reach for. Resolved by the human choosing to match
+   the sibling Python convention (`requirements.txt` + `src/` + `tests/` + `pytest.ini`)
+   rather than introduce packaging the portfolio does not otherwise use. That decision is
+   recorded here because the skill will hit it again on the next Python app.
+   The previous 6 registry entries remain back-filled from directories that already existed;
+   this is the first entry the skill itself produced. Scaffold is 14 files, 6 tests passing,
+   CLI smoke-tested; **no service adapters yet** — that is deliberate, see gaps #2 and #3.
+   (Earlier passes of this file said "5" apps — the count was stale, not the check.)
 5. ~~Nothing enforces the umbrella invariant.~~ **CLOSED 2026-08-26**, run
    `2026-08-26-invariant-check`, single slice, PASS on attempt 1. `graph_agents/.graph/verify-invariant.py`
    walks every registered app's source and flags import syntax whose target is a relative
@@ -206,6 +230,7 @@ header warns about. The hook creates the obligation; a real verification pass di
    bare specifiers (like huntstack's `@huntstack/*` workspace imports) are names, not
    paths, so they cannot match by construction, and only import-shaped lines are read, so
    `registry.json`'s own `path` fields and doc prose naming apps are invisible to it.
+   **Re-run 2026-08-26** after `personal-archive` was registered: clean across 7 targets.
    `graph_agents/.claude/hooks/flag-cross-app-import.py` runs the same check live on every
    `Write`/`Edit`, registered as a second `PostToolUse` entry in `settings.json` alongside
    the staleness hook. Clean across all 6 apps today (fleetview 2, huntstack 121,
@@ -572,4 +597,5 @@ What `2026-08-25-refuge-freshness` found in huntstack, independent of the featur
 | 2026-08-26 | Direct fix (below the stop-rule threshold): `verify-state.py --audit` + `flag-state-gap.py` make the graph's **edge ordering** enforced instead of advisory. Gap #7 blind spots (6) and (7) closed, (1)–(5) explicitly still open. The audit's first run found `fleet-hardening`'s state file contradicting its own log |
 | 2026-08-26 | Node heartbeat: `record-activity.py` logs `SubagentStart`/`SubagentStop`/`PostToolUse` to `activity.jsonl`, and FleetView (`ed7b6c2`, separate repo) renders it as a live lane. This is the **overseer** idea, built where it can actually see — an overseer *agent* was rejected as unimplementable and as a fake edge |
 | 2026-08-26 | `.graph/CURRENT` (untracked pointer to the open run) + `guard-builder-scope.py`: the fleet's **first blocking hook**. A `builder`'s `Write`/`Edit` outside `architect.plan[].files` is now DENIED, making the human gate's file set a permission grant. Escape hatch is `scope_exceptions`, which `--audit` flags when unexplained |
+| 2026-08-26 | `/new-app` exercised for the first time (gap #4): `personal-archive`, own repo, initial commit `709dba3`, registered as the 7th app. Gate surfaced an unanticipated environment case — no `uv` — resolved by matching the sibling Python convention. Scaffolded deliberately as a **diamond vehicle**: contract frozen up front, `src/adapters/__init__.py` the single expected merge point. Gaps #2 and #3 stay open until a run uses it |
 | 2026-08-26 | Authorship: `written_by` on all six node keys in `_schema.json`, stamped by each node, checked by `--audit` against an owner map. Gap #7 blind spot (3) closed — a `builders.*` key stamped `orchestrator`, or a `reviews.*` key stamped `builder`, now fails. Placeholder detection rewritten as `is_untouched()` after the new field broke whole-value template identity on older runs |
