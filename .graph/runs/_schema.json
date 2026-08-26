@@ -18,6 +18,7 @@
     "rationale": "why this shape and not the cheaper one"
   },
   "approved_by_human": false,
+  "scope_exceptions": ["ORCHESTRATOR-OWNED, normally empty. Paths a builder may write that the approved plan does not list. guard-builder-scope.py DENIES a builder's Write/Edit outside architect.plan[].files, and this is the only way through it. Adding one is a deliberate, recorded act: pair it with deviation_from_approved_plan on the slice that needed it, and say why the gate's file set was wrong. Never add a path to silence the guard on work the human did not approve."],
   "builders": {
     "s1": { "written_by": "the node that wrote this key - here, always the string builder, never orchestrator", "status": "pending|done|failed", "branch": "written by the builder: the branch this slice's work landed on, or an empty string when the target is not a git repo at all", "changed": [], "notes": "", "gate_results": "optional: this slice's done_when commands paired with their actual output, when worth keeping verbatim", "deviation_from_approved_plan": "optional: set only when the orchestrator authorized work outside the architect's approved file set or intent for this slice, and why" }
   },

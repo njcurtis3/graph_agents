@@ -59,7 +59,14 @@ disk after the run.
 RUN=$(date +%Y-%m-%d)-<short-slug>
 mkdir -p graph_agents/.graph/runs/$RUN
 cp graph_agents/.graph/runs/_schema.json graph_agents/.graph/runs/$RUN/state.json
+printf '%s' "$RUN" > graph_agents/.graph/CURRENT
 ```
+
+`.graph/CURRENT` names the open run. Hooks fire with a file path and an `agent_type` and
+are never told which run they are in, so without this pointer nothing outside the
+orchestrator can find the run's state — it is what makes `guard-builder-scope.py` (step
+5) possible at all. It is untracked and disposable: a stale pointer to a closed run is
+ignored, so there is nothing to clean up.
 
 Fill `run_id`, `goal` (the user's own words), and `app` (from `graph_agents/portfolio/registry.json`).
 If the goal spans two apps, it is two runs. Split it.
@@ -105,6 +112,24 @@ skip it because the plan "looks obviously right."
 Set `approved_by_human: true` only after they actually say so.
 
 ## Step 5 — execute
+
+**The approved file set is now a boundary, not a description.**
+`.claude/hooks/guard-builder-scope.py` is a `PreToolUse` hook that **denies** a
+`Write`/`Edit` from any `builder` to a path outside the union of `architect.plan[].files`
+(plus the run's own `state.json`). It reads the run through `.graph/CURRENT`, so step 1's
+pointer is load-bearing here.
+
+When a builder comes back saying it was denied, that is the gate working. Decide, do not
+reflex-widen:
+
+- the work belongs to **another slice** — send it there; or
+- the **approved file set was wrong**. Then extend it deliberately: append the path to
+  `scope_exceptions` in `state.json` (you own that key), and require the builder to record
+  `deviation_from_approved_plan` on its slice. Do **not** edit `architect.plan` to widen
+  the set — that is rewriting another node's key, and `--audit` now catches it.
+
+This is exactly the `2026-08-25-fleet-hardening` `s2` situation, which was handled well by
+hand and is now handled by the machine.
 
 **If `single-loop`:** spawn one `builder`, then one `reviewer`.
 

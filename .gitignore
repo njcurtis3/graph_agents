@@ -27,3 +27,9 @@ portfolio/registry.json
 
 # Live session state written by the harness, not by the fleet. Holds a pid.
 .claude/scheduled_tasks.lock
+
+# A pointer to the run currently open, written by `feature-graph` step 1 so that
+# hooks — which get a file path and an agent_type, never a run id — can find the
+# run's state. Machine-local and disposable: a pointer to a closed run is ignored,
+# and a clone with no pointer simply has no open run.
+.graph/CURRENT

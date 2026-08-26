@@ -286,6 +286,20 @@ def audit(state, template):
                     "contract violation `state.json` exists to prevent"
                     % (key, str(actual).strip(), expected))
 
+    # -- a scope exception is a widening of what the human approved. It is allowed, but
+    # it must be paired with the slice's own account of why the approved set was wrong.
+    _, exceptions = resolve(state, "scope_exceptions")
+    if isinstance(exceptions, list) and not is_empty(exceptions) \
+            and not is_untouched(exceptions, resolve(template, "scope_exceptions")[1]):
+        explained = any(
+            not is_empty(resolve(state, "builders.%s.deviation_from_approved_plan" % s)[1])
+            for s in known)
+        if not explained:
+            problems.append(
+                "scope_exceptions widens the approved file set but no slice records "
+                "`deviation_from_approved_plan` -- an unexplained exception is scope "
+                "creep with the guard switched off")
+
     _, ops_actions = resolve(state, "ops.actions")
     if not is_empty(ops_actions) and not approved:
         problems.append(

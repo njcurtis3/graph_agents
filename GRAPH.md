@@ -230,7 +230,13 @@ Reference cost per MTok (in/out): haiku 4.5 $1/$5 · sonnet 5 $3/$15 · opus 5 $
 
 Place them exactly where a mistake gets expensive to undo:
 
-- after `architect` — before any code exists (cheapest possible place to change your mind)
+- after `architect` — before any code exists (cheapest possible place to change your mind).
+  **What you approve here is now binding**: `.claude/hooks/guard-builder-scope.py` denies
+  a builder's `Write`/`Edit` outside `architect.plan[].files`, so the file set is a
+  boundary rather than a description. Widening it after the fact is possible, deliberate
+  and recorded — `scope_exceptions` plus the slice's `deviation_from_approved_plan` —
+  never silent. Read the file list at the gate as if it were a permission grant, because
+  it is one.
 - before `ops` — deploys, DB migrations, anything that costs money or touches prod
 - before creating a new app — a new repo is a long-term maintenance commitment
 
