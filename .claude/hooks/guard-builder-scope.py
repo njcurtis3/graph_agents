@@ -18,6 +18,13 @@ Scope, stated honestly:
   slice, so the guard is exact. In a diamond, worktrees already keep builders out of each
   other's trees, so what the union still buys is the plan boundary itself.
 
+  It matches a builder working in a linked git WORKTREE by repo-relative path, since a
+  worktree's absolute paths are rooted outside the umbrella and can never equal the
+  plan's. The repo is taken to be a plan entry's first path segment, which holds because
+  every node under the umbrella owns its own repo. If that ever stops being true the
+  entry fails to match and only the absolute rule applies -- the guard narrows, never
+  widens.
+
   It fires only for `agent_type == "builder"`. The orchestrator is not constrained here:
   it is not supposed to be implementing at all, and `feature-graph` says so in words.
 
@@ -81,6 +88,7 @@ def approved_paths(state, run_dir):
     """
     allowed = {norm(os.path.join(run_dir, "state.json")):    # nodes must write their key
                "%s/state.json" % os.path.basename(run_dir)}
+    rel_map = {}
 
     plan = (state.get("architect") or {}).get("plan")
     entries = []
@@ -103,14 +111,66 @@ def approved_paths(state, run_dir):
             continue
         allowed[norm(entry if os.path.isabs(entry)
                      else os.path.join(UMBRELLA, entry))] = entry
+
+        # Same entry, expressed as (repo root, path within that repo). A plan entry's
+        # first segment IS the repo, because every node under the umbrella owns its own
+        # repo -- see CLAUDE.md. This is what lets a builder in a linked worktree be
+        # matched: same repo-relative path, different root. If the assumption is ever
+        # wrong the entry simply fails to match here and the absolute rule above still
+        # applies, so the guard degrades to its previous behaviour rather than opening up.
+        parts = entry.replace("\\", "/").strip("/").split("/")
+        if len(parts) >= 2 and not os.path.isabs(entry):
+            root = norm(os.path.join(UMBRELLA, parts[0]))
+            rel = "/".join(parts[1:])
+            rel_map.setdefault(root, {})[rel.lower() if os.name == "nt" else rel] = entry
+
         planned = True
 
-    return (allowed if planned else None)
+    return (allowed, rel_map) if planned else (None, None)
 
 
 def covered(target, allowed):
     """True if the target is an approved path, or lives under an approved directory."""
     return any(target == a or target.startswith(a + "/") for a in allowed)
+
+
+def worktree_context(target):
+    """(main repo root, path relative to the worktree root), or (None, None).
+
+    A linked git worktree has a `.git` FILE (not a directory) reading
+    `gitdir: <main>/.git/worktrees/<name>`. That is read directly rather than shelling
+    out to git: this is a PreToolUse hook, it runs before EVERY write, and it must not
+    pay for a subprocess on the hot path.
+
+    Returns (None, None) for a main working tree -- there `.git` is a directory and the
+    absolute rule in approved_paths already covers the path correctly.
+    """
+    directory = os.path.dirname(target)
+    for _ in range(64):                      # bounded: never walk forever on a odd path
+        dotgit = os.path.join(directory, ".git")
+        if os.path.isdir(dotgit):
+            return None, None                # main tree; absolute rule handles it
+        if os.path.isfile(dotgit):
+            try:
+                with open(dotgit, encoding="utf-8") as fh:
+                    line = fh.read().strip()
+            except OSError:
+                return None, None
+            if not line.startswith("gitdir:"):
+                return None, None
+            gitdir = norm(line.split(":", 1)[1].strip())
+            marker = "/.git/worktrees/"
+            if marker not in gitdir:
+                return None, None
+            root = norm(directory)
+            if target != root and not target.startswith(root + "/"):
+                return None, None
+            return gitdir.split(marker)[0], target[len(root) + 1:]
+        parent = os.path.dirname(directory)
+        if parent == directory:
+            return None, None
+        directory = parent
+    return None, None
 
 
 def main():
@@ -134,13 +194,24 @@ def main():
     if state.get("approved_by_human") is not True:
         return          # --audit owns that finding; denying here would deadlock the run
 
-    allowed = approved_paths(state, run_dir)
+    allowed, rel_map = approved_paths(state, run_dir)
     if allowed is None:
         return          # no file set to compare against
 
     target = norm(path)
     if covered(target, allowed):
         return
+
+    # Diamond mode: the builder is in a linked worktree, so its absolute path is rooted
+    # somewhere else entirely and can never equal the plan's umbrella-relative path. Match
+    # the repo-relative path against the same repo's approved entries instead. Without
+    # this the guard denies EVERY write by EVERY builder in a diamond -- which it did,
+    # undetected, from the day it was written until the first run actually fanned out.
+    main_root, rel = worktree_context(target)
+    if main_root and rel:
+        entries = rel_map.get(main_root) or {}
+        if any(rel == a or rel.startswith(a + "/") for a in entries):
+            return
 
     listed = "\n".join("  - %s" % shown for shown in sorted(allowed.values()))
     json.dump({

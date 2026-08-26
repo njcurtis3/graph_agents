@@ -33,3 +33,9 @@ portfolio/registry.json
 # run's state. Machine-local and disposable: a pointer to a closed run is ignored,
 # and a clone with no pointer simply has no open run.
 .graph/CURRENT
+
+# Linked git worktrees for a diamond run's builders, one per slice. They belong to the
+# TARGET app's repo, not to this one; they live here only because repos/ is not a repo
+# and an app's own tree must stay clean. Disposable — removed with `git worktree remove`
+# when the run closes, and recreatable from the branch names in `builders.<slice>.branch`.
+.graph/worktrees/
