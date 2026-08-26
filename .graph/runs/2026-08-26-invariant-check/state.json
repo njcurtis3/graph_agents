@@ -1,0 +1,93 @@
+{
+  "$comment": "Shared state for ONE work-graph run. Lives at .graph/runs/<run-id>/state.json. Every node reads this on start and appends to its OWN key on finish - the builder writes its own builders.<slice> key, including the branch it worked on. Never rewrite another node's key. This file is the edge: it is how context crosses between agents that cannot see each other.",
+  "run_id": "2026-08-26-invariant-check",
+  "goal": "Close gap #5 in CURRENT-STATE.md: add a real, automated check that catches cross-app imports/references, wired in so the umbrella invariant is not just prose in CLAUDE.md.",
+  "app": "umbrella",
+  "status": "scouting",
+  "scout": {
+    "facts": [
+      "6 app directories: fleetview (tool), huntstack (product), App 1 (site), podcraft-ai (product), thrml (vendor), whoop-med-tracker (tool) - registry.json:6-121",
+      "App language/stack: huntstack has package.json (TypeScript/Node) - huntstack/package.json; podcraft-ai has requirements.txt (Python) - podcraft-ai/requirements.txt; App 1 has package.json (TypeScript/Quartz) - App 1/package.json; whoop-med-tracker has requirements.txt (Python) - whoop-med-tracker/requirements.txt; fleetview has .py files (registry says python/html) - fleetview/serve.py; thrml has README.md, registry says python/jax - thrml/README.md",
+      "Existing file-reading scripts in graph_agents: verify-state.py only reads run state from .graph/runs/<run-id>/state.json, does not traverse app directories - graph_agents/.graph/verify-state.py:23-44; flag-stale-state.py is PostToolUse hook reading stdin, checks if fleet definition files changed, does not inspect app imports - graph_agents/.claude/hooks/flag-stale-state.py:52-70",
+      "Hook mechanism: PostToolUse hook in settings.json with matcher 'Write|Edit', runs command 'python graph_agents/.claude/hooks/flag-stale-state.py 2>/dev/null || true', timeout 10 seconds - graph_agents/.claude/settings.json:3-15",
+      "CI configuration exists only in individual apps (thrml/.github/workflows/tests.yml, huntstack/.github/workflows/ci.yml, App 1/.github/workflows/node.js.yml); no CI config in graph_agents/ itself",
+      "TypeScript/Node import patterns: relative '../other-app/file' or '../other-app/module', also '@huntstack/db' scoped monorepo packages in huntstack (pnpm workspaces); Python patterns: relative '../other-app/module' imports, sys.path manipulation, or absolute imports naming app directory",
+      "graph_agents itself legitimately references app paths: registry.json's 'path' field lists directory names (fleetview, huntstack, App 1, podcraft-ai, thrml, whoop-med-tracker) - registry.json:8,27,47,68,88,106; new-app SKILL.md instructs adding entries to registry - graph_agents/.claude/skills/new-app/SKILL.md:56; flag-stale-state.py resolves file paths and routes on '/graph_agents/' segment - graph_agents/.claude/hooks/flag-stale-state.py:29-40,68",
+      "Huntstack uses pnpm monorepo with internal workspaces (@huntstack/db, @huntstack/api, @huntstack/web) managed by pnpm --filter; internal @huntstack/* imports are legitimate, not cross-app violations - huntstack/CLAUDE.md sections on 'Project Structure' and 'Tech Stack'; huntstack also references apps/scrapers-python subdirectory in CI - huntstack/.github/workflows/ci.yml:69-74"
+    ],
+    "unknowns": [
+      "Do fleetview or thrml have pyproject.toml, setup.py, or other manifest files we haven't found yet? (need to verify language detection is complete)",
+      "Does App 1's CI/build system actually import code from other apps, or do CI workflow references to node_modules just happen to include other repos' workflows? (verify no actual edges vs test/ci-only mentions)",
+      "What defines the boundary: is a reference in a CI workflow/comment/docs (not executable code) a violation, or only actual import statements in source?",
+      "Should the invariant-check script run as: (1) a git hook in each app repo, (2) a root-level pre-commit hook, (3) a GitHub Actions CI step, or (4) as a standalone utility tool in graph_agents?",
+      "For huntstack's pnpm monorepo structure, what counts as 'cross-app'? Is importing @huntstack/db from @huntstack/api a violation (both inside huntstack/) or legitimate internal coupling?"
+    ],
+    "risks": [
+      "FALSE POSITIVE RISK: registry.json's 'path' and 'entry_docs' fields contain app directory names as strings - graph_agents/portfolio/registry.json:8,27,47,68,88,106,126-136. A naive grep for app directory names would flag these legitimate metadata references. Test pattern: 'podcraft-ai' appears in registry.json but that is not an import.",
+      "FALSE POSITIVE RISK: graph_agents/CLAUDE.md and GRAPH.md contain app names in prose and comments (e.g., 'huntstack/', 'App 1' in layout examples) - graph_agents/CLAUDE.md:42-43, graph_agents/GRAPH.md:24-25. Only executable imports matter, not documentation mentions.",
+      "FALSE POSITIVE RISK: graph_agents/.claude/skills/new-app/SKILL.md instructs users to add entries to registry.json that name app directories - graph_agents/.claude/skills/new-app/SKILL.md:56. This is intentional and allowed.",
+      "PATH RESOLUTION RISK: graph_agents itself is a git repo with .git inside; repos/ is deliberately not a git repo - graph_agents/CURRENT-STATE.md:60. Worktree isolation in builder relies on target being a git repo. A check that traverses app directories must handle both git-tracked and non-git targets.",
+      "JUNCTION RISK: repos/.claude is a directory junction to graph_agents/.claude - graph_agents/CLAUDE.md:47-49. A naive path traversal could see the same file twice under different paths and flag it as two separate violations. The staleness hook already handles this with os.path.realpath() - graph_agents/.claude/hooks/flag-stale-state.py:29-40.",
+      "MONOREPO INTERNAL PATTERN RISK: huntstack is not a monorepo violating the invariant, but uses pnpm workspaces for internal organization (apps/api, apps/web, apps/scrapers-python, packages/db, packages/shared) - huntstack/CLAUDE.md. '@huntstack/db' imports from '@huntstack/api' are internal to huntstack repo, not cross-app violations. A check must distinguish 'import from ../podcraft-ai' (violation) vs 'import from @huntstack/db' (legitimate)."
+    ]
+  },
+  "architect": {
+    "plan": [
+      {
+        "slice": "s1",
+        "intent": "Add a read-only cross-app import/reference checker (verify-invariant.py) mirroring verify-state.py's style, plus a PostToolUse hook (flag-cross-app-import.py) that runs it live on every Write/Edit inside a registered app dir. Must not flag registry.json's own path fields, doc prose naming apps, or huntstack's internal @huntstack/* workspace imports.",
+        "files": [
+          "graph_agents/.graph/verify-invariant.py",
+          "graph_agents/.claude/hooks/flag-cross-app-import.py",
+          "graph_agents/.claude/settings.json"
+        ],
+        "done_when": "python graph_agents/.graph/verify-invariant.py exits 0 clean across all 6 apps today, and exits 1 with file:line against a synthetic cross-app import fixture (created and deleted during the test, not left behind); the hook fires on a synthetic payload without false-positiving on registry.json or doc mentions."
+      }
+    ],
+    "shape": "single-loop",
+    "parallel_safe": false,
+    "rationale": "One cohesive deliverable (checker + its wiring), not independent slices - a diamond would just be file-overlap risk for no isolation benefit. graph_agents is a git repo so worktree isolation was available but unnecessary for a single-file+hook addition."
+  },
+  "approved_by_human": true,
+  "builders": {
+    "s1": {
+      "status": "done",
+      "branch": "master (committed directly -- shape is single-loop, one slice, no sibling builders, so no worktree isolation was used)",
+      "changed": [
+        "graph_agents/.graph/verify-invariant.py (new)",
+        "graph_agents/.claude/hooks/flag-cross-app-import.py (new)",
+        "graph_agents/.claude/settings.json (+6 ln: second PostToolUse entry on the existing Write|Edit matcher, timeout 10, same shape as flag-stale-state.py's)"
+      ],
+      "notes": "Violation = import SYNTAX whose target is a RELATIVE path ('./' or '../') that, resolved against the importing file's own directory, lands in a different registered app or in graph_agents/. Bare specifiers are never paths, so huntstack's @huntstack/* workspace imports cannot match by construction (checked against the real tree and with a fixture line). Only .ts .tsx .js .jsx .mjs .cjs .py are read; node_modules/.git/dist/build/.next/__pycache__ skipped, plus .venv/venv/site-packages which are vendored deps, not app source. Registry is read for every kind including vendor (thrml) and tool -- each is both a potential importer and a forbidden import target. Python has no relative-path import literal, so sys.path.insert/append of a relative dir is treated as the Python analogue; this is one step beyond the literal 'import ...' / 'from ... import ...' wording of the slice, and is documented in the checker's docstring, because without it .py files are unauditable. The hook imports check_file() from the checker by file path (hyphenated filename, so importlib.util.spec_from_file_location; no prior intra-fleet import precedent existed) rather than duplicating the rule. SYNTHETIC FIXTURES: whoop-med-tracker/_invariant_fixture.py and _invariant_fixture.js were created for the test and DELETED afterwards -- `git -C whoop-med-tracker status --short` is empty and a re-run of the full check is clean. Nothing was committed in whoop-med-tracker. OUT OF SCOPE, NOT TOUCHED: the staleness hook fired on all three of my writes asking for a CURRENT-STATE.md update (gap #5's row, the 'What is live' table, the Changelog, Last verified). CURRENT-STATE.md is not in this slice's file set, so it is left stale for whoever closes the run. Also unaddressed by design: this is a utility plus a live hook only, not wired into any CI or git hook (architect's unknown #4), and it says nothing about non-import edges such as a build script shelling out to a sibling app.",
+      "gate_results": "$ python graph_agents/.graph/verify-invariant.py\nverify-invariant: clean -- 6 target(s), no cross-app imports\nEXIT=0\n\n# synthetic fixtures written into whoop-med-tracker/ (deleted after these runs):\n#   _invariant_fixture.py : sys.path.insert(0, \"../podcraft-ai/src\") ; sys.path.append(\"./analysis\")\n#   _invariant_fixture.js : import {db} from \"@huntstack/db\" ; import {thing} from \"../huntstack/packages/db/index.ts\" ;\n#                           import \"./local-module\" ; require(\"../graph_agents/.graph/verify-state.py\") ;\n#                           // prose: podcraft-ai and thrml are other apps, this comment is not an import\n$ python graph_agents/.graph/verify-invariant.py\nC:/Users/natha/Desktop/repos/whoop-med-tracker/_invariant_fixture.js:2: imports/requires ../huntstack/packages/db/index.ts which resolves into huntstack\nC:/Users/natha/Desktop/repos/whoop-med-tracker/_invariant_fixture.js:4: imports/requires ../graph_agents/.graph/verify-state.py which resolves into graph_agents\nC:/Users/natha/Desktop/repos/whoop-med-tracker/_invariant_fixture.py:3: imports/requires ../podcraft-ai/src which resolves into podcraft-ai\nverify-invariant: 3 cross-app import(s) FOUND\nEXIT=1\n# @huntstack/db, ./local-module, ./analysis and the prose comment are all absent from that output.\n\n$ python graph_agents/.graph/verify-invariant.py whoop-med-tracker/_invariant_fixture.py\nC:/Users/natha/Desktop/repos/whoop-med-tracker/_invariant_fixture.py:3: imports/requires ../podcraft-ai/src which resolves into podcraft-ai\nverify-invariant: 1 cross-app import(s) FOUND\nEXIT=1\n\n$ python graph_agents/.graph/verify-invariant.py huntstack\nverify-invariant: clean -- 1 target(s), no cross-app imports\nEXIT=0\n\n$ mv graph_agents/portfolio/registry.json graph_agents/portfolio/registry.json.bak\n$ python graph_agents/.graph/verify-invariant.py\nverify-invariant: cannot read C:\\Users\\natha\\Desktop\\repos\\graph_agents\\portfolio\\registry.json: [Errno 2] No such file or directory: 'C:\\\\Users\\\\natha\\\\Desktop\\\\repos\\\\graph_agents\\\\portfolio\\\\registry.json'\nEXIT=2   (registry restored immediately after)\n\n# hook: 9 synthetic payloads piped into graph_agents/.claude/hooks/flag-cross-app-import.py\n--- 1. violation, tool_input.file_path (Edit shape) ---\n{\"hookSpecificOutput\": {\"hookEventName\": \"PostToolUse\", \"additionalContext\": \"[cross-app] You just wrote a cross-app import. The umbrella's one invariant is that no app may import, build against, or read files from another app:\\n  C:/Users/natha/Desktop/repos/whoop-med-tracker/_invariant_fixture.js:2: imports/requires ../huntstack/packages/db/index.ts which resolves into huntstack\\n  C:/Users/natha/Desktop/repos/whoop-med-tracker/_invariant_fixture.js:4: imports/requires ../graph_agents/.graph/verify-state.py which resolves into graph_agents\\nBefore this turn ends: remove the edge. If both apps need the same thing, copy it into this app and let the two copies drift -- `copy, don't couple`. Do not introduce a shared package, and do not widen the import to reach the same file another way.\"}}[exit=0]\n--- 2. violation, tool_response.filePath (Write shape) ---\n{\"hookSpecificOutput\": {\"hookEventName\": \"PostToolUse\", \"additionalContext\": \"[cross-app] ...:\\n  C:/Users/natha/Desktop/repos/whoop-med-tracker/_invariant_fixture.py:3: imports/requires ../podcraft-ai/src which resolves into podcraft-ai\\nBefore this turn ends: ...\"}}[exit=0]\n--- 3. outside any app: graph_agents/CLAUDE.md ---\n[exit=0]   (silent)\n--- 4. registry.json: names every app, not an import ---\n[exit=0]   (silent)\n--- 5. junction path repos/.claude/hooks/flag-stale-state.py ---\n[exit=0]   (silent)\n--- 6. real in-app source fleetview/serve.py ---\n[exit=0]   (silent)\n--- 7. no path in payload ---\n[exit=0]   (silent)\n--- 8. app doc prose huntstack/CLAUDE.md ---\n[exit=0]   (silent)\n--- 9. relative file_path 'whoop-med-tracker/_invariant_fixture.js' ---\n{\"hookSpecificOutput\": ... the same two violations ...}[exit=0]\n# NB for the reviewer: feed payloads from a FILE with forward-slash paths. `echo` in this shell\n# mangles the doubled backslash escapes into invalid JSON, which silences the hook and reads as\n# a false negative. That cost one debugging round here.\n\n$ rm whoop-med-tracker/_invariant_fixture.py whoop-med-tracker/_invariant_fixture.js\n$ git -C whoop-med-tracker status --short\n(no output -- fixture cleanup confirmed, nothing left behind, nothing committed there)\n$ python graph_agents/.graph/verify-invariant.py\nverify-invariant: clean -- 6 target(s), no cross-app imports\nEXIT=0"
+    }
+  },
+  "reviews": {
+    "s1": {
+      "verdict": "PASS|REJECT",
+      "attempt": 1,
+      "summary": "optional: one paragraph a human can read without opening findings[]",
+      "findings": [
+        {
+          "file": "",
+          "line": 0,
+          "issue": "",
+          "severity": ""
+        }
+      ]
+    }
+  },
+  "integrator": {
+    "merged": [],
+    "conflicts": [],
+    "verification": "what command proved it works, and its output"
+  },
+  "ops": {
+    "gated": true,
+    "actions": []
+  },
+  "log": [
+    "append-only: node, what it did, timestamp",
+    "builder/s1 2026-08-26: added graph_agents/.graph/verify-invariant.py (relative-path cross-app import checker, stdlib only, exit 0/1/2) and .claude/hooks/flag-cross-app-import.py (PostToolUse hook reusing the checker's check_file), registered in .claude/settings.json alongside flag-stale-state.py. Clean on all 6 apps, red on deleted synthetic fixtures, silent on registry.json / doc prose / @huntstack/* workspace imports. Committed on master."
+  ]
+}
