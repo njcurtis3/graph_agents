@@ -3,7 +3,7 @@
   "run_id": "2026-08-26-invariant-check",
   "goal": "Close gap #5 in CURRENT-STATE.md: add a real, automated check that catches cross-app imports/references, wired in so the umbrella invariant is not just prose in CLAUDE.md.",
   "app": "umbrella",
-  "status": "scouting",
+  "status": "done",
   "scout": {
     "facts": [
       "6 app directories: fleetview (tool), huntstack (product), App 1 (site), podcraft-ai (product), thrml (vendor), whoop-med-tracker (tool) - registry.json:6-121",
@@ -64,15 +64,33 @@
   },
   "reviews": {
     "s1": {
-      "verdict": "PASS|REJECT",
+      "verdict": "PASS",
       "attempt": 1,
-      "summary": "optional: one paragraph a human can read without opening findings[]",
+      "summary": "Reproduced every gate independently; all of builders.s1.gate_results hold. Clean run exits 0 and genuinely scans all 6 registered apps (instrumented the walk: fleetview 2, huntstack 121, App 1 233, podcraft-ai 26, thrml 25, whoop-med-tracker 6 source files -- nothing silently skipped). I wrote my own fixture set, not the builder's: a nested whoop-med-tracker/_rvfix/deep/a.ts exercising import-from, export-from, require(), dynamic import(), side-effect import, a ../../../../repos/huntstack round-trip path, plus @huntstack/db, ./sibling and ../deep2/mod as controls. All 7 real edges were caught with correct file:line including graph_agents/ as a forbidden target; all 3 controls stayed silent. Python sys.path.insert of a relative literal is caught. False-positive hunt came up empty: registry.json, graph_agents/CLAUDE.md and GRAPH.md, huntstack/CLAUDE.md, the repos/.claude junction path, and a real huntstack .ts file carrying @huntstack/db imports (16 such imports exist in the tree) are all silent, and the whole-tree run is clean. I also grepped for non-import edges that exist today -- package.json file:/link: deps, tsconfig paths escaping the repo, relative requirements -- and found none, so the checker's clean verdict is not hiding a live violation. fleetview/serve.py's ../graph_agents mention is auto-detect runtime config, declared deliberate in fleetview/CLAUDE.md, and correctly not flagged. Hook: 13 payloads including Edit-shape tool_input.file_path, Write-shape tool_response.filePath, relative path, malformed stdin, empty stdin, null tool_input/tool_response, and a nonexistent file -- fires correctly twice, silent and exit 0 everywhere else. settings.json is valid JSON, matches the existing entry's shape and timeout 10, and flag-stale-state.py still fires independently. Registry failure modes all exit 2 (missing, malformed, empty apps list). No writes left behind: git -C whoop-med-tracker status --short is empty after fixture removal, graph_agents is clean, and the pre-existing modifications in App 1 and podcraft-ai predate the builder's session by weeks and are unrelated permission-list edits. Findings are all notes about the checker's deliberately narrow scope, none blocking.",
       "findings": [
         {
-          "file": "",
-          "line": 0,
-          "issue": "",
-          "severity": ""
+          "file": "graph_agents/.graph/verify-invariant.py",
+          "line": 34,
+          "issue": "SOURCE_EXT omits .mts, .cts and .pyi. Verified as a real blind spot, not theory: fixtures _rvfix/c.mts (import x from \"../../huntstack/x\"), d.cts (require of the same) and e.pyi (sys.path.insert of ../../huntstack) each contained a genuine cross-app edge and produced zero output while the .ts/.tsx/.py equivalents were all caught. Zero files with these extensions exist in any app today, so nothing is currently missed, but the first .mts a TS app adds is silently unaudited. Three strings in one tuple.",
+          "severity": "low"
+        },
+        {
+          "file": "graph_agents/.graph/verify-invariant.py",
+          "line": 47,
+          "issue": "The sys.path rule only matches a literal string starting ./ or ../. sys.path.insert(0, os.path.join(os.path.dirname(__file__), \"..\", \"..\", \"huntstack\")) is a real reach into a sibling repo and is not detected -- confirmed against a fixture. Documented as narrow in the docstring and inherent to a regex checker, so a note rather than a gap; the literal form, which is the common one, does work.",
+          "severity": "low"
+        },
+        {
+          "file": "graph_agents/.graph/verify-invariant.py",
+          "line": 9,
+          "issue": "Only import syntax counts, so non-import edges are out of coverage: a package.json file:../sibling dependency, a tsconfig paths alias escaping the repo, or a build script shelling out to a sibling app. The builder names this in notes and I confirmed none of these exist in any app today, so the clean verdict is honest -- but the checker proves less than the invariant's full wording (\"import, build against, or read files from\").",
+          "severity": "low"
+        },
+        {
+          "file": "graph_agents/.graph/runs/2026-08-26-invariant-check/state.json",
+          "line": 56,
+          "issue": "builders.s1.changed lists 3 files but commit 9899e85 touches 4 -- the run's own state.json is also in it. Not scope creep (nothing in any app repo was touched or committed) and the fleet's run state is expected to move with the run, but the claimed file list is incomplete.",
+          "severity": "low"
         }
       ]
     }
@@ -88,6 +106,8 @@
   },
   "log": [
     "append-only: node, what it did, timestamp",
-    "builder/s1 2026-08-26: added graph_agents/.graph/verify-invariant.py (relative-path cross-app import checker, stdlib only, exit 0/1/2) and .claude/hooks/flag-cross-app-import.py (PostToolUse hook reusing the checker's check_file), registered in .claude/settings.json alongside flag-stale-state.py. Clean on all 6 apps, red on deleted synthetic fixtures, silent on registry.json / doc prose / @huntstack/* workspace imports. Committed on master."
+    "builder/s1 2026-08-26: added graph_agents/.graph/verify-invariant.py (relative-path cross-app import checker, stdlib only, exit 0/1/2) and .claude/hooks/flag-cross-app-import.py (PostToolUse hook reusing the checker's check_file), registered in .claude/settings.json alongside flag-stale-state.py. Clean on all 6 apps, red on deleted synthetic fixtures, silent on registry.json / doc prose / @huntstack/* workspace imports. Committed on master.",
+    "reviewer/s1 2026-08-26: independently re-ran done_when. Clean run exit 0 across all 6 apps (verified the walk actually reaches each). Wrote my own nested TS/Python fixtures covering import-from, export-from, require(), dynamic import(), side-effect import and a repos/ round-trip path -- all caught with correct file:line, graph_agents/ included as a forbidden target; @huntstack/* and intra-app relative imports stayed silent. Exercised the hook with 13 payloads (Edit and Write shapes, relative path, malformed/empty stdin, null fields, missing file). Grepped for non-import edges existing today and found none. Fixtures deleted; whoop-med-tracker and graph_agents both clean. VERDICT: PASS with 4 low findings.",
+    "orchestrator 2026-08-26: single-loop, no branch (builder committed directly to master, commit 9899e85) -- nothing to merge, per feature-graph step 5's degraded/no-branch case. Run closed status: done. CURRENT-STATE.md gap #5 closed and its tables/changelog updated in the same session per the staleness hook's outstanding demand."
   ]
 }

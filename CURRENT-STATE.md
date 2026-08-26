@@ -20,9 +20,9 @@
 
 ---
 
-## Status: three runs, two of them executed, first product code shipped
+## Status: four runs, three of them executed, first product code shipped
 
-Built 2026-08-25 in a single session. Three runs so far:
+Built 2026-08-25 in a single session. Four runs so far:
 
 - `2026-08-25-refuge-freshness` against `huntstack` — deliberately parked at the human gate.
 - `2026-08-25-fleet-hardening` against the fleet itself — approved and **executed**, five
@@ -30,6 +30,9 @@ Built 2026-08-25 in a single session. Three runs so far:
   Every slice was reviewed by a fresh `reviewer`, `s5` included.
 - `2026-08-25-transclusion-external-previews` against `App 1` — approved and
   **executed**, one slice, two attempts after a REJECT. **Merged to `main`.**
+- `2026-08-26-invariant-check` against the fleet itself — approved and **executed**, one
+  slice, PASS on attempt 1. Closed gap #5: the umbrella invariant is now checked, not just
+  asserted in prose.
 
 **The fleet has now written product code.** Run 3's builder wrote
 `quartz/plugins/transformers/linkpreviews.ts` plus 12 tests in a real app repo, an
@@ -57,6 +60,8 @@ this fleet has written a line of product code yet**", eleven hours after one had
 | 3 skills | `feature-graph` exercised 3× (220 ln); `new-app` still unused (72 ln); `fleetview` exercised (56 ln) | `.claude/skills/` |
 | Staleness hook | live, **observed firing** 2026-08-25; rewritten 2026-08-26 (junction paths, run-close, `.py`) — 20 synthetic payloads pass | `.claude/settings.json`, `.claude/hooks/flag-stale-state.py` (114 ln) |
 | State verifier | live, advisory only — a check, not a gate. All four exit paths re-proven 2026-08-26 | `graph_agents/.graph/verify-state.py` (129 ln) |
+| Invariant checker | live, advisory only, **observed catching a violation** — clean across all 6 apps 2026-08-26, builder and reviewer each independently confirmed it flags synthetic cross-app imports and ignores `registry.json`/doc prose/`@huntstack/*` | `graph_agents/.graph/verify-invariant.py` |
+| Cross-app-import hook | live, second `PostToolUse` entry alongside the staleness hook — fires on `Write`/`Edit` inside a registered app dir, reuses the checker's `check_file()` | `.claude/settings.json`, `.claude/hooks/flag-cross-app-import.py` |
 | Fleet git repo | live, root = `graph_agents/`, branch `master`, no remote | `graph_agents/.git` |
 | FleetView | live, **exercised** 2026-08-26 (`/api/graph` → 200: 3 runs, 6 agents, 3 skills, portfolio). Not in this repo — standalone app, own git repo. Launched by `/fleetview` | `repos/fleetview/` |
 
@@ -171,12 +176,31 @@ header warns about. The hook creates the obligation; a real verification pass di
    directories that already existed; all six directories are on disk beside `graph_agents/`,
    and all six are git repos while `repos/` correctly is not. Re-checked this pass,
    unchanged. (Earlier passes of this file said "5" — the count was stale, not the check.)
-5. **Nothing enforces the umbrella invariant.** "No cross-app imports" is prose in
-   `CLAUDE.md`. No lint rule, no CI check, no test. Re-checked this pass: the only two
-   Python files in the fleet are `flag-stale-state.py` and `verify-state.py`, and neither
-   inspects imports; there is no CI config anywhere under `graph_agents/`. Deliberately
-   left open by `2026-08-25-fleet-hardening` — it is about apps, not about the graph, and
-   it needs its own run.
+5. ~~Nothing enforces the umbrella invariant.~~ **CLOSED 2026-08-26**, run
+   `2026-08-26-invariant-check`, single slice, PASS on attempt 1. `graph_agents/.graph/verify-invariant.py`
+   walks every registered app's source and flags import syntax whose target is a relative
+   path (`./`/`../`) that resolves into a different app or into `graph_agents/` itself —
+   bare specifiers (like huntstack's `@huntstack/*` workspace imports) are names, not
+   paths, so they cannot match by construction, and only import-shaped lines are read, so
+   `registry.json`'s own `path` fields and doc prose naming apps are invisible to it.
+   `graph_agents/.claude/hooks/flag-cross-app-import.py` runs the same check live on every
+   `Write`/`Edit`, registered as a second `PostToolUse` entry in `settings.json` alongside
+   the staleness hook. Clean across all 6 apps today (fleetview 2, huntstack 121,
+   App 1 233, podcraft-ai 26, thrml 25, whoop-med-tracker 6 source files — reviewer
+   confirmed none silently skipped); both builder and reviewer independently wrote and
+   deleted synthetic cross-app-import fixtures and confirmed it catches them with correct
+   `file:line`, including `graph_agents/` itself as a forbidden target, and stays silent on
+   `registry.json`, doc prose, and real `@huntstack/*` imports. Advisory only, like
+   `verify-state.py` — it is a check, not a gate, and nothing forces it to run outside this
+   session's hook. Reviewer logged four low-severity, non-blocking scope notes: `SOURCE_EXT`
+   doesn't cover `.mts`/`.cts`/`.pyi` (no such files exist in any app today); the Python
+   `sys.path` rule only matches a literal `./`/`../` string, not a computed path; non-import
+   edges (a `package.json` `file:` dependency, a `tsconfig` `paths` alias, a build script
+   shelling out to a sibling app) are out of scope — grepped for and none exist today, but
+   the checker proves less than the invariant's full wording ("import, build against, or
+   **read files from**"); and `builders.s1.changed` under-lists one file (the run's own
+   `state.json`, not app code). None reopen the gap; all are documented narrowness, not
+   live misses.
 6. ~~The staleness hook has never actually fired.~~ **CLOSED — observed firing
    2026-08-25.** During slice `s5` of `2026-08-25-fleet-hardening`, every `Edit` to
    `GRAPH.md` and to `feature-graph/SKILL.md` returned the hook's `additionalContext`
@@ -234,8 +258,56 @@ header warns about. The hook creates the obligation; a real verification pass di
 | `2026-08-25-refuge-freshness` | huntstack | single-loop | **parked** at human gate | Plan complete, unapproved, no code written |
 | `2026-08-25-fleet-hardening` | umbrella (the fleet itself) | single-loop, 5 slices | **executed**, approved at the gate | Fleet got a git repo, a state contract in all 6 nodes, an owner for `branch`, `verify-state.py`, and this snapshot corrected |
 | `2026-08-25-transclusion-external-previews` | App 1 | single-loop, 1 slice | **executed**, approved at the gate | First product code by this fleet. External-link popovers no longer surface browser frame-block errors. Merged to `main` as `79c3c32` |
+| `2026-08-26-invariant-check` | umbrella (the fleet itself) | single-loop, 1 slice | **executed**, approved at the gate, PASS on attempt 1 | Closed gap #5: `verify-invariant.py` + `flag-cross-app-import.py` make the umbrella invariant a live, automated check instead of prose. Committed directly to `graph_agents` `master` (`9899e85`) — no branch, nothing to merge |
 
-Run state lives at `graph_agents/.graph/runs/<run-id>/state.json` for each of the three.
+Run state lives at `graph_agents/.graph/runs/<run-id>/state.json` for each of the four.
+
+### `2026-08-26-invariant-check` — what happened
+
+Goal: close gap #5 — nothing enforced "no app may import, build against, or read files
+from another app," it was prose in `CLAUDE.md`. App: umbrella (the fleet itself). Approved
+at the gate, one slice, **PASS on attempt 1**.
+
+The `scout` surfaced the risk that shaped the design: a naive check would false-positive on
+`registry.json`'s own `path`/`entry_docs` fields (which legitimately name every app), on doc
+prose in `CLAUDE.md`/`GRAPH.md` naming apps in examples, and on huntstack's internal
+`@huntstack/*` pnpm-workspace imports, which look like they cross a boundary but don't — all
+three live inside huntstack's own repo. The `architect`'s answer: only parse actual
+import/require *syntax*, and only match a target that is a **relative path** (`./` or
+`../`). Bare specifiers like `@huntstack/db` are names, not paths, so they cannot match by
+construction — no allowlist needed. Free text in JSON values or comments never reaches the
+import-syntax parser at all.
+
+Two files, one slice: `graph_agents/.graph/verify-invariant.py` (the checker, advisory,
+mirrors `verify-state.py`'s style) and `graph_agents/.claude/hooks/flag-cross-app-import.py`
+(a second `PostToolUse` entry alongside the staleness hook, so a violation surfaces at the
+moment of the `Write`/`Edit`, not just when someone remembers to run the script). The hook
+imports the checker's `check_file()` rather than duplicating the rule — one definition of a
+violation, not two that can drift apart.
+
+**Both builder and reviewer independently wrote synthetic cross-app-import fixtures, ran the
+checker against them, and deleted them** — nothing was left behind or committed in any app
+repo (`git -C whoop-med-tracker status --short` confirmed empty by both). The reviewer did
+not reuse the builder's fixtures; it wrote its own nested TS/Python set (import-from,
+export-from, `require()`, dynamic `import()`, side-effect import, a `repos/`-round-trip
+path) and confirmed all of it caught with correct `file:line`, `graph_agents/` included as a
+forbidden target, while `@huntstack/*` and same-app relative imports stayed silent. It also
+instrumented the walk to confirm all 6 apps were actually scanned (not silently skipped) and
+grepped all 6 apps for non-import edges (`package.json` `file:` deps, `tsconfig` `paths`
+aliases) to confirm the clean verdict wasn't hiding a live violation the checker can't see.
+
+**The reviewer logged four low-severity findings, none of which reopened the gap**:
+`SOURCE_EXT` doesn't cover `.mts`/`.cts`/`.pyi` (no such files exist in any app today); the
+Python `sys.path` rule matches only a literal `./`/`../` string, not a computed path built
+from `os.path.join`; non-import edges are structurally out of scope, which means the checker
+proves less than the invariant's full wording ("import, build against, or **read files
+from**"); and `builders.s1.changed` under-listed the run's own `state.json` among the
+commit's files. All four are documented narrowness, verified against the real trees to be
+non-live today, not misses the checker was supposed to catch and didn't.
+
+Single-loop, no branch — the builder committed directly to `graph_agents`' `master`
+(`9899e85`), so step 5's merge was a no-op. `integrator` and `ops` were not exercised, same
+as every prior run.
 
 ### `2026-08-25-transclusion-external-previews` — what happened
 
@@ -406,3 +478,4 @@ What `2026-08-25-refuge-freshness` found in huntstack, independent of the featur
 | 2026-08-26 | `.gitignore` now explains the untracked-registry consequence and points at a section that exists; `.claude/scheduled_tasks.lock` ignored. This file gained the rebuild note |
 | 2026-08-26 | Constitution and root `CLAUDE.md`: prose cross-references named as allowed with a mechanical test; "standalone product" → "standalone node", since `fleetview` is a tool and `thrml` a vendor drop |
 | 2026-08-26 | Roster line counts re-measured — `GRAPH.md` 215→219, `verify-state.py` 125→129, `builder.md` 49→50 had drifted; registry count corrected 5→6 |
+| 2026-08-26 | Run `invariant-check` against the fleet itself: `verify-invariant.py` + `flag-cross-app-import.py` close gap #5. PASS on attempt 1, committed directly to `graph_agents` `master` as `9899e85` |
