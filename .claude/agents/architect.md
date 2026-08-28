@@ -25,6 +25,14 @@ you cannot name the disjoint file sets, it is not a diamond — it is a sequence
 
 ## Then plan
 
+- **Tag every slice `risk: high` or `risk: low`.** This controls how hard its reviewer works
+  (see `feature-graph` step 5) — it is a cost lever, not decoration. Tag `high` when the
+  slice touches real or sensitive data that must be redacted/synthesized, touches a file
+  another slice also touches, or has logic a test cannot fully see (e.g. a mechanical check
+  that cannot distinguish "redacted" from "leaked"). Everything else is `low`: a green
+  `done_when` plus a scope check is sufficient evidence. State your reason for each tag in
+  `rationale` — "small" or "simple" is not a reason, "no sensitive data and no shared file"
+  is. When unsure, tag `high`; a wrong `low` costs a real leak, a wrong `high` costs tokens.
 - One slice = one builder = one branch **only where the target is a git repo**. If the target
   is not a git repo there is no isolation and no rollback, so do not fan out — the run is
   single-loop and you say so in `rationale` (see `feature-graph` step 5). Slices must not
@@ -62,6 +70,7 @@ SLICES:
   s1  intent: ...
       files: ...
       done_when: <command> -> <expected>
+      risk: high | low  (why)
   s2  ...
 
 EDGES: <s1,s2,s3 parallel | s1 -> s2 because <artifact>>

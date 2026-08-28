@@ -1,6 +1,6 @@
 # CURRENT-STATE — graph_agents
 
-> **Last verified: 2026-08-26**
+> **Last verified: 2026-08-28**
 >
 > A point-in-time snapshot **verified against disk**, not a living spec. `GRAPH.md` and
 > `CLAUDE.md` describe how the fleet is *supposed* to work; this file records what is
@@ -99,7 +99,7 @@ this fleet has written a line of product code yet**", eleven hours after one had
 | Root memory shim | live, `@`-imports the constitution | `repos/CLAUDE.md` |
 | `.claude` junction | live, verified same-dir | `repos/.claude` → `graph_agents/.claude` |
 | 6 agent nodes | live; **5 of 6** have executed as registered agents — `integrator` first ran 2026-08-26 (`archive-adapters`). **`ops` is the only node never executed** | `.claude/agents/` |
-| 3 skills | `feature-graph` exercised 3× (290 ln); `new-app` **exercised once** 2026-08-26, creating `personal-archive` (72 ln); `fleetview` exercised (56 ln) | `.claude/skills/` |
+| 3 skills | `feature-graph` exercised 3× (302 ln); `new-app` **exercised once** 2026-08-26, creating `personal-archive` (72 ln); `fleetview` exercised (56 ln) | `.claude/skills/` |
 | Staleness hook | live, **observed firing** 2026-08-25; rewritten 2026-08-26 (junction paths, run-close, `.py`) — 20 synthetic payloads pass | `.claude/settings.json`, `.claude/hooks/flag-stale-state.py` (114 ln) |
 | State verifier | live, **two modes**. Named-key mode: advisory, a check the orchestrator runs. `--audit` mode: fires from a hook, checks edge ordering. **Fixed 2026-08-26 (`4cbe78c`)** — it counted `_schema.json`'s example slice as real, so the fan-in check fired on *every* run reaching an integrator and no diamond could close green. 5 new fixtures + byte-identical output on all four prior runs | `graph_agents/.graph/verify-state.py` (420 ln) |
 | Plan-scope guard | live. **Fixed 2026-08-26 (`46e0f25`) to be worktree-aware** — it resolved plan entries against `repos/`, so it denied *every* write by *every* builder in a diamond. 14 synthetic cases. **Exercised for real** across 5 builder runs with zero false denials. ⚠️ **Matcher is `Write\|Edit` only, so a Bash write bypasses it entirely** — see gap #13 | `.claude/settings.json`, `.claude/hooks/guard-builder-scope.py` (235 ln) |
@@ -126,7 +126,7 @@ this explanation and this explanation did not exist; both ends were fixed 2026-0
 | Node | Model | Tools | Lines | Has executed? |
 |---|---|---|---|---|
 | `scout` | haiku | Read, Glob, Grep, Bash, WebSearch, WebFetch | 41 | yes, 2 runs |
-| `architect` | opus | Read, Glob, Grep, Bash | 72 | yes, 2 runs |
+| `architect` | opus | Read, Glob, Grep, Bash | 81 | yes, 2 runs |
 | `builder` | opus | Read, Write, Edit, Glob, Grep, Bash | 55 | yes, 6 slices |
 | `reviewer` | opus | Read, Glob, Grep, Bash | 54 | yes, 9 reviews |
 | `integrator` | opus | Read, Write, Edit, Glob, Grep, Bash | 41 | **no** |
@@ -697,3 +697,4 @@ What `2026-08-25-refuge-freshness` found in huntstack, independent of the featur
 | 2026-08-26 | Gaps #13–#16 booked from the diamond: the guard's `Write\|Edit`-only matcher (a Bash write bypasses it — **raised by a builder that declined to use it**), the `scope_exceptions` placeholder parsed as a path, the staleness hook firing on app files in worktrees, and the standing rule that a green suite never evidences whoop fixture redaction |
 | 2026-08-26 | `/new-app` exercised for the first time (gap #4): `personal-archive`, own repo, initial commit `272dd54`, registered as the 7th app. Gate surfaced an unanticipated environment case — no `uv` — resolved by matching the sibling Python convention. Scaffolded deliberately as a **diamond vehicle**: contract frozen up front, `src/adapters/__init__.py` the single expected merge point. Gaps #2 and #3 stay open until a run uses it |
 | 2026-08-26 | Authorship: `written_by` on all six node keys in `_schema.json`, stamped by each node, checked by `--audit` against an owner map. Gap #7 blind spot (3) closed — a `builders.*` key stamped `orchestrator`, or a `reviews.*` key stamped `builder`, now fails. Placeholder detection rewritten as `is_untouched()` after the new field broke whole-value template identity on older runs |
+| 2026-08-28 | Token-cost review of `archive-adapters` (the first diamond): the shape heuristic itself was sound — 3 genuinely disjoint slices earned the diamond — but every slice got the same full adversarial reviewer regardless of risk, and that adversarial depth is what caught the leaked WHOOP measurement. Added risk tagging: `architect` now tags each slice `risk: high\|low` with a stated reason; `feature-graph` step 5 briefs the reviewer accordingly — full re-derivation for `high`, a lighter re-run-`done_when`-plus-scope-check for `low`, with a reviewer free to re-tag a slice `high` mid-review if it doubts the call. Not yet exercised by a run |

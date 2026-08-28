@@ -170,6 +170,18 @@ As each builder returns, immediately spawn its `reviewer` — do **not** wait fo
 builders. That barrier is the most common way these runs waste wall-clock. A slice that
 finished in 2 minutes should be under review while a slow slice is still building.
 
+**Brief the reviewer to the slice's `risk` tag — this is a token lever, not a formality.**
+`risk: high` (real/sensitive data, a shared file, or logic a test can't see through) gets
+the full adversarial brief: re-derive everything from scratch, do not trust the builder's
+self-report, re-walk by hand what the test cannot check (this is what caught the leaked
+health-data value in `2026-08-26-archive-adapters` s1-whoop). `risk: low` gets a lighter
+brief: re-run `done_when` on the branch alone, confirm the diff stays inside the approved
+file set, read the diff once for correctness. Do not spend adversarial-depth review on a
+slice the architect tagged `low` — that is the exact overhead this tagging exists to cut.
+If a `low`-tagged reviewer finds something that makes it doubt the tag, it re-tags the
+slice `high` in its own `reviews.<slice>` note and reviews accordingly; it does not silently
+apply high-effort review without saying why the architect's call was wrong.
+
 After each builder returns, and again after each reviewer, verify the key landed
 before moving on:
 
