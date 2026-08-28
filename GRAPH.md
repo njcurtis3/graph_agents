@@ -243,6 +243,19 @@ be tighter. Tell it exactly which questions to answer and which files to start f
 Don't hand it "go look at the app." A vague scout brief is where the savings evaporate —
 it reads everything, returns mush, and the architect plans on sand.
 
+**The mechanical half of that brief is now a script.** `graph_agents/.graph/scout-facts.py
+<app-id>` computes what every scout was re-deriving by hand — git repo or not, branch,
+HEAD, dirty state, per-repo commit identity, registry entry, which entry docs exist, stack
+on disk vs. stack claimed — and `scout.md` step 0 runs it before anything else.
+
+A per-app fact **cache** was designed first and rejected on evidence (2026-08-28). Past
+scout keys were checked against reality: "graph_agents/ is NOT a git repository" had become
+false, and "6 app directories" had become eight. The facts scouts repeat most are the ones
+that rot fastest, and one of them — git-repo status — decides the graph's shape via § "No
+repo, no diamond". A cache would have served a confident wrong answer to exactly the
+question that must not be wrong. The script stores nothing, so it cannot go stale; the cost
+of recomputing a `git rev-parse` is far below the cost of trusting a stale one.
+
 **Before reaching for a cheaper provider:** model tier is the second-biggest lever, not
 the first. The stop rule is the first. One `single-loop` instead of an unjustified
 six-node diamond saves more than downgrading every node in the fleet would.

@@ -23,8 +23,16 @@ numbered `0.5` on purpose: nothing downstream may renumber.
 **1. Is the target a git repo?**
 
 ```bash
-git -C <target> rev-parse --is-inside-work-tree
+python graph_agents/.graph/scout-facts.py <app-id>     # answers this and more
+git -C <target> rev-parse --is-inside-work-tree        # or the bare check
 ```
+
+The collector prints `NOT A GIT REPO -> diamond forced to single-loop` when it applies,
+along with the branch, HEAD and per-repo commit identity you will want anyway. Compute
+this every run — never carry it over from a previous one. On 2026-08-28 a scout fact
+reading "graph_agents/ is NOT a git repository" was checked and had become false; had
+that been trusted, it would have forced a single-loop that was no longer necessary, and
+the inverse error would have fanned builders out with no isolation at all.
 
 A worktree requires a git repo. If that exits non-zero there is **no isolation and no
 rollback** — parallel builders write into one tree and collide (`GRAPH.md` § the stop
