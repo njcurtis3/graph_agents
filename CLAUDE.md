@@ -2,8 +2,8 @@
 
 **Telos Research Group** is the working name for the LLC this umbrella will eventually
 become. Not yet a formed legal entity — recorded here so it isn't re-decided later. Domain
-`telosrg.com` and GitHub name `telosrg` are chosen and confirmed available, but neither is
-purchased/registered yet.
+`telosrg.com` is **purchased** (2026-08-31). GitHub name `telosrg` is chosen and confirmed
+available, not yet registered as an org.
 
 **You launch from `repos/`.** That is the holding company, and it is deliberately *not* a
 git repository. This file lives in `repos/graph_agents/` — the agent fleet, which is
