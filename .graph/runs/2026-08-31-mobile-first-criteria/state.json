@@ -140,16 +140,52 @@
   },
   "reviews": {
     "s1": {
-      "written_by": "the node that wrote this key - here, always the string reviewer, never the builder it is reviewing",
-      "verdict": "PASS|REJECT",
+      "written_by": "reviewer",
+      "verdict": "PASS",
       "attempt": 1,
-      "summary": "optional: one paragraph a human can read without opening findings[]",
+      "slices_reviewed": [
+        "s1",
+        "s2",
+        "s3"
+      ],
+      "summary": "Reviewed branch mobile-first-criteria as one unit (single commit ce44bcc, working tree clean). Re-ran all three done_when sets from repos/ myself: s1 seven checks exit 0; s2 jq prints true with all 8 apps carrying ui, both greps exit 0; s3 five greps exit 0. s1 (HIGH, adversarial re-derive): conventions/mobile-first.md is 149 lines of prose/checklist with zero code artifact, and all 11 architect content_requirements are present and substantive, not keyword drops - applicability gate keyed to the registry ui field, the 360/768/1024/1280 tier table with the explicit 'floor is 360' mapping rule, the min-width-only authoring rule with a worked example, five diff-visible prohibitions, viewport meta requirement, 44x44 + 8px spacing, 16px/inputmode/one-handed typography, a real four-item desktop-obligations section, images/media CLS rules, a 10-question Reviewer checklist, and a closing 'This is a convention, not a dependency' section that states no app may import/build against/resolve the path and cites graph_agents/CLAUDE.md, The one invariant, with the delete-graph_agents-from-disk mechanical test. The CLAUDE.md edit adds a '## Conventions' section above '## Scope rule' that points at the directory and the ui lookup; it does not restate, weaken or paraphrase the invariant text. s2 (LOW): diff stays inside SKILL.md (registry.json is gitignored - see finding 1); gate question 6, the non-optional Step 2 post-processing block, the Step 3 '## UI targets' copy requirement reusing the existing prose-cross-reference wording, and the Step 4 'must include ui' are all present. Step 4 carries no JSON template, so there is no stale example to update. I checked the ui backfill against each app's own CLAUDE.md: fleetview (binds 127.0.0.1), roamex ('Deploy: there isn't one. This is a local CLI over local files'), whoop-med-tracker (writes out/dashboard.html and opens it locally) = desktop-only, correct; personal-archive (scheduler, no server) and thrml (vendor drop) = none, correct; huntstack and koenrane.xyz = responsive-web, correct; podcraft-ai defensible (see finding 2). s3 (HIGH, human_read test applied line by line): all six reviewer.md checks are answerable from a diff alone - fixed px width / max-width-only query, missing or scale-locked viewport meta, hit area under 44px, hover-only affordance, 100vh, sub-16px inputs. None needs a running device. Notably the builder correctly did NOT lift 'no horizontal overflow at 360px' out of the convention doc into reviewer.md - that is the one item that would have required rendering. The architect and builder bullets add no duplication: the architect bullet's 'the overlap named above' resolves to the existing 'Overlap is the #1 cause of a failed fan-in' line, and the builder bullet does not restate step 2's 'match the surrounding code'. Nothing in the diff touches roamex or any other app's code; the only files outside the approved sets are this run's own .graph/runs state.json and activity.jsonl, which is normal fleet bookkeeping, not scope creep. No shared code, no importable artifact, no cross-app edge introduced. No blockers found.",
+      "done_when_rerun": "s1: test -f conventions/mobile-first.md ok; grep -qi 360|44|viewport|min-width|'reviewer checklist' all ok; grep -q conventions/mobile-first.md graph_agents/CLAUDE.md ok. s2: jq -e '[.apps[]|select(has(\"ui\")|not)]|length==0' -> true, exit 0; ui values fleetview=desktop-only huntstack=responsive-web koenrane.xyz=responsive-web personal-archive=none podcraft-ai=responsive-web roamex=desktop-only thrml=none whoop-med-tracker=desktop-only; both SKILL.md greps ok. s3: architect.md + builder.md path greps ok; reviewer.md 44/viewport/responsive-web greps ok. git: single commit ce44bcc on mobile-first-criteria, working tree clean.",
       "findings": [
         {
-          "file": "",
-          "line": 0,
-          "issue": "",
-          "severity": ""
+          "file": "graph_agents/portfolio/registry.json",
+          "line": 2,
+          "issue": "The s2 registry deliverable is NOT in the commit. portfolio/registry.json is gitignored (.gitignore:26), so the ui backfill and the $comment documentation exist on disk only; git diff master..mobile-first-criteria contains 8 files and registry.json is not among them. Pre-existing repo policy, not something the builder caused or could fix inside its file set, and the on-disk content is correct - but the integrator must know that merging this branch does not carry the ui field anywhere, and that the backfill is lost if the working copy is. Worth an explicit line in the integrator's verification.",
+          "severity": "note"
+        },
+        {
+          "file": "graph_agents/portfolio/registry.json",
+          "line": 94,
+          "issue": "podcraft-ai ui: responsive-web is the least certain of the eight, as the builder flagged. Its CLAUDE.md documents a real Vite frontend under web/ with a production build (cd web && npm run build) but the documented run mode is localhost:5173 proxying to localhost:8000 - today it is operator-local. responsive-web is the right call anyway: the surface is a product UI with a production build path, and over-inclusion costs a few reviewer checks while under-inclusion ships a desktop-shaped product. Revisit if podcraft-ai is ever declared local-only.",
+          "severity": "note"
+        },
+        {
+          "file": "graph_agents/.claude/agents/reviewer.md",
+          "line": 33,
+          "issue": "The subsection is 11 content lines (14 with heading and blanks) against the architect's <=10 target. I agree with the builder that it should not be tightened: the six checks are the checks the plan named, and the discipline line is what keeps them from becoming taste rejections. Dropping either costs more than the one line.",
+          "severity": "note"
+        },
+        {
+          "file": "graph_agents/.claude/agents/reviewer.md",
+          "line": 36,
+          "issue": "Check (c), hit area under 44px, is the weakest of the six against the diff-alone test: when an element's sizing comes from a class defined outside the diff, the reviewer cannot compute the effective hit area. This is correctly handled rather than broken - the discipline line immediately below converts any unnameable case into a note, and the convention doc repeats it ('Anything you cannot answer from the diff is a note, not a rejection'). No change needed; recording it so the human signing the human_read gate sees I tested this specific item.",
+          "severity": "note"
+        },
+        {
+          "file": "fleetview/test.js",
+          "line": 44,
+          "issue": "fleetview's registry fixtures do not carry the new ui key. Not a break: fleetview/index.html reads registry entries tolerantly (a.one_liner || \"\") and renders no ui field, and fleetview/serve.py does no schema validation, so the added key is inert there. Fixing it would be a cross-app edit and is correctly out of scope for this run. Noted only as a known seam for whoever next touches fleetview.",
+          "severity": "note"
+        },
+        {
+          "file": "graph_agents/.graph/runs/2026-08-31-mobile-first-criteria/state.json",
+          "line": 129,
+          "issue": "builders.s1.changed says conventions/mobile-first.md is 148 lines; it is 149. Cosmetic bookkeeping drift, no effect on the artifact.",
+          "severity": "note"
         }
       ]
     }
