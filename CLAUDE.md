@@ -72,6 +72,18 @@ If you launch from inside `graph_agents/` instead, these paths break. Don't.
 Do not scan the whole umbrella to answer a question about one app. The registry exists
 so you can load 2-3 files instead of five repos.
 
+## Conventions
+
+`graph_agents/conventions/` is the home for cross-app prose conventions — the "how we do
+this" documents that are read and copied, never imported.
+
+| Convention | Covers |
+|---|---|
+| `conventions/mobile-first.md` | Building a UI-bearing app mobile-first while still serving desktop well: width tiers, touch targets, viewport, and a reviewer checklist. |
+
+Whether it applies to a given app is a lookup, not a debate: the `ui` field in
+`portfolio/registry.json`.
+
 ## Scope rule
 
 Every task belongs to exactly one app, or to the umbrella. If a task claims to belong to
