@@ -1,0 +1,174 @@
+{
+  "run_id": "2026-08-31-mobile-first-criteria",
+  "goal": "add criteria to the agents pipeline that enables them to build apps for mobile â€” when we build a new app, there need to be structures, instructions, and criteria that help the agent pipeline build in a mobile-first way while also building for desktop",
+  "app": "umbrella",
+  "status": "building",
+  "scout": {
+    "written_by": "scout",
+    "facts": [
+      "new-app skill contains only SKILL.md; zero mentions of mobile, responsive, viewport, device, or platform targets (graph_agents/.claude/skills/new-app/SKILL.md:1-73)",
+      "architect.md is task-agnostic; no UI/frontend domain specifics or platform considerations mentioned (graph_agents/.claude/agents/architect.md:1-82)",
+      "builder.md enforces scope and code quality but has no UI/UX/accessibility/device quality bars (graph_agents/.claude/agents/builder.md:1-56)",
+      "reviewer.md hunts for bugs, test quality, cross-app imports; no UI/responsiveness/device criteria mentioned (graph_agents/.claude/agents/reviewer.md:1-54)",
+      "new-app bootstrap delegates to ecosystem tools (npm create, uv init, cargo new); no in-repo template scaffold referenced (graph_agents/.claude/skills/new-app/SKILL.md:33-34)",
+      "registry.json has 8 apps; fields are id, path, kind, status, one_liner, stack, entry_docs, owns, rules—no 'platform' or 'targets' field (graph_agents/portfolio/registry.json:1-183)",
+      "Constitution explicitly permits Conventions as cross-app guidance without code coupling (graph_agents/CLAUDE.md:19)",
+      "Conventions are defined as 'how we name things, how we structure a repo' — exactly the right level for mobile-first guidance (graph_agents/CLAUDE.md:19)",
+      "No existing conventions/ directory or boilerplate-style template system in graph_agents/ (glob and search found none)",
+      "roamex/CLAUDE.md has web/ frontend (read-only viewer on 127.0.0.1) but zero mobile/responsive/platform/device-awareness structure (roamex/CLAUDE.md:205-227)",
+      "huntstack/CLAUDE.md mentions 'mobile headers' in beta readiness (grep match), but no fleet-level mobile-first guidance exists",
+      "koenrane.xyz/CLAUDE.md lists 'Cross-device: Desktop, iPad Pro, iPhone 12' as manual testing scope, not automated criteria (grep match)",
+      "No grep hits for responsive, viewport, accessibility, or platform targets in any agent or skill files (graph_agents/.claude/agents/ and skills/)"
+    ],
+    "unknowns": [
+      "Should mobile-first criteria be mandatory for ALL new apps, or only for product/site kinds? (Kind field in registry exists; need to clarify scope)",
+      "What specific devices/breakpoints define 'mobile-first'? (iPhone SE through Pro Max? Tablets? Landscape vs. portrait?)",
+      "Does architect need to know about mobile+desktop from the START (planning slices for each), or is it OK for builders to discover it later?",
+      "Should there be a registry field (e.g., 'platforms': ['mobile', 'desktop']) so the fleet can route work correctly, or does CLAUDE.md guidance suffice?"
+    ],
+    "risks": [
+      "Conventions can only be prose guidance or prose checklists—if architect or new-app tries to import/reference actual code across apps, that violates the invariant (graph_agents/CLAUDE.md:47-48)",
+      "If mobile-first criteria live only in CLAUDE.md and not in new-app/SKILL.md, new apps won't actually scaffold with mobile structure—they'll ignore it (educating the builder requires updating the skill)",
+      "If roamex or other apps are told 'build mobile-first' without corresponding criteria in the architect/builder agents, they will not get feedback in code review—reviewer.md has no mobile-specific checks",
+      "Current new-app/SKILL.md step 2 uses ecosystem scaffolders (npm create, etc.) which make their own platform defaults; if those do NOT include mobile-first by default, apps will diverge without intervention in the scaffold process"
+    ]
+  },
+  "architect": {
+    "written_by": "architect",
+    "shape": "single-loop",
+    "parallel_safe": false,
+    "plan": [
+      {
+        "slice": "s1",
+        "intent": "Create the conventions/ pattern and the mobile-first convention doc: concrete, code-readable criteria for building a UI-bearing app mobile-first while still serving desktop well. Prose/checklist only, zero shared code. Make the new directory discoverable from the constitution.",
+        "files": [
+          "graph_agents/conventions/mobile-first.md",
+          "graph_agents/CLAUDE.md"
+        ],
+        "risk": "high",
+        "risk_reason": "This doc is the substance of the whole run and both other slices reference it; grep can confirm headings exist but cannot confirm the criteria are actually checkable by a reviewer reading code. It also edits the constitution file, the highest-blast-radius file in the fleet. No sensitive data, but unseeable-by-test content plus a constitution edit = high.",
+        "content_requirements": [
+          "Applicability gate at the top: applies when the app ships a UI a human reaches from a device they choose. Does NOT apply to CLIs, libraries, data pipelines, vendor drops, or local-only 127.0.0.1 dev/inspection UIs. Cross-reference the registry ui field added in s2.",
+          "Named width tiers, not device names: design floor 360px portrait, >=768 tablet, >=1024 desktop, content max-width at >=1280. These widths are the contract; a scaffolder's own tier names (Tailwind sm/md/lg etc.) may map onto them as long as the floor is 360.",
+          "Mobile-first authoring rule: unprefixed/base CSS is the small-screen layout; larger screens are additive via min-width media queries only. No max-width-only cascades, no separate desktop.css + mobile.css split.",
+          "Checkable prohibitions a reviewer can see in a diff: no fixed px widths on layout containers, no horizontal overflow at 360px, no 100vh for full-height mobile containers (use dvh/svh), no hover-only affordance without a tap/focus equivalent, no user-scalable=no or maximum-scale=1.",
+          "Required presence: a responsive viewport meta (width=device-width, initial-scale=1) or the framework equivalent in the document head.",
+          "Touch targets: interactive elements >= 44x44 CSS px effective hit area including padding, >= 8px spacing between adjacent targets.",
+          "Typography and input: base body >= 16px so iOS does not zoom form fields; correct inputmode/type on inputs; forms usable one-handed.",
+          "Desktop is not an afterthought - state explicit desktop obligations: content max-width so text lines stay readable, keyboard focus order with a visible focus ring, hover states as enhancement only, and using the extra width for real layout rather than a stretched mobile view.",
+          "Images and media: intrinsic width/height or aspect-ratio set to prevent layout shift; responsive sources where the scaffolder supports them.",
+          "A short 'Reviewer checklist' section written as yes/no questions answerable by reading a diff, so reviewer.md can point at it by name instead of restating it.",
+          "An explicit invariant note: this file is a CONVENTION. It is read and copied as guidance; no app may import, build against, or resolve this path at build/test/deploy time. Cite graph_agents/CLAUDE.md, The one invariant."
+        ],
+        "claude_md_change": "Add a short '## Conventions' section to graph_agents/CLAUDE.md naming graph_agents/conventions/ as the home for cross-app prose conventions and listing conventions/mobile-first.md. Do not weaken or restate the invariant. A new directory nobody references is a dead directory.",
+        "done_when": "From repos/: test -f graph_agents/conventions/mobile-first.md; grep -qi 360 <doc>; grep -qi 44 <doc>; grep -qi viewport <doc>; grep -qi min-width <doc>; grep -qi 'reviewer checklist' <doc>; grep -q 'conventions/mobile-first.md' graph_agents/CLAUDE.md  ->  every command exits 0"
+      },
+      {
+        "slice": "s2",
+        "intent": "Wire the convention into the moment a new app is born: add a UI-target question to the new-app HUMAN GATE, apply the convention at scaffold time, require the app's own CLAUDE.md to carry its own copy of the bar, and add a ui field to the registry so downstream agents route on it instead of guessing from kind.",
+        "files": [
+          "graph_agents/.claude/skills/new-app/SKILL.md",
+          "graph_agents/portfolio/registry.json"
+        ],
+        "risk": "low",
+        "risk_reason": "No sensitive data, no file shared with another slice, and both deliverables are mechanically provable: a JSON parse plus a key check proves the registry, grep proves SKILL.md names the convention. A wrong result here is visible, not silent.",
+        "content_requirements": [
+          "SKILL.md Step 1 (HUMAN GATE): add question 6 - ui - one of responsive-web | desktop-only | none, with the one-line test: does a human reach this on a device they choose? If yes it is responsive-web. Local-only dev/inspection UIs and CLIs are not.",
+          "SKILL.md Step 2 (scaffold): after the ecosystem scaffolder runs, if ui is responsive-web, apply graph_agents/conventions/mobile-first.md to the generated scaffold - set the viewport meta, establish the 360px base layer, delete any desktop-fixed-width default the scaffolder emitted. Say plainly that ecosystem scaffolders do not default to mobile-first, so this step is not optional (scout risk 4).",
+          "SKILL.md Step 3 (the app's own CLAUDE.md): when ui is responsive-web, the app's CLAUDE.md must carry its OWN copy of the width tiers and the viewport/touch-target bar under a '## UI targets' heading - copied, then owned locally, allowed to drift. It may name graph_agents/conventions/mobile-first.md as a prose cross-reference only. Reuse Step 3's existing prose-cross-reference wording rather than inventing a second explanation.",
+          "SKILL.md Step 4 (register): the new registry entry must include ui.",
+          "registry.json: add a ui field to all 8 existing app entries and document it in the $comment line. Backfill judgement: apps that serve a UI to end users over a network -> responsive-web; local-only viewers (fleetview; roamex's 127.0.0.1 web/ surface), vendor drops and non-UI apps -> desktop-only or none as fits. Backfill is metadata only - this run changes no app's code."
+        ],
+        "done_when": "From repos/: (1) jq -e '[.apps[] | select(has(\"ui\") | not)] | length == 0' graph_agents/portfolio/registry.json -> prints true, exit 0 (equivalently, a python json.load that asserts every apps[] entry has a ui key); (2) grep -q 'conventions/mobile-first.md' graph_agents/.claude/skills/new-app/SKILL.md -> exit 0; (3) grep -qi 'responsive-web' graph_agents/.claude/skills/new-app/SKILL.md -> exit 0"
+      },
+      {
+        "slice": "s3",
+        "intent": "Give the three execution nodes a concrete instruction so the convention is applied and enforced per-run, not only at scaffold time: architect plans mobile+desktop up front, builder implements to the bar, reviewer checks it by reading code.",
+        "files": [
+          "graph_agents/.claude/agents/architect.md",
+          "graph_agents/.claude/agents/builder.md",
+          "graph_agents/.claude/agents/reviewer.md"
+        ],
+        "risk": "high",
+        "risk_reason": "These files are the fleet's own behaviour definitions - a vague or bloated instruction here degrades every future run, and grep cannot tell a checkable reviewer criterion from an unenforceable one. The specific failure mode, a criterion that secretly needs a running device, is invisible to this slice's own done_when and would train reviewers to skip the section.",
+        "content_requirements": [
+          "architect.md - one bullet under '## Then plan': when the target app has a UI (registry ui: responsive-web), plan the mobile layout as the base case and desktop as the additive case in the SAME slice. Do not create a separate 'make it responsive' slice - retrofitting responsiveness rewrites the layout layer rather than patching it, and a follow-on slice would touch the same files, which is the overlap this file already calls the #1 cause of a failed fan-in. Skip entirely for desktop-only / none / non-UI apps. Name graph_agents/conventions/mobile-first.md.",
+          "builder.md - one bullet: when the slice touches UI in an app with ui: responsive-web, build to graph_agents/conventions/mobile-first.md - base styles are the 360px layer, larger screens added via min-width only. Do not duplicate the existing 'match the surrounding code' rule in step 2.",
+          "reviewer.md - a subsection under '## What you are hunting', limited to what is verifiable by READING the diff and its tests, explicitly not by running a device lab: (a) a new or changed layout container with a fixed px width, or a max-width-only media query; (b) missing or scale-locked viewport meta in a new document head; (c) an interactive element whose effective hit area is under 44px; (d) a hover-only affordance with no tap/focus path; (e) 100vh on a full-height mobile container; (f) base font under 16px on form inputs. Add the matching discipline line: these are REJECTable only when the reviewer can name the element and the wrong result, per the existing verdict-discipline rule; otherwise they are notes. State that the section is inert when the app's registry ui is not responsive-web.",
+          "Keep each file's existing voice and length discipline. These are prompts read on every run; token cost is real. Target one bullet for architect, one for builder, a subsection of <=10 lines for reviewer."
+        ],
+        "done_when": "From repos/: grep -q 'conventions/mobile-first.md' graph_agents/.claude/agents/architect.md; grep -q 'conventions/mobile-first.md' graph_agents/.claude/agents/builder.md; grep -qi 44 graph_agents/.claude/agents/reviewer.md; grep -qi viewport graph_agents/.claude/agents/reviewer.md; grep -qi responsive-web graph_agents/.claude/agents/reviewer.md  ->  every command exits 0",
+        "human_read": "A human must read the new reviewer.md subsection and answer one question: could I reject on each of these from a diff alone? Any item that needs a running device is the wrong item and must be cut."
+      }
+    ],
+    "edges": "s1 -> s2 -> s3, sequential. Real artifact flow, not fake edges: s2's SKILL.md and s3's agent files all reference the file path and the tier/target numbers that s1 creates, so s1 must land first or the references dangle. s2 before s3 because s3's instructions gate on the registry ui field that s2 introduces. Single-loop either way: one builder, in order, no worktrees.",
+    "not_doing": [
+      "NOT touching roamex or any other existing app's code, styles or CLAUDE.md. The user named Roamex as an illustration only. Retrofitting an existing app is a separate run against that app.",
+      "NOT creating shared CSS, design tokens, a component library, or any scaffold template that apps import. That is the invariant violation this plan exists to avoid; the deliverable is prose and checklists.",
+      "NOT adding an automated responsive test harness, Playwright viewport CI, Lighthouse budgets, or a device lab. The reviewer bar is deliberately limited to what is checkable by reading code.",
+      "NOT adding a platforms array or native iOS/Android targets to the registry. Scope is mobile-first WEB. One field, three values.",
+      "NOT rewriting the new-app scaffolder to hand-roll HTML/CSS. SKILL.md keeps delegating to npm create / uv init / cargo new and only post-processes the result.",
+      "NOT editing GRAPH.md, CURRENT-STATE.md, the feature-graph skill, or any other agent node.",
+      "NOT expanding the accessibility posture beyond the touch-target and focus items named above. Full WCAG is a separate convention if the user wants one."
+    ],
+    "rationale": "SHAPE (forced, and correct on the merits): single-loop, parallel_safe=false. The orchestrator forced it per feature-graph Step 0.5 check 2 because this run edits graph_agents/.claude/agents/** and skills/**, the fleet's own definitions. It is also right independently: repos/ is deliberately not a git repository, so there is no worktree isolation and no rollback, and architect.md's own rule says do not fan out without a repo. The three slices are named separately for clarity and reviewability only; one builder executes them in order.\n\nUNKNOWN 1 - all new apps, or scoped? Scoped, but NOT by kind. kind is the wrong axis and the registry itself proves it: fleetview is kind=tool yet ships an html UI, while roamex is a product whose web/ surface is a read-only viewer bound to 127.0.0.1 that no phone will ever reach. The real predicate is: does a human reach this UI from a device they choose. So s2 adds a narrow ui field (responsive-web | desktop-only | none) and backfills the 8 existing entries. I chose a registry field over per-app CLAUDE.md prose because the constitution's read order makes registry.json the FIRST file every agent loads to route a task - a routing predicate belongs there, and this is one string per app, not a schema. I explicitly rejected a platforms array: arrays invite native/ios/android scope creep this run does not cover.\n\nUNKNOWN 2 - which devices/breakpoints? Resolved as widths, never device names, because device names rot and cannot be checked in a diff. Design floor 360px portrait (covers iPhone SE class and small Android), >=768 tablet, >=1024 desktop, content max-width at >=1280 so desktop text lines stay readable. These map cleanly onto what mainstream scaffolders already emit, so the convention constrains rather than fights npm create. Landscape and tablet-specific layouts are out of scope beyond must-not-break.\n\nUNKNOWN 3 - architect up front, or builders discover it later? Up front, and in the SAME slice rather than a follow-on make-it-responsive slice. Retrofitting responsiveness rewrites the layout layer; it is not a patch, and a separate slice would touch the same files as the original UI slice - exactly the overlap architect.md calls the #1 cause of a failed fan-in. Hence the s3 architect bullet.\n\nUNKNOWN 4 - registry field or CLAUDE.md guidance? Both, at different jobs: the registry carries the one-word routing predicate, the convention doc carries the criteria, and each new app copies the criteria into its OWN CLAUDE.md so the app stays the authority on itself and is allowed to drift. Nothing an app builds, tests or deploys resolves the graph_agents/ path, so it stays a prose cross-reference, which the constitution permits explicitly.\n\nRISK TAGS: s1 high - it edits the constitution file and its whole value is prose quality no grep can score. s2 low - no sensitive data, no shared file, and both outcomes are mechanically provable by a JSON parse and grep. s3 high - it rewrites the fleet's own behaviour prompts and its failure mode is invisible to its own done_when.\n\nSCOPE NOTE: no disagreement with any scout fact. Scout risks 2 and 4 are answered by s2 (wiring into SKILL.md, and post-processing the scaffolder's non-mobile defaults), risk 3 by s3 (reviewer criteria), risk 1 by the s1 invariant note plus NOT DOING item 2."
+  },
+  "approved_by_human": true,
+  "scope_exceptions": [],
+  "builders": {
+    "s1": {
+      "written_by": "builder",
+      "status": "done",
+      "branch": "mobile-first-criteria",
+      "slices_covered": [
+        "s1",
+        "s2",
+        "s3"
+      ],
+      "changed": [
+        "graph_agents/conventions/mobile-first.md (new, 148 lines)",
+        "graph_agents/CLAUDE.md (+13: new '## Conventions' section above '## Scope rule')",
+        "graph_agents/.claude/skills/new-app/SKILL.md (+31: gate question 6 'ui'; Step 2 mobile-first post-processing block; Step 3 '## UI targets' copy requirement; Step 4 registry entry must include ui)",
+        "graph_agents/portfolio/registry.json (+8 'ui' keys, one per app; $comment documents the field; updated bumped to 2026-08-31)",
+        "graph_agents/.claude/agents/architect.md (+7: one bullet under '## Then plan')",
+        "graph_agents/.claude/agents/builder.md (+2: one bullet under '## Hard boundaries')",
+        "graph_agents/.claude/agents/reviewer.md (+11: subsection under '## What you are hunting')"
+      ],
+      "notes": "Single-loop: all three slices built in order on one branch, one commit. Registry ui backfill judgements: huntstack/koenrane.xyz = responsive-web (public, network-served); podcraft-ai = responsive-web (has a Vite web/ frontend with a production build intended for end users, though currently run against localhost:8000 - flagging as the least obvious of the eight); fleetview + roamex = desktop-only (local 127.0.0.1 viewers); whoop-med-tracker = desktop-only (writes out/dashboard.html and opens it locally); personal-archive + thrml = none. Metadata only - no app code touched. Out of scope, not touched: (a) roamex, huntstack and koenrane.xyz have existing UI surfaces that were never measured against the new bar - retrofitting is a separate run per app, per the plan's not_doing; (b) huntstack/CLAUDE.md mentions 'mobile headers' in beta readiness with no criteria behind it; (c) koenrane.xyz/CLAUDE.md lists cross-device manual testing that could now cite its own '## UI targets' section but does not have one; (d) GRAPH.md and CURRENT-STATE.md do not mention conventions/ - left alone per not_doing. Reviewer subsection is 11 lines against the <=10 target; the six checks plus the discipline line would not compress further without dropping a check.",
+      "gate_results": "s1 (from repos/): test -f graph_agents/conventions/mobile-first.md -> exit 0; grep -qi 360 <doc> -> exit 0; grep -qi 44 <doc> -> exit 0; grep -qi viewport <doc> -> exit 0; grep -qi min-width <doc> -> exit 0; grep -qi 'reviewer checklist' <doc> -> exit 0; grep -q 'conventions/mobile-first.md' graph_agents/CLAUDE.md -> exit 0. All seven printed their ok markers (T1 ok 0, T2 ok, T3 ok, T4 ok, T5 ok, T6 ok, T7 ok).\ns2 (from repos/): jq -e '[.apps[] | select(has(\"ui\") | not)] | length == 0' graph_agents/portfolio/registry.json -> printed 'true', jq exit=0; grep -q 'conventions/mobile-first.md' graph_agents/.claude/skills/new-app/SKILL.md -> exit 0 (G2 ok); grep -qi 'responsive-web' graph_agents/.claude/skills/new-app/SKILL.md -> exit 0 (G3 ok). Also python json.load reprint: [('fleetview','desktop-only'), ('huntstack','responsive-web'), ('koenrane.xyz','responsive-web'), ('personal-archive','none'), ('podcraft-ai','responsive-web'), ('roamex','desktop-only'), ('thrml','none'), ('whoop-med-tracker','desktop-only')].\ns3 (from repos/): grep -q 'conventions/mobile-first.md' graph_agents/.claude/agents/architect.md -> exit 0 (H1 ok); same for builder.md -> exit 0 (H2 ok); grep -qi 44 graph_agents/.claude/agents/reviewer.md -> exit 0 (H3 ok); grep -qi viewport reviewer.md -> exit 0 (H4 ok); grep -qi responsive-web reviewer.md -> exit 0 (H5 ok)."
+    }
+  },
+  "reviews": {
+    "s1": {
+      "written_by": "the node that wrote this key - here, always the string reviewer, never the builder it is reviewing",
+      "verdict": "PASS|REJECT",
+      "attempt": 1,
+      "summary": "optional: one paragraph a human can read without opening findings[]",
+      "findings": [
+        {
+          "file": "",
+          "line": 0,
+          "issue": "",
+          "severity": ""
+        }
+      ]
+    }
+  },
+  "integrator": {
+    "written_by": "the node that wrote this key - here, always the string integrator",
+    "merged": [],
+    "conflicts": [],
+    "verification": "what command proved it works, and its output"
+  },
+  "ops": {
+    "written_by": "the node that wrote this key - here, always the string ops",
+    "gated": true,
+    "actions": []
+  },
+  "log": [
+    "orchestrator: opened run 2026-08-31-mobile-first-criteria; forced single-loop per Step 0.5 check 2 (target edits graph_agents/.claude/agents or skills)",
+    "architect: planned 3 sequential slices (conventions doc + constitution pointer; new-app SKILL.md wiring + registry ui field; architect/builder/reviewer instructions). shape=single-loop, parallel_safe=false. Resolved all 4 scout unknowns in rationale.",
+    "orchestrator: human approved the plan (registry ui field + backfill, 360/768/1024/1280px + 44px + 16px numbers, reviewer checks read-only/diff-only, roamex out of scope). approved_by_human=true, status=building.",
+    "builder: built s1+s2+s3 single-loop on branch mobile-first-criteria; all three done_when gates green. s3 human_read still outstanding: a human must confirm each reviewer.md check is rejectable from a diff alone."
+  ]
+}

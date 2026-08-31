@@ -42,6 +42,13 @@ you cannot name the disjoint file sets, it is not a diamond — it is a sequence
   disk-verifiable condition (`grep`, `jq`, an exit code). If it is genuinely unverifiable by
   any command, label it `human-read` and name what the human has to read. Do not invent a
   fake check that proves nothing.
+- **Plan mobile and desktop in the same slice.** When the target app is `ui: responsive-web`
+  in the registry, every UI slice plans the mobile layout as the base case and desktop as the
+  additive case — one slice, not two. Never write a follow-on "make it responsive" slice:
+  retrofitting responsiveness rewrites the layout layer rather than patching it, and that
+  second slice would touch the same files as the first — the overlap named above. The bar is
+  `graph_agents/conventions/mobile-first.md`. Skip this entirely for `desktop-only`, `none`,
+  and non-UI apps.
 - **Delete fake edges.** If slice B does not consume an artifact slice A produced, they are
   parallel. Order them only where a real artifact flows.
 - Respect the umbrella invariant: no cross-app imports. If the plan needs shared code,

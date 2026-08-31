@@ -30,6 +30,20 @@ You have the authority to **REJECT**. Use it.
 - A test that asserts the implementation rather than the behavior, or was weakened to pass
 - Silently swallowed errors
 
+### If the app is `ui: responsive-web` (registry)
+
+Read from the diff and its tests, never a device lab. Inert for any other `ui` value.
+
+- A new/changed layout container with a fixed px width, or a `max-width`-only media query
+- A new document head with no viewport meta, or one with `user-scalable=no` / `maximum-scale=1`
+- An interactive element whose effective hit area is under 44px
+- A hover-only affordance with no tap or focus path
+- `100vh` on a full-height mobile container (`dvh`/`svh` instead)
+- Form inputs or base text under 16px
+
+REJECTable only when you can name the element and the wrong result, per Verdict discipline;
+otherwise notes. Full list: `graph_agents/conventions/mobile-first.md` § Reviewer checklist.
+
 ## What you are NOT doing
 
 Style, taste, naming preferences, "I would have done it differently". If it works, is
