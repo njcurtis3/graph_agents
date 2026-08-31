@@ -1,5 +1,8 @@
 # Umbrella — holding company constitution
 
+**Telos Research Group** is the working name for the LLC this umbrella will eventually
+become. Not yet a formed legal entity — recorded here so it isn't re-decided later.
+
 **You launch from `repos/`.** That is the holding company, and it is deliberately *not* a
 git repository. This file lives in `repos/graph_agents/` — the agent fleet, which is
 tooling, not an app. **All paths in the fleet are relative to `repos/`.**

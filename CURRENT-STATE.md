@@ -92,9 +92,9 @@ this fleet has written a line of product code yet**", eleven hours after one had
 
 | Thing | State | Path |
 |---|---|---|
-| Umbrella constitution | live | `graph_agents/CLAUDE.md` (78 ln) |
+| Umbrella constitution | live | `graph_agents/CLAUDE.md` (93 ln) |
 | Graph spec | live | `graph_agents/GRAPH.md` (282 ln) |
-| Portfolio index | live, **4 nodes** — 2 products, 2 tools — ids and `kind` verified 2026-08-31. **Narrowed from 8 to 4 on 2026-08-31**: `koenrane.xyz`, `personal-archive`, `thrml`, `whoop-med-tracker` removed at the owner's direction — those repos are personal, not part of the development umbrella going forward. Not deleted from disk, just deregistered; the fleet routes to none of them | `graph_agents/portfolio/registry.json` (111 ln), **untracked on purpose** — see below |
+| Portfolio index | live, **4 nodes** — 2 products, 2 tools — ids and `kind` verified 2026-08-31. **Narrowed from 8 to 4 on 2026-08-31**: `koenrane.xyz`, `personal-archive`, `thrml`, `whoop-med-tracker` removed at the owner's direction — those repos are personal, not part of the development umbrella going forward. Not deleted from disk, just deregistered; the fleet routes to none of them. Also gained `org`/`org_status` fields (2026-08-31): "Telos Research Group", working name, not yet a formed legal entity | `graph_agents/portfolio/registry.json` (113 ln), **untracked on purpose** — see below |
 | Run-state schema | live | `graph_agents/.graph/runs/_schema.json` (31 ln) |
 | Root memory shim | live, `@`-imports the constitution | `repos/CLAUDE.md` |
 | `.claude` junction | live, verified same-dir | `repos/.claude` → `graph_agents/.claude` |
@@ -706,3 +706,4 @@ What `2026-08-25-refuge-freshness` found in huntstack, independent of the featur
 | 2026-08-28 | Token-cost review of `archive-adapters` (the first diamond): the shape heuristic itself was sound — 3 genuinely disjoint slices earned the diamond — but every slice got the same full adversarial reviewer regardless of risk, and that adversarial depth is what caught the leaked WHOOP measurement. Added risk tagging: `architect` now tags each slice `risk: high\|low` with a stated reason; `feature-graph` step 5 briefs the reviewer accordingly — full re-derivation for `high`, a lighter re-run-`done_when`-plus-scope-check for `low`, with a reviewer free to re-tag a slice `high` mid-review if it doubts the call. Not yet exercised by a run |
 | 2026-08-31 | Direct edit (single line, below the stop-rule threshold): `conventions/mobile-first.md` reviewer checklist gained a note to watch for a recurring pattern of missed mobile issues as the trigger for building a specialized mobile reviewer variant — anticipatory, no examples yet, so no new agent was built |
 | 2026-08-31 | Direct edit, owner-directed: `registry.json` narrowed 8 → 4 apps. `koenrane.xyz`, `personal-archive`, `thrml`, `whoop-med-tracker` deregistered as personal repos, not part of the development umbrella going forward. Repos untouched on disk; the fleet simply no longer routes to them |
+| 2026-08-31 | Direct edit, owner-directed: umbrella given a working entity name, **Telos Research Group** (not yet formed). Recorded in `repos/CLAUDE.md`, `graph_agents/CLAUDE.md`, and `registry.json` (`org`/`org_status` fields) — one source of truth, not re-decided each time it comes up |
