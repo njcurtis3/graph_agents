@@ -1,6 +1,6 @@
 # CURRENT-STATE — graph_agents
 
-> **Last verified: 2026-08-28**
+> **Last verified: 2026-08-31**
 >
 > A point-in-time snapshot **verified against disk**, not a living spec. `GRAPH.md` and
 > `CLAUDE.md` describe how the fleet is *supposed* to work; this file records what is
@@ -704,3 +704,4 @@ What `2026-08-25-refuge-freshness` found in huntstack, independent of the featur
 | 2026-08-28 | `/new-app` exercised a second time: `roamex` (Roam export → provenance-tracked knowledge graph), own repo, 2 commits, pushed to `github.com/njcurtis3/roamex`, registered as the 8th node |
 | 2026-08-28 | `scout-facts.py` added and wired into `scout.md` step 0, `feature-graph` step 0.5 and `GRAPH.md` § model tiering. Computes git/HEAD/dirty/identity, registry entry, entry-doc existence and observed-vs-claimed stack, fresh every run. Verified by hand on all 8 apps; **not yet exercised by a real scout**. The cache alternative was rejected on measured staleness — see Decisions log |
 | 2026-08-28 | Token-cost review of `archive-adapters` (the first diamond): the shape heuristic itself was sound — 3 genuinely disjoint slices earned the diamond — but every slice got the same full adversarial reviewer regardless of risk, and that adversarial depth is what caught the leaked WHOOP measurement. Added risk tagging: `architect` now tags each slice `risk: high\|low` with a stated reason; `feature-graph` step 5 briefs the reviewer accordingly — full re-derivation for `high`, a lighter re-run-`done_when`-plus-scope-check for `low`, with a reviewer free to re-tag a slice `high` mid-review if it doubts the call. Not yet exercised by a run |
+| 2026-08-31 | Direct edit (single line, below the stop-rule threshold): `conventions/mobile-first.md` reviewer checklist gained a note to watch for a recurring pattern of missed mobile issues as the trigger for building a specialized mobile reviewer variant — anticipatory, no examples yet, so no new agent was built |

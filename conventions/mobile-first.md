@@ -135,6 +135,12 @@ Anything you cannot answer from the diff is a **note**, not a rejection. This ch
 deliberately limited to what is readable in code — no device lab, no screenshots, no
 running browser.
 
+**Watch for a recurring pattern of missed mobile issues.** A generic `reviewer` applying
+this checklist is the default and should stay the default. If reviews repeatedly let the
+same class of mobile issue through — not a one-off, a pattern across runs — that is the
+signal to build a specialized reviewer variant for mobile. Until there's a real example,
+don't build it speculatively.
+
 ## This is a convention, not a dependency
 
 This file is **read and copied as guidance**. No app may import it, build against it, or
