@@ -20,19 +20,19 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python graph_agents/.claude/hooks/flag-stale-state.py 2>/dev/null || true",
+            "command": "python \"${CLAUDE_PROJECT_DIR:-.}/graph_agents/.claude/hooks/flag-stale-state.py\" || true",
             "timeout": 10,
             "statusMessage": "checking fleet-state freshness"
           },
           {
             "type": "command",
-            "command": "python graph_agents/.claude/hooks/flag-cross-app-import.py 2>/dev/null || true",
+            "command": "python \"${CLAUDE_PROJECT_DIR:-.}/graph_agents/.claude/hooks/flag-cross-app-import.py\" || true",
             "timeout": 10,
             "statusMessage": "checking the cross-app invariant"
           },
           {
             "type": "command",
-            "command": "python graph_agents/.claude/hooks/flag-state-gap.py 2>/dev/null || true",
+            "command": "python \"${CLAUDE_PROJECT_DIR:-.}/graph_agents/.claude/hooks/flag-state-gap.py\" || true",
             "timeout": 10,
             "statusMessage": "auditing run-state edges"
           }
@@ -43,7 +43,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python graph_agents/.claude/hooks/record-activity.py 2>/dev/null || true",
+            "command": "python \"${CLAUDE_PROJECT_DIR:-.}/graph_agents/.claude/hooks/record-activity.py\" || true",
             "timeout": 5
           }
         ]
@@ -54,7 +54,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python graph_agents/.claude/hooks/record-activity.py 2>/dev/null || true",
+            "command": "python \"${CLAUDE_PROJECT_DIR:-.}/graph_agents/.claude/hooks/record-activity.py\" || true",
             "timeout": 5
           }
         ]
@@ -65,7 +65,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python graph_agents/.claude/hooks/record-activity.py 2>/dev/null || true",
+            "command": "python \"${CLAUDE_PROJECT_DIR:-.}/graph_agents/.claude/hooks/record-activity.py\" || true",
             "timeout": 5
           }
         ]
