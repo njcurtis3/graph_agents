@@ -7,7 +7,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python graph_agents/.claude/hooks/guard-builder-scope.py 2>/dev/null || true",
+            "command": "python \"${CLAUDE_PROJECT_DIR:-.}/graph_agents/.claude/hooks/guard-builder-scope.py\"",
             "timeout": 10,
             "statusMessage": "checking the approved plan's file set"
           }

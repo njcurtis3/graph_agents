@@ -39,11 +39,16 @@ the file set would be the orchestrator rewriting another node's key, which is ex
 what `written_by` was added to catch.
 
 Exit 0 always. Printing no JSON means "no opinion" and the tool proceeds normally.
+
+It FAILS CLOSED, as of 2026-09-02. The silences above are deliberate and stay allows,
+but an unexpected exception emits a deny that names this file as broken, rather than
+letting a guard that never ran read as a guard that approved. See `main()`.
 """
 import fnmatch
 import json
 import os
 import sys
+import traceback
 
 HERE = os.path.dirname(os.path.realpath(__file__))
 FLEET = os.path.normpath(os.path.join(HERE, "..", ".."))      # graph_agents/
@@ -217,11 +222,19 @@ def worktree_context(target):
     return None, None
 
 
-def main():
-    try:
-        payload = json.load(sys.stdin)
-    except Exception:
-        return
+def deny(reason):
+    """Emit the deny decision. The only thing in this file that stops a write."""
+    json.dump({
+        "hookSpecificOutput": {
+            "hookEventName": "PreToolUse",
+            "permissionDecision": "deny",
+            "permissionDecisionReason": reason,
+        }
+    }, sys.stdout)
+
+
+def decide():
+    payload = json.load(sys.stdin)
 
     if str(payload.get("agent_type") or "").strip() != "builder":
         return
@@ -258,22 +271,56 @@ def main():
             return
 
     listed = "\n".join("  - %s" % shown for shown in sorted(allowed.values()))
-    json.dump({
-        "hookSpecificOutput": {
-            "hookEventName": "PreToolUse",
-            "permissionDecision": "deny",
-            "permissionDecisionReason": (
-                "[plan-scope] `%s` is not in the file set a human approved for run `%s`.\n"
-                "Approved:\n%s\n"
-                "Do not work around this. Stop, report to the orchestrator what you need "
-                "and why the approved set was wrong, and let it decide: either the work "
-                "belongs to a different slice, or the orchestrator records the extension "
-                "in `scope_exceptions` and in this slice's `deviation_from_approved_plan`. "
-                "Silently widening scope after the gate is the failure the gate exists to "
-                "prevent." % (path, os.path.basename(run_dir), listed)
-            ),
-        }
-    }, sys.stdout)
+    deny(
+        "[plan-scope] `%s` is not in the file set a human approved for run `%s`.\n"
+        "Approved:\n%s\n"
+        "Do not work around this. Stop, report to the orchestrator what you need "
+        "and why the approved set was wrong, and let it decide: either the work "
+        "belongs to a different slice, or the orchestrator records the extension "
+        "in `scope_exceptions` and in this slice's `deviation_from_approved_plan`. "
+        "Silently widening scope after the gate is the failure the gate exists to "
+        "prevent." % (path, os.path.basename(run_dir), listed)
+    )
+
+
+def main():
+    """Fail CLOSED, and only for builders.
+
+    Everything `decide()` returns early on is a deliberate silence and stays an allow.
+    An *unexpected* exception is different: it means the guard did not run, and a guard
+    that cannot run must not pretend it approved something. Before 2026-09-02 a crash
+    here was indistinguishable from "no opinion" -- `main()` swallowed every exception
+    and `settings.json` wrapped the call in `2>/dev/null || true` -- so a syntax error
+    in this file did not block builders, it silently stopped guarding them, voiding the
+    human gate for a whole run with nothing to show for it afterwards.
+
+    The two failure directions are not symmetric. Failing closed blocks ONLY builders
+    (the `agent_type` check above exempts the orchestrator and every other node), says
+    exactly what broke, and is fixed in a minute. Failing open silently voids a human
+    approval and leaves no trace. So: deny, loudly, naming this file as the problem.
+
+    A malformed payload is the one case still treated as an allow: without a parseable
+    payload there is no `agent_type`, so the deny could not be scoped to builders and
+    would block every agent in the session. That is the harness's contract to keep, not
+    this guard's to enforce.
+    """
+    try:
+        decide()
+    except json.JSONDecodeError:
+        return
+    except Exception:
+        deny(
+            "[plan-scope] THE SCOPE GUARD ITSELF IS BROKEN -- this is not a scope "
+            "violation.\n\n%s\n"
+            "`graph_agents/.claude/hooks/guard-builder-scope.py` raised while deciding, "
+            "so the approved file set was never checked. This denial is deliberate: the "
+            "guard fails closed rather than silently approving writes nobody verified.\n"
+            "Builder: stop and report this to the orchestrator verbatim. Do not retry and "
+            "do not route around it with Bash.\n"
+            "Orchestrator: fix the hook, then re-run "
+            "`python graph_agents/.claude/hooks/test_guard_builder_scope.py` before "
+            "resuming the run." % traceback.format_exc(limit=4).strip()
+        )
 
 
 main()

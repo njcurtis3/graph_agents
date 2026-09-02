@@ -180,6 +180,59 @@ def main():
     closed_state["status"] = "done"
     with_run(closed_state, closed)
 
+    # --- Fail-closed (gap #17, closed 2026-09-02). ---
+    # A crashing guard used to be indistinguishable from a guard with no opinion, so a
+    # typo in the hook silently stopped guarding builders instead of blocking them.
+    # These cases pin the corrected failure direction.
+    print("\nfail-closed behaviour:")
+
+    def broken(_run_dir):
+        # A real fault injected into a real copy of the hook, run from this directory so
+        # its FLEET/UMBRELLA paths still resolve. Asserting against a hand-written stub
+        # would only prove the stub works.
+        source = open(HOOK, encoding="utf-8").read()
+        needle = "    payload = json.load(sys.stdin)\n"
+        assert needle in source, "hook shape changed; update this fault injection"
+        broken_path = os.path.join(HERE, "_selftest_broken_guard.py")
+        with open(broken_path, "w", encoding="utf-8") as fh:
+            fh.write(source.replace(
+                needle,
+                needle + '    raise RuntimeError("injected fault for the self-test")\n',
+                1,
+            ))
+        try:
+            proc = subprocess.run(
+                [sys.executable, broken_path],
+                input=json.dumps(builder_writing("huntstack/apps/mobile/package.json")),
+                capture_output=True, text=True,
+            )
+            out = proc.stdout.strip()
+            denied = names_itself = False
+            if out:
+                decision = json.loads(out)["hookSpecificOutput"]
+                denied = decision.get("permissionDecision") == "deny"
+                names_itself = "GUARD ITSELF IS BROKEN" in decision.get(
+                    "permissionDecisionReason", "")
+            check("a crashing guard DENIES rather than silently allowing", denied, True)
+            check("the denial names the guard, not the builder", names_itself, True)
+            check("a crashing guard still exits 0", proc.returncode, 0)
+        finally:
+            os.remove(broken_path)
+
+    with_run(state_with(["huntstack/apps/mobile/**"]), broken)
+
+    def malformed(_run_dir):
+        # The one remaining allow-on-failure, and it is deliberate: with no parseable
+        # payload there is no agent_type, so the deny could not be scoped to builders
+        # and would block every agent in the session.
+        proc = subprocess.run([sys.executable, HOOK], input="not json at all",
+                              capture_output=True, text=True)
+        check("a malformed payload is ALLOWED (cannot be scoped to builders)",
+              proc.stdout.strip(), "")
+        check("a malformed payload still exits 0", proc.returncode, 0)
+
+    with_run(state_with(["huntstack/apps/mobile/**"]), malformed)
+
     print()
     if FAILURES:
         print("FAILED (%d):" % len(FAILURES))
