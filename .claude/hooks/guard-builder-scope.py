@@ -40,6 +40,7 @@ what `written_by` was added to catch.
 
 Exit 0 always. Printing no JSON means "no opinion" and the tool proceeds normally.
 """
+import fnmatch
 import json
 import os
 import sys
@@ -109,8 +110,35 @@ def approved_paths(state, run_dir):
         # the union match nothing and deny everything.
         if not entry or (" " in entry and "/" not in entry and "\\" not in entry):
             continue
-        allowed[norm(entry if os.path.isabs(entry)
-                     else os.path.join(UMBRELLA, entry))] = entry
+
+        # A plan entry is a GLOB, not a literal path: an architect writes
+        # `huntstack/apps/mobile/**` to mean "everything under apps/mobile". Reduce a
+        # trailing wildcard segment to the directory it stands for, so the prefix tests
+        # below cover it.
+        #
+        # Without this the normalised entry kept its literal `**`, and since no real file
+        # is ever equal to -- or prefixed by -- a path ending in `**`, the guard denied
+        # EVERY write under an approved directory. That happened on 2026-09-01: three
+        # slices of `2026-09-01-huntstack-mobile` had `huntstack/apps/mobile/**` as their
+        # entire file set, and s1's builder could not create so much as a package.json in
+        # a directory the human had explicitly approved. It cost a round trip and a
+        # `scope_exceptions` entry that granted nothing the plan had not already granted.
+        #
+        # This narrows nothing: under the prefix rule `a/b/**` and `a/b` cover exactly the
+        # same files. Residual wildcards deeper in the entry (`a/**/*.ts`) survive here and
+        # are matched by fnmatch in `_match` instead.
+        entry_path = entry.replace("\\", "/").rstrip("/")
+        while True:
+            head, _, tail = entry_path.rpartition("/")
+            if head and tail in ("**", "*"):
+                entry_path = head
+                continue
+            break
+        if not entry_path:
+            continue
+
+        allowed[norm(entry_path if os.path.isabs(entry_path)
+                     else os.path.join(UMBRELLA, entry_path))] = entry
 
         # Same entry, expressed as (repo root, path within that repo). A plan entry's
         # first segment IS the repo, because every node under the umbrella owns its own
@@ -118,8 +146,8 @@ def approved_paths(state, run_dir):
         # matched: same repo-relative path, different root. If the assumption is ever
         # wrong the entry simply fails to match here and the absolute rule above still
         # applies, so the guard degrades to its previous behaviour rather than opening up.
-        parts = entry.replace("\\", "/").strip("/").split("/")
-        if len(parts) >= 2 and not os.path.isabs(entry):
+        parts = entry_path.strip("/").split("/")
+        if len(parts) >= 2 and not os.path.isabs(entry_path):
             root = norm(os.path.join(UMBRELLA, parts[0]))
             rel = "/".join(parts[1:])
             rel_map.setdefault(root, {})[rel.lower() if os.name == "nt" else rel] = entry
@@ -129,9 +157,25 @@ def approved_paths(state, run_dir):
     return (allowed, rel_map) if planned else (None, None)
 
 
+def _match(target, approved):
+    """One approved entry against one target path.
+
+    Exact hit, or living under an approved directory, or -- when the entry still carries
+    a wildcard after `approved_paths` reduced its trailing one -- an fnmatch. Both call
+    sites go through here on purpose: the absolute rule and the worktree rule drifted
+    apart once already, and a matcher that lives in two places is a matcher that will
+    disagree with itself.
+    """
+    if target == approved or target.startswith(approved + "/"):
+        return True
+    if "*" in approved or "?" in approved:
+        return fnmatch.fnmatch(target, approved)
+    return False
+
+
 def covered(target, allowed):
     """True if the target is an approved path, or lives under an approved directory."""
-    return any(target == a or target.startswith(a + "/") for a in allowed)
+    return any(_match(target, a) for a in allowed)
 
 
 def worktree_context(target):
@@ -210,7 +254,7 @@ def main():
     main_root, rel = worktree_context(target)
     if main_root and rel:
         entries = rel_map.get(main_root) or {}
-        if any(rel == a or rel.startswith(a + "/") for a in entries):
+        if any(_match(rel, a) for a in entries):
             return
 
     listed = "\n".join("  - %s" % shown for shown in sorted(allowed.values()))
