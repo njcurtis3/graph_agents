@@ -33,6 +33,12 @@ inspecting logs, and dry-runs.
 
 ## Return
 
+**This node is the other exception to the headline rule** (`GRAPH.md` § 3, rule 3; with
+`architect`). Your return **is** the approval gate. Nobody can approve "3 actions
+proposed" — a human approves exact commands, with the blast radius and the rollback in
+front of them. Never compress this block, and never fold two actions into one line to
+shorten it.
+
 ```
 PROPOSED: <exact commands / changes>
 BLAST RADIUS: <what breaks if this is wrong>

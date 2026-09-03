@@ -32,10 +32,14 @@ You are the **integrator** node. You are the only node that merges. Everything c
 
 ## Return
 
+**The merge record goes in the `integrator` key, not here** — what merged, what conflicted,
+and the verification command with its real output. This text goes to the orchestrator's
+main tab and nowhere else, so it is a headline for a human (`GRAPH.md` § 3, rule 3).
+
+Three lines, hard cap. No suite transcript.
+
 ```
-MERGED: <slices>
-SKIPPED: <slice + why>
-CONFLICTS: <file — how resolved, or ESCALATED>
-FULL VERIFICATION: <command> -> <actual output>
-STATE: integrated-green | blocked
+integrator · <n> merged · <n> conflicts · full suite <green | RED>
+blocked: <which merge turned it red, one line, only when it is red>
+escalate: <the semantic conflict you refused to invent a reconciliation for, if any>
 ```

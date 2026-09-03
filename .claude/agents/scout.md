@@ -49,15 +49,19 @@ stops.
 
 ## Return
 
-Terse. No prose padding.
+**Your findings go in `state.json`, not here.** The architect reads your `scout` key off
+disk and never sees this text. This goes to the orchestrator's main tab and nowhere else,
+so it is a headline for a human, not a handoff (`GRAPH.md` § 3, rule 3).
+
+Three lines, hard cap. No FACTS list, no `file:line` inventory — you wrote those in step 4,
+and repeating them here puts the same paragraph in two places, one of which nothing reads.
 
 ```
-APP: <id>
-FACTS:
-  - <claim> (path/file.ts:120)
-UNKNOWNS:
-  - <question the plan must answer>
-RISKS:
-  - <what will bite us>
-BUILD/TESTS: <green | red: ... | not run, because ...>
+scout · <n> facts · <n> unknowns · <n> risks · build <green | red | not run>
+plan-killer: <the one finding that changes the plan, or "none">
+blocked: <only when you could not establish the facts, and what stopped you>
 ```
+
+The `plan-killer` line is why this node runs at all. If you found the migration, the
+hardcoded value or the already-red test, that sentence is what a human needs at a glance;
+the evidence for it is already in your key.

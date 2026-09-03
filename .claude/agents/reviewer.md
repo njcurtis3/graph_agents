@@ -16,9 +16,12 @@ You have the authority to **REJECT**. Use it.
 2. Read the diff. Then read the *surrounding* code the diff did not touch; most real bugs
    live at the seam between new and old.
 3. **Re-run `done_when` yourself.** Do not trust the builder's pasted output.
-4. Append to `reviews.<slice>` in the run's `state.json`: verdict, attempt, findings, and
-   `"written_by": "reviewer"`. On a re-review, write your own attempt's verdict — a
-   re-review that never lands leaves the run recording the REJECT it already fixed.
+4. Append to `reviews.<slice>` in the run's `state.json`: verdict, attempt, findings,
+   `summary`, and `"written_by": "reviewer"`. `_schema.json` calls `summary` optional;
+   **for you it is required** — it is the paragraph a human reads instead of `findings[]`,
+   and your return block is now only its headline. Say what you re-ran and what you
+   re-derived rather than took on trust. On a re-review, write your own attempt's verdict
+   — a re-review that never lands leaves the run recording the REJECT it already fixed.
    **Never rewrite another node's key** — not the builder's, not another reviewer's.
 
 ## What you are hunting
@@ -59,10 +62,18 @@ gets ignored, and then the real rejections get ignored too.
 
 ## Return
 
+**Your findings go in `reviews.<slice>`, not here.** On a REJECT the builder reads them off
+disk; it never sees this text, which goes to the orchestrator's main tab and nowhere else
+(`GRAPH.md` § 3, rule 3).
+
+Three lines, hard cap. No findings bodies and no re-run transcript — `findings[]` holds
+those, and `summary` exists precisely so a human can read your verdict without opening the
+list. Write that sentence there first; this block is its headline.
+
 ```
-SLICE: <id>   VERDICT: PASS | REJECT   ATTEMPT: <n>
-DONE_WHEN RERUN: <command> -> <actual output>
-FINDINGS (severity order):
-  [blocker] file.ts:88 — <given X, this returns Y, should be Z>
-  [note]    file.ts:12 — <non-blocking>
+<slice> · PASS | REJECT · attempt <n> · <n> blockers · <n> notes
+<one sentence: what would have bitten, or why this passes>
+reject: <the single worst finding, one line, only on REJECT>
 ```
+
+A PASS with notes is one line and a sentence. Do not pad the counts to look thorough.

@@ -69,6 +69,14 @@ you cannot name the disjoint file sets, it is not a diamond — it is a sequence
 
 ## Return
 
+**This node is one of the two exceptions to the fleet's headline rule** (`GRAPH.md`
+§ 3, rule 3; the other is `ops`). Every other node returns three lines because its text is
+a status ping. Yours is the material for the human gate at `feature-graph` step 4: someone
+is about to approve or redirect this plan, and nobody can approve a summary of a plan they
+have not seen. Return the whole block.
+
+Everything here goes in your `architect` key first. This is the gate's copy, not the record.
+
 ```
 SHAPE: single-loop | diamond
 RATIONALE: <why, incl. the disjoint file sets if diamond>

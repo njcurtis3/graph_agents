@@ -284,6 +284,31 @@ machinery now, content is not.
    **content still is not**, and (1)–(5) above are untouched by it. A node that writes
    confident nonsense into its own key on schedule still sails through both modes.
 
+## The board — what you print between nodes
+
+`verify-state.py` tells *you* that a key landed. `brief.py` is what you show the **human**:
+
+```bash
+python graph_agents/.graph/brief.py $RUN
+```
+
+One board, about ten lines: the gate, the goal, a line per node, a row per slice with its
+build and its verdict side by side, and — from `activity.jsonl` — what is running right
+now and for how long. Print it at each transition: after the scout, after the gate, as
+each slice's review lands, after the fan-in, at the close.
+
+**Do not paste a node's return block into the main tab, and do not re-narrate it in
+prose.** Since 2026-09-03 every node's return is already a headline (`GRAPH.md` § 3,
+rule 3) — relaying it doubles that headline, and summarizing it puts a third account of
+the same work on screen. That is exactly how the main tab became unreadable: not one
+verbose node, but the same run reported three times at three altitudes. The detail is
+never lost. It is in the node's own tab, and in its key, and `brief.py`'s last line names
+the file.
+
+The two exceptions are the two gates. At **step 4** you show the architect's plan in full,
+and at **step 7** the ops proposal in full. Those are decisions, not status, and nobody
+can approve a headline.
+
 ## Orchestrator rules
 
 - **Never implement anything yourself.** The moment you edit a file you have destroyed the
@@ -296,6 +321,8 @@ machinery now, content is not.
   without writing, re-prompt *it*. Filling the key in yourself and stamping it with that
   node's name is forgery, not bookkeeping.
 - Append to `log` in state at every transition. That log is how a fresh session resumes.
+- **Print the board; do not relay the node.** After each transition run
+  `python graph_agents/.graph/brief.py $RUN` and let it speak for the run. See § the board.
 - **Before you set `status: done`, run `verify-state.py --audit $RUN` and get exit 0.**
   The hook will tell you anyway, but at that point you have already written the close.
   `2026-08-25-fleet-hardening` is the cautionary case: its log says "5/5 slices PASS"

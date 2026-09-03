@@ -1,6 +1,6 @@
 # CURRENT-STATE — graph_agents
 
-> **Last verified: 2026-09-02**
+> **Last verified: 2026-09-03**
 >
 > A point-in-time snapshot **verified against disk**, not a living spec. `GRAPH.md` and
 > `CLAUDE.md` describe how the fleet is *supposed* to work; this file records what is
@@ -39,9 +39,22 @@
 > the roster line counts for the two changed files re-measured. Not re-checked: everything else in
 > the roster, unchanged since the sixth pass.
 >
-> **Not** re-checked this pass: `verify-state.py`'s four *named-key* exit paths, the portfolio
+> **What the 2026-09-03 stamp covers** (direct edit, no graph run). Verified directly:
+> `brief.py` rendered against **all 8 runs on disk** — the diamond, the two runs carrying
+> off-plan slices, the `parked` run whose builder keys are still untouched template, and the
+> four runs with no `activity.jsonl` — plus a synthetic mid-flight fixture exercising the
+> live lane, a `blocked` builder, a `REJECT`, and a slice not yet started; both glyph modes;
+> and repo-relative path output from `repos/`. All six roster line counts re-measured with
+> `wc -l` after the return-block rewrite, as were `GRAPH.md` and the `feature-graph` skill.
+> Confirmed rather than assumed: `_schema.json` was left byte-identical on purpose, because
+> `is_untouched()` compares string leaves and editing a template description would flip
+> older runs' untouched keys to "written" — the 2026-08-26 regression, restated.
+> **Not** re-checked this pass: the hooks, the guard, the registry, the invariant checker
+> and FleetView — untouched by it, and recorded below as their own passes found them.
+>
+> **Not** re-checked on 2026-08-26: `verify-state.py`'s four *named-key* exit paths, the portfolio
 > `entry_docs` sweep, and FleetView — all three were verified 2026-08-26 by the audit that
-> produced this pass's fixes, and are recorded below as that audit found them.
+> produced that pass's fixes, and are recorded below as that audit found them.
 
 ---
 
@@ -93,17 +106,18 @@ this fleet has written a line of product code yet**", eleven hours after one had
 | Thing | State | Path |
 |---|---|---|
 | Umbrella constitution | live | `graph_agents/CLAUDE.md` (95 ln) |
-| Graph spec | live | `graph_agents/GRAPH.md` (282 ln) |
+| Graph spec | live | `graph_agents/GRAPH.md` (316 ln) |
 | Portfolio index | live, **5 nodes** — 2 products, 2 tools, 1 site — ids and `kind` verified 2026-08-31. **Narrowed from 8 to 4 on 2026-08-31**: `koenrane.xyz`, `personal-archive`, `thrml`, `whoop-med-tracker` removed at the owner's direction — those repos are personal, not part of the development umbrella going forward. Not deleted from disk, just deregistered; the fleet routes to none of them. **`telosrg-site` added same day** via `/new-app` — the org's public marketing site. Also gained `org`/`org_status`/`org_domain`/`org_domain_status`/`org_github`/`org_github_status` fields (2026-08-31): "Telos Research Group", working name not yet a formed legal entity; domain `telosrg.com` **purchased** 2026-08-31 (re-verified registered via RDAP against Verisign after the owner reported buying it); GitHub org **github.com/TelosRG registered** 2026-08-31 (re-verified via `api.github.com/orgs/TelosRG` after the owner reported creating it) | `graph_agents/portfolio/registry.json` (139 ln), **untracked on purpose** — see below |
 | Run-state schema | live | `graph_agents/.graph/runs/_schema.json` (31 ln) |
 | Root memory shim | live, `@`-imports the constitution | `repos/CLAUDE.md` |
 | `.claude` junction | live, verified same-dir | `repos/.claude` → `graph_agents/.claude` |
 | 6 agent nodes | live; **5 of 6** have executed as registered agents — `integrator` first ran 2026-08-26 (`archive-adapters`). **`ops` is the only node never executed** | `.claude/agents/` |
-| 3 skills | `feature-graph` exercised 3× (310 ln); `new-app` **exercised three times** — `personal-archive` 2026-08-26, `roamex` 2026-08-28, `telosrg-site` 2026-08-31 (72 ln); `fleetview` exercised (56 ln) | `.claude/skills/` |
+| 3 skills | `feature-graph` exercised 3× (337 ln); `new-app` **exercised three times** — `personal-archive` 2026-08-26, `roamex` 2026-08-28, `telosrg-site` 2026-08-31 (72 ln); `fleetview` exercised (56 ln) | `.claude/skills/` |
 | Scout fact collector | live, **added 2026-08-28**, not yet exercised by a real scout run. Verified by hand across all 8 apps: correct git/HEAD/dirty/identity, `--all` and `--json` modes, and the registry-vs-disk contradiction lines. Computes, never caches — a per-app fact *store* was designed and **rejected on evidence** the same day (see Decisions log) | `graph_agents/.graph/scout-facts.py` (250 ln), `scout.md` step 0 |
 | Staleness hook | live, **observed firing** 2026-08-25; rewritten 2026-08-26 (junction paths, run-close, `.py`) — 20 synthetic payloads pass | `.claude/settings.json`, `.claude/hooks/flag-stale-state.py` (114 ln) |
 | State verifier | live, **two modes**. Named-key mode: advisory, a check the orchestrator runs. `--audit` mode: fires from a hook, checks edge ordering. **Fixed 2026-08-26 (`4cbe78c`)** — it counted `_schema.json`'s example slice as real, so the fan-in check fired on *every* run reaching an integrator and no diamond could close green. 5 new fixtures + byte-identical output on all four prior runs | `graph_agents/.graph/verify-state.py` (420 ln) |
 | Plan-scope guard | live. **Fixed 2026-08-26 (`46e0f25`) to be worktree-aware** — it resolved plan entries against `repos/`, so it denied *every* write by *every* builder in a diamond. **Fixed again 2026-09-02: it did not glob.** A plan entry of `<dir>/**` normalised with its literal `**` attached, and since no real file is equal to or prefixed by a path ending in `**`, it denied *every* write under an approved directory — it blocked 3 of 4 slices of `2026-09-01-huntstack-mobile`, whose file sets were exactly that. Trailing `**`/`*` segments are now reduced to the directory they stand for at parse time, residual wildcards fall through to `fnmatch`, and both match sites share one `_match()` so they cannot drift apart a third time. **Now has a real self-test** (14 cases, previously the 14 "synthetic cases" lived only in a builder's transcript). **Exercised for real** across 9 builder runs with zero false denials since. ⚠️ **Matcher is `Write\|Edit` only, so a Bash write bypasses it entirely** — see gap #13. **Now fails CLOSED (2026-09-02)**: `main()` wraps `decide()` and emits a deny naming the hook itself as broken, and `settings.json` no longer swallows errors — a crash blocks builders loudly instead of silently voiding the human gate (gap #17, closed). All seven hook commands are now cwd-independent via `${CLAUDE_PROJECT_DIR:-.}` and covered by `test_hooks_resolve.py` (gap #18, closed) | `.claude/settings.json`, `.claude/hooks/guard-builder-scope.py` (279 ln), `.claude/hooks/test_guard_builder_scope.py` (194 ln) |
+| Run board | live, **added 2026-09-03**, not yet used by a real run. Renders one run's `state.json` + `activity.jsonl` as a ~10-line board: gate, goal, a line per node, a row per slice pairing build with verdict, and the in-flight lane. Authored by nothing — every value is derived, and the placeholder rules are imported from `verify-state.py` rather than restated, so "written" means the same to the board as to the audit. Verified against all 8 runs on disk (diamond, off-plan slices, an untouched template run, a `parked` run, runs with no heartbeat) plus a synthetic mid-flight fixture; ASCII fallback when the console encoding cannot take the glyphs | `graph_agents/.graph/brief.py` (385 ln), `feature-graph` § the board |
 | Node heartbeat | live — `SubagentStart`/`SubagentStop` + a `*`-matcher `PostToolUse` entry append one line per node event to `.graph/runs/<run>/activity.jsonl`. Verified: events recorded with agent/tool, main-session writes recorded as `orchestrator`, silent on a closed run and with no open run | `.claude/settings.json`, `.claude/hooks/record-activity.py` (101 ln) |
 | Open-run pointer | live, untracked — written by `feature-graph` step 1, read by the scope guard. A pointer to a closed run is ignored | `graph_agents/.graph/CURRENT` |
 | State-audit hook | live, third `PostToolUse` entry — fires `--audit` on every `Write`/`Edit` of a `state.json`, silent on `_schema.json`, on non-run files, and on a merely half-filled run. **Caught a real defect on first run** (see gap #7) | `.claude/settings.json`, `.claude/hooks/flag-state-gap.py` (125 ln) |
@@ -128,12 +142,18 @@ this explanation and this explanation did not exist; both ends were fixed 2026-0
 
 | Node | Model | Tools | Lines | Has executed? |
 |---|---|---|---|---|
-| `scout` | haiku | Read, Glob, Grep, Bash, WebSearch, WebFetch | 41 | yes, 2 runs |
-| `architect` | opus | Read, Glob, Grep, Bash | 81 | yes, 2 runs |
-| `builder` | opus | Read, Write, Edit, Glob, Grep, Bash | 55 | yes, 6 slices |
-| `reviewer` | opus | Read, Glob, Grep, Bash | 54 | yes, 9 reviews |
-| `integrator` | opus | Read, Write, Edit, Glob, Grep, Bash | 41 | **no** |
-| `ops` | opus | Read, Write, Edit, Glob, Grep, Bash | 43 | **no** |
+| `scout` | haiku | Read, Glob, Grep, Bash, WebSearch, WebFetch | 67 | yes, 2 runs |
+| `architect` | opus | Read, Glob, Grep, Bash | 96 | yes, 2 runs |
+| `builder` | opus | Read, Write, Edit, Glob, Grep, Bash | 67 | yes, 6 slices |
+| `reviewer` | opus | Read, Glob, Grep, Bash | 79 | yes, 9 reviews |
+| `integrator` | opus | Read, Write, Edit, Glob, Grep, Bash | 45 | **no** |
+| `ops` | opus | Read, Write, Edit, Glob, Grep, Bash | 49 | **no** |
+
+All six line counts moved on 2026-09-03 when every node's `## Return` block was
+rewritten to the headline contract (`GRAPH.md` § 3, rule 3) — `scout` 41→67, `architect`
+81→96, `builder` 55→67, `reviewer` 54→79, `integrator` 41→45, `ops` 43→49. The two that
+grew least are the two gates: `architect` and `ops` kept their full blocks and gained only
+the paragraph saying why they are exempt.
 
 Model tiers and tool grants were re-read from frontmatter this pass and are unchanged
 since creation. Line counts were re-counted with `wc -l` on 2026-08-26 — three had drifted
@@ -437,6 +457,24 @@ header warns about. The hook creates the obligation; a real verification pass di
     Now covered by `test_hooks_resolve.py`, which parses the real commands out of `settings.json`
     (so a hook added later is covered without anyone remembering) and runs each from a non-root cwd.
 
+19. **The headline contract is prose, not machinery, and nothing measures whether it holds.**
+    Booked 2026-09-03, the day it was written. Every node's `## Return` now says "three lines,
+    hard cap", and *nothing checks it*. A node that returns its old six-line block with the full
+    `done_when` transcript is not denied, not flagged, and not visible in `activity.jsonl` — which
+    records that a node stopped, never what it said. This is the same shape as every rule this
+    fleet has had to promote later: `--audit` was a convention until `flag-state-gap.py` fired it,
+    the approved file set was a description until `guard-builder-scope.py` denied on it. The
+    difference is that a long return costs tokens and readability, not correctness, so it is a
+    cheaper failure to leave un-machined for now.
+    The known next move is `record-activity.py`, which already fires on `SubagentStop` and already
+    resolves the open run — it is the one place that could both see a return and say something
+    about it. **Deferred deliberately**, pending confirmation that a `SubagentStop` hook's stdout
+    actually surfaces in the main tab; if it does not, the hook can enforce nothing a human sees,
+    and the orchestrator printing `brief.py` stays the whole mechanism.
+    Until then the contract holds only as far as each node follows its own file, and the honest
+    statement is that **no run has yet executed under it** — the six rewritten files were on disk
+    for zero runs when this was written.
+
 ---
 
 ## Runs
@@ -673,6 +711,8 @@ What `2026-08-25-refuge-freshness` found in huntstack, independent of the featur
 | 2026-08-25 | FleetView is a standalone app in `repos/fleetview/`, not a directory in the fleet | A viewer is a product with its own lifecycle, not tooling that operates on apps. Keeping it here would have made the fleet ship a UI |
 | 2026-08-25 | FleetView depends on the run-state **format**, never on a path into `graph_agents/` — fleet location is runtime config (`--fleet`, `$FLEETVIEW_FLEET`, then auto-detect) | `CLAUDE.md` says no app depends on the fleet. A hardcoded `../graph_agents` would be exactly that dependency. A convention may cross the boundary; an import may not — and the app must still run with no fleet present, which it does |
 | 2026-08-26 | **In `single-loop`, the orchestrator merges the one reviewed branch itself; on conflict it stops and spawns `integrator`** — user ruling | The merge was previously unassigned work that the orchestrator did anyway, in a skill that says "never implement anything yourself." Merging already-reviewed work writes no code and makes no choice, so it is bookkeeping and belongs to the orchestrator. Resolving a conflict *is* a judgment call about code, so it stays with the node that owns merges. Cheaper than spawning `integrator` on every single-loop run |
+| 2026-09-03 | **The return text is the human channel; `state.json` is the machine channel. Nodes return headlines, and the board is derived, never authored** | `GRAPH.md` § 3 already said a subagent returns only its final text and that the orchestrator alone sees it — so the return had no machine consumer and never did. Writing it as if it were the handoff printed the machine channel into the main tab, and a run then read as several thousand words nothing downstream consumed. The board is derived from files the fleet already writes for exactly the reason `--audit` exists: a summary a node authors is a summary a node can be wrong about, and one no node authors cannot drift, cannot be forged, and costs no tokens |
+| 2026-09-03 | **`architect` and `ops` are exempt from the headline cap** | Their returns are not status, they are the two human gates. A gate is a decision, and nobody can approve a plan or a deploy they have not been shown — compressing those two blocks would save a screen and cost the only two moments in the graph where a human's judgment is load-bearing |
 | 2026-08-26 | The staleness hook flags **history** drift as well as definition drift, but only at `status: "done"` | A closed run is what falsified this file's headline claim. Firing on every mid-run write would restore the noise the original `.graph/runs/**` skip existed to prevent; firing once at close costs nothing and catches the only run event that changes what is true |
 | 2026-08-26 | The hook resolves paths with `os.path.realpath()` before routing | `repos/.claude` is a junction, so fleet files have two absolute paths — and `GRAPH.md` §2 documents the one that did *not* contain `/graph_agents/`. A textual guard was silent on the documented path |
 | 2026-08-26 | **The hook fires `--audit`, not the named-key check** — and it stays silent mid-run | The named-key mode is unhookable by construction: it must be told which key to inspect, and a `PostToolUse` hook knows only a file path, never which node just returned. So the hook asks the question a lone `state.json` *can* answer — did the edges hold? Reporting merely-unwritten keys mid-run was rejected outright: that is what a run in progress looks like, and a hook that fires on every intermediate write gets disabled, after which it enforces nothing. This supersedes the 2026-08-25 "advisory, not a gate" decision for **ordering only**; content correctness is still unchecked and deliberately so |
@@ -738,4 +778,5 @@ What `2026-08-25-refuge-freshness` found in huntstack, independent of the featur
 | 2026-08-31 | `telosrg-site` **pushed and deployed**, owner-directed. Repo created under the `TelosRG` org via the GitHub API (local branch renamed `master`→`main` to match the org repo's default), pushed as `github.com/TelosRG/telosrg-site` — push authored as `njcurtis3` per the GitHub API's `pusher` field (confirmed, not assumed) even though the repo lives in the org's namespace, not the personal one. GitHub Pages enabled via API, serving `main` at root; confirmed live at https://telosrg.github.io/telosrg-site/ by fetching it directly, not by trusting the "building" status. `registry.json` gained `repo`/`deployed_url` on the `telosrg-site` entry |
 | 2026-09-02 | **Plan-scope guard fixed a second time: it did not glob.** `approved_paths()` normalised a `<dir>/**` plan entry with the literal `**` still attached, and `covered()` was a pure prefix test, so no real file could ever match — it denied *every* write under an approved directory. It blocked 3 of 4 slices of `2026-09-01-huntstack-mobile` (whose file sets were exactly `huntstack/apps/mobile/**`) and cost that run a round trip plus a `scope_exceptions` entry granting nothing the human had not already approved. Trailing `**`/`*` segments now reduce to the directory they stand for at parse time; residual wildcards (`a/**/*.ts`) fall through to `fnmatch`; and the absolute rule and the worktree rule now share one `_match()` — they had already drifted apart once (the 2026-08-26 diamond bug), and a matcher in two places disagrees with itself. Added `test_guard_builder_scope.py`, the fleet's first hook test: 14 cases driving the hook as a subprocess through real stdin payloads. Verified the fix against the pre-fix version rather than only asserting the new one — same payload, old hook `DENIED`, new hook `allowed`. Also **found and did not fix** that the guard fails open (gap #17): `|| true` plus a blanket `except` make a crash indistinguishable from "no opinion", so a typo silently disables the human gate rather than blocking on it. Left for the owner to rule on. |
 | 2026-09-02 | **Scope guard now fails closed, and its command is cwd-independent.** Owner-directed, same day as the glob fix. `main()` wraps `decide()` and emits a deny that names the hook itself as broken; `settings.json` drops `2>/dev/null || true`. Before this, a syntax error in the guard did not block builders — it silently stopped guarding them, voiding the human gate for a whole run with no trace. Fail-closed is safe here because the guard already fires for builders only, so the cost is one loud self-identifying denial rather than a deadlock. A malformed payload stays an allow by design: with no `agent_type` the deny could not be scoped to builders. Removing `|| true` immediately exposed a second, older bug (gap #18): every hook command is cwd-relative, so from inside `graph_agents/` the path resolves to `graph_agents/graph_agents/...` and the script is not found — the guard's command is now `"${CLAUDE_PROJECT_DIR:-.}/graph_agents/..."`, proven by an `Edit` that failed from that cwd before the change and succeeded after. The other six hooks keep `|| true` and are untouched, so the same breakage stays silent there. Self-test grew 14 → 19 cases, including a real fault injected into a real copy of the hook. |
+| 2026-09-03 | **The two-channel split: nodes return headlines, and `brief.py` renders the board.** Direct edit, owner-directed, no graph run (six node files, one skill, one spec, one new script — but it edits `.claude/agents/**` and `.claude/skills/**`, which `feature-graph` step 0.5 forces to single-loop anyway, and the change is one design ruling applied six times). `GRAPH.md` § 3 rule 3 now caps every node's return at a headline: no verbatim command output, no file lists, no findings bodies, because the next node reads `state.json` and nothing but the main tab reads the return. `scout`, `builder`, `reviewer` and `integrator` rewritten to fixed 3-line blocks; `architect` and `ops` keep their full blocks as the two gates, and now say why. The content those blocks stopped carrying is not lost but it was optional: `builders.<slice>.gate_results` and `reviews.<slice>.summary` are **required** as of this pass — `_schema.json` still calls both optional and was deliberately left byte-identical, because changing a template string flips old runs' untouched keys to "written" and breaks `--audit` on them (the exact regression `is_untouched()` was written for on 2026-08-26). Added `.graph/brief.py`, which renders a run as ~10 derived lines and is what the orchestrator now prints between nodes instead of relaying or re-narrating node text. Verified across all 8 runs on disk plus a synthetic mid-flight fixture. **Booked gap #19**: the cap is prose, nothing enforces it, and no run has executed under it yet. |
 | 2026-09-02 | **All seven hook commands made cwd-independent; six stopped swallowing their errors.** Owner-directed follow-on to gap #18. Every command is now rooted at `"${CLAUDE_PROJECT_DIR:-.}/graph_agents/..."`; the six advisory `PostToolUse` hooks dropped `2>/dev/null` but KEPT `|| true`, since they must never block a write but have no business failing invisibly — all four scripts were verified silent on stderr when healthy first, so this adds no noise. The old form was shown to `exit 0` — reporting success — from inside `graph_agents/` while the interpreter never found the script, which is how six hooks could sit dead indefinitely; how long they actually were is unknown and unrecoverable. Added `test_hooks_resolve.py`, which parses the real commands out of `settings.json` rather than hardcoding them and runs each from a non-root cwd. It initially reported all 7 failing — that was the harness, not the hooks: `subprocess.run(shell=True)` on Windows is cmd.exe, which passes `${VAR:-default}` through literally; fixed to invoke a POSIX shell explicitly. |

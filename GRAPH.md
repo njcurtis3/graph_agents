@@ -136,7 +136,15 @@ Contract for every node:
 2. **On finish:** append your result to your own key, including `written_by` naming
    yourself. Never rewrite another node's key, and never stamp `written_by` on one that
    is not yours.
-3. Return a short summary as your final text (that is what the orchestrator sees).
+3. **Return a HEADLINE, not the handoff.** Three lines, no verbatim command output, no
+   file lists, no findings bodies. Rule 2 already put those in your key, which is what
+   the next node actually reads — nothing consumes your return text but the orchestrator's
+   main tab, and a human is the only thing there. Repeating the key in the return prints
+   the machine channel into the human one, and the run then reads as several thousand
+   words of correct, necessary, unreadable detail. Each node's own file gives its exact
+   shape. `architect` and `ops` are the two exceptions: their returns are **gate**
+   material, not status, and a human cannot approve a summary of a plan or a deploy they
+   have not been shown.
 
 `written_by` (added 2026-08-26) is the only authorship this file has ever carried.
 Without it rule 2 was unverifiable *by construction*: an orchestrator hand-writing all
@@ -191,6 +199,32 @@ channel to its siblings, and a node consuming nothing and producing nothing is e
 the fake edge §2 says to delete. The hook layer already runs alongside every node and is
 handed `agent_id`/`agent_type` on every tool event. Oversight belongs where it can
 actually see.
+
+### The board — the human channel, rendered
+
+Rule 3 caps what each node *says*. It does not by itself make a run legible: eight
+headlines scattered between tool calls is still something you have to reassemble in your
+head. `.graph/brief.py` does the reassembling.
+
+```bash
+python graph_agents/.graph/brief.py            # the run .graph/CURRENT names
+python graph_agents/.graph/brief.py <run-id>
+```
+
+It prints one board: the gate, the goal, a line per node, a row per slice showing build
+and verdict together, and — from `activity.jsonl` — what is running right now and for how
+long. Roughly ten lines for a run whose `state.json` is several hundred.
+
+**Nothing in it is authored.** Every value is derived from `state.json` and
+`activity.jsonl`, which the fleet already writes. That is the design, not a shortcut: a
+board no node writes cannot drift from the run, cannot be forged, and costs no node a
+token. The moment a node is asked to author the summary as well, it can be wrong about it
+— the same argument `--audit` makes against trusting a node's own account of its work.
+It reuses `verify-state.py`'s placeholder rules rather than restating them, so "written"
+means on the board exactly what it means to the audit.
+
+The orchestrator prints it at each transition instead of relaying node text
+(`feature-graph` § the board). FleetView renders the same two files with more room.
 
 Schema in `graph_agents/.graph/runs/_schema.json`. Because state is on disk, a run survives a
 crashed session, a `/clear`, or you walking away — pick it back up by pointing a fresh
