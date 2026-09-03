@@ -45,6 +45,7 @@ import sys
 import time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
+UMBRELLA = os.path.dirname(os.path.dirname(HERE))
 RUNS = os.path.join(HERE, "runs")
 CURRENT = os.path.join(HERE, "CURRENT")
 VERIFY = os.path.join(HERE, "verify-state.py")
@@ -234,11 +235,17 @@ def count(value, noun, plural=None):
 
 
 def relative(path):
-    """Repo-relative where possible. The fleet's paths are all relative to `repos/`,
-    and an absolute C:\\Users\\... line is both noise and not copy-pasteable into the
-    commands every other doc here writes."""
+    """Umbrella-relative where possible.
+
+    Against `repos/`, never against cwd. Every path this fleet writes is relative to the
+    umbrella root (`CLAUDE.md` § launch rule), and cwd is not reliably that: a hook
+    inherits whatever directory the session happens to sit in, so a cwd-relative line
+    renders differently depending on who is printing it and pastes back into nothing.
+    An absolute `C:\\Users\\...` line is the fallback, for a run that genuinely lives
+    outside the umbrella.
+    """
     try:
-        rel = os.path.relpath(path, os.getcwd())
+        rel = os.path.relpath(path, UMBRELLA)
     except ValueError:                     # different drive on Windows
         rel = path
     if rel.startswith(".." + os.sep) or os.path.isabs(rel):

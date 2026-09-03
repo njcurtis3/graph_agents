@@ -294,8 +294,14 @@ python graph_agents/.graph/brief.py $RUN
 
 One board, about ten lines: the gate, the goal, a line per node, a row per slice with its
 build and its verdict side by side, and — from `activity.jsonl` — what is running right
-now and for how long. Print it at each transition: after the scout, after the gate, as
-each slice's review lands, after the fan-in, at the close.
+now and for how long.
+
+**A node returning prints it for you.** `.claude/hooks/show-board.py` fires on the `Agent`
+tool's `PostToolUse` and renders the board as `systemMessage`, so every scout, builder,
+reviewer and integrator return already puts one on screen. Do not print it again there —
+that is the doubling this section exists to stop. Run it **yourself** only at the
+transitions no node return marks: after the human gate, after a merge you performed, and
+at the close.
 
 **Do not paste a node's return block into the main tab, and do not re-narrate it in
 prose.** Since 2026-09-03 every node's return is already a headline (`GRAPH.md` § 3,
@@ -321,8 +327,9 @@ can approve a headline.
   without writing, re-prompt *it*. Filling the key in yourself and stamping it with that
   node's name is forgery, not bookkeeping.
 - Append to `log` in state at every transition. That log is how a fresh session resumes.
-- **Print the board; do not relay the node.** After each transition run
-  `python graph_agents/.graph/brief.py $RUN` and let it speak for the run. See § the board.
+- **Let the board speak; do not relay the node.** A node's return already prints one via
+  the `Agent` hook. Run `python graph_agents/.graph/brief.py $RUN` yourself only at the
+  transitions no node return marks — the gate, a merge, the close. See § the board.
 - **Before you set `status: done`, run `verify-state.py --audit $RUN` and get exit 0.**
   The hook will tell you anyway, but at that point you have already written the close.
   `2026-08-25-fleet-hardening` is the cautionary case: its log says "5/5 slices PASS"

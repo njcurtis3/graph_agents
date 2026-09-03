@@ -193,6 +193,10 @@ this fleet has never been able to answer with data rather than assertion:
   prove the builders ran concurrently rather than merely being spawned together.
 - **stalls** — the same tool repeating with no progress is visible in the tail.
 
+⚠️ **Two of those four read `start`/`stop` pairs, and the `stop` half is currently
+polluted** — 471 of 503 recorded stops are phantoms that never had a matching start. Node
+durations measured naively from this file are wrong. See `CURRENT-STATE.md` gap #20.
+
 **Note what this is not: an overseer agent.** One was considered and rejected. A subagent
 is spawned, runs, returns text and ends — there is no loop for it to observe from, no
 channel to its siblings, and a node consuming nothing and producing nothing is exactly
@@ -223,7 +227,15 @@ token. The moment a node is asked to author the summary as well, it can be wrong
 It reuses `verify-state.py`'s placeholder rules rather than restating them, so "written"
 means on the board exactly what it means to the audit.
 
-The orchestrator prints it at each transition instead of relaying node text
+**It also prints itself.** `.claude/hooks/show-board.py` fires on `PostToolUse` for the
+`Agent` tool — the spawn call, which completes exactly when a node returns — and hands the
+board back as `systemMessage`. Not `SubagentStop`, which looks like the right event and is
+not: it is a *display* event, so both its stdout and its `systemMessage` go to Claude's
+context "instead of being shown in the transcript", reaching the orchestrator and never the
+human. `CURRENT-STATE.md` gap #19 carries the quotes and gap #20 the second reason.
+
+So the orchestrator prints the board at the transitions the hook cannot see — after the
+gate, after a merge, at the close — and does not re-print right after a node returns
 (`feature-graph` § the board). FleetView renders the same two files with more room.
 
 Schema in `graph_agents/.graph/runs/_schema.json`. Because state is on disk, a run survives a

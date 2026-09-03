@@ -47,6 +47,17 @@
             "timeout": 5
           }
         ]
+      },
+      {
+        "matcher": "Agent",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python \"${CLAUDE_PROJECT_DIR:-.}/graph_agents/.claude/hooks/show-board.py\" || true",
+            "timeout": 10,
+            "statusMessage": "rendering the run board"
+          }
+        ]
       }
     ],
     "SubagentStart": [
