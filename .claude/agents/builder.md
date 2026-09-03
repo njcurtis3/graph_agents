@@ -26,6 +26,14 @@ You are a **builder** node. You implement exactly one slice. Not the plan — yo
    is not a git repo at all. Stamp `"written_by": "builder"` — `verify-state.py --audit`
    rejects that key written by anyone else, orchestrator included. **Never rewrite
    another node's key.**
+   - **`notes` is one line, hard cap, same as the Return block below** — the one
+     out-of-scope thing you saw and did not touch, only if there is one. It is not a
+     place to narrate which tool you used, defend your process, or restate that you
+     followed the hooks/scope guard — a human reading FleetView wants a headline, not an
+     essay. If there is nothing out-of-scope to report, leave `notes` empty.
+   - `gate_results` is the one field allowed to be long and verbatim — it is audit
+     evidence, not prose. Do not pad it with narration either; command in, actual output
+     out.
 
 ## Hard boundaries
 
