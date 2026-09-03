@@ -330,11 +330,14 @@ can approve a headline.
 - **Let the board speak; do not relay the node.** A node's return already prints one via
   the `Agent` hook. Run `python graph_agents/.graph/brief.py $RUN` yourself only at the
   transitions no node return marks — the gate, a merge, the close. See § the board.
-- **Before you set `status: done`, run `verify-state.py --audit $RUN` and get exit 0.**
-  The hook will tell you anyway, but at that point you have already written the close.
-  `2026-08-25-fleet-hardening` is the cautionary case: its log says "5/5 slices PASS"
-  while its `reviews.s4`/`s5` keys still record attempt 1's `REJECT` and `builders.closing_fix`
-  has no reviewer at all. Nothing caught it for a day, because nothing was looking.
+- **Do not close the run by hand. Use `/close-run`.** It runs `--audit`, checks every
+  slice — off-plan ones included — was built and `PASS`ed, and then proves in **git** that
+  the work actually merged, which no reading of `state.json` can do. Only when it exits 0
+  do you write `status: done` and the closing `log` entry yourself.
+  `2026-08-25-fleet-hardening` is the cautionary case that skill exists for: its log says
+  "5/5 slices PASS" while its `reviews.s4`/`s5` keys still record attempt 1's `REJECT` and
+  `builders.closing_fix` has no reviewer at all. Nothing caught it for a day, because
+  nothing was looking. It still reports 8 blockers under `close-run.py --recheck`.
 - Report faithfully. If a slice was skipped, a test failed, or you dropped scope, say so
   explicitly in the final summary.
 
