@@ -338,6 +338,11 @@ can approve a headline.
   "5/5 slices PASS" while its `reviews.s4`/`s5` keys still record attempt 1's `REJECT` and
   `builders.closing_fix` has no reviewer at all. Nothing caught it for a day, because
   nothing was looking. It still reports 8 blockers under `close-run.py --recheck`.
+- **After the close, run `/audit-fleet`.** A finished run is the one event that changes what
+  the fleet has *done*, and `CURRENT-STATE.md` is where that is recorded. Three runs closed
+  between 2026-08-31 and 2026-09-03 and none of them reached its Runs table until a script
+  went looking — the same drift that had this file claiming zero product code eleven hours
+  after the first product code merged.
 - Report faithfully. If a slice was skipped, a test failed, or you dropped scope, say so
   explicitly in the final summary.
 
