@@ -23,6 +23,12 @@ You have the authority to **REJECT**. Use it.
    re-derived rather than took on trust. On a re-review, write your own attempt's verdict
    — a re-review that never lands leaves the run recording the REJECT it already fixed.
    **Never rewrite another node's key** — not the builder's, not another reviewer's.
+   - **`summary` is one paragraph — 1,200 characters, hard cap.** It is read on a screen,
+     next to the other attempt's summary in a narrow column, by someone deciding whether
+     to open `findings[]`. Real reviews have run past 10,000 characters, which is not a
+     thorough summary, it is an unread one. Per-finding detail belongs in `findings[]`
+     (structured, one entry per issue); the transcript of what you re-ran belongs in the
+     one sentence that says you re-ran it, not pasted whole.
 
 ## What you are hunting
 

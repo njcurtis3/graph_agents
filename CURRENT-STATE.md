@@ -1,6 +1,6 @@
 # CURRENT-STATE — graph_agents
 
-> **Last verified: 2026-09-03**
+> **Last verified: 2026-09-04**
 >
 > A point-in-time snapshot **verified against disk**, not a living spec. `GRAPH.md` and
 > `CLAUDE.md` describe how the fleet is *supposed* to work; this file records what is
@@ -203,7 +203,7 @@ this explanation and this explanation did not exist; both ends were fixed 2026-0
 | `scout` | haiku | Read, Glob, Grep, Bash, WebSearch, WebFetch | 67 | yes, 2 runs |
 | `architect` | opus | Read, Glob, Grep, Bash | 96 | yes, 2 runs |
 | `builder` | opus | Read, Write, Edit, Glob, Grep, Bash | 75 | yes, 6 slices |
-| `reviewer` | opus | Read, Glob, Grep, Bash | 79 | yes, 9 reviews |
+| `reviewer` | opus | Read, Glob, Grep, Bash | 85 | yes, 9 reviews |
 | `integrator` | opus | Read, Write, Edit, Glob, Grep, Bash | 45 | yes, 1 run |
 | `ops` | opus | Read, Write, Edit, Glob, Grep, Bash | 49 | **no** |
 
@@ -219,6 +219,14 @@ Return block already capped at one line — while `gate_results` stayed verbatim
 designed. Step 4 now spells out the `notes` cap inline next to where it's written, not
 just in the Return block, and states explicitly that `gate_results` is the one field
 allowed to be long.
+
+`reviewer` moved 79→85 on 2026-09-04 for the same reason, one layer over: `summary` is
+specced as "one paragraph a human can read without opening `findings[]`" and the reviews
+on disk run to **10,637, 8,497 and 7,980 characters** (`2026-09-01-huntstack-mobile` s4/s3,
+`2026-09-02-date-accuracy` s2). Step 4 now carries a hard 1,200-character cap and names
+where the overflow belongs — `findings[]` for per-issue detail, one sentence for the
+re-run rather than its transcript. Worth noting the field is rendered *twice* side by side
+in FleetView's REJECT-then-PASS diff view, so the cost is paid in a narrow column.
 
 Model tiers and tool grants were re-read from frontmatter this pass and are unchanged
 since creation. Line counts were re-counted with `wc -l` on 2026-08-26 — three had drifted
@@ -921,3 +929,4 @@ What `2026-08-25-refuge-freshness` found in huntstack, independent of the featur
 | 2026-09-03 | **The two-channel split: nodes return headlines, and `brief.py` renders the board.** Direct edit, owner-directed, no graph run (six node files, one skill, one spec, one new script — but it edits `.claude/agents/**` and `.claude/skills/**`, which `feature-graph` step 0.5 forces to single-loop anyway, and the change is one design ruling applied six times). `GRAPH.md` § 3 rule 3 now caps every node's return at a headline: no verbatim command output, no file lists, no findings bodies, because the next node reads `state.json` and nothing but the main tab reads the return. `scout`, `builder`, `reviewer` and `integrator` rewritten to fixed 3-line blocks; `architect` and `ops` keep their full blocks as the two gates, and now say why. The content those blocks stopped carrying is not lost but it was optional: `builders.<slice>.gate_results` and `reviews.<slice>.summary` are **required** as of this pass — `_schema.json` still calls both optional and was deliberately left byte-identical, because changing a template string flips old runs' untouched keys to "written" and breaks `--audit` on them (the exact regression `is_untouched()` was written for on 2026-08-26). Added `.graph/brief.py`, which renders a run as ~10 derived lines and is what the orchestrator now prints between nodes instead of relaying or re-narrating node text. Verified across all 8 runs on disk plus a synthetic mid-flight fixture. **Booked gap #19**: the cap is prose, nothing enforces it, and no run has executed under it yet. |
 | 2026-09-02 | **All seven hook commands made cwd-independent; six stopped swallowing their errors.** Owner-directed follow-on to gap #18. Every command is now rooted at `"${CLAUDE_PROJECT_DIR:-.}/graph_agents/..."`; the six advisory `PostToolUse` hooks dropped `2>/dev/null` but KEPT `|| true`, since they must never block a write but have no business failing invisibly — all four scripts were verified silent on stderr when healthy first, so this adds no noise. The old form was shown to `exit 0` — reporting success — from inside `graph_agents/` while the interpreter never found the script, which is how six hooks could sit dead indefinitely; how long they actually were is unknown and unrecoverable. Added `test_hooks_resolve.py`, which parses the real commands out of `settings.json` rather than hardcoding them and runs each from a non-root cwd. It initially reported all 7 failing — that was the harness, not the hooks: `subprocess.run(shell=True)` on Windows is cmd.exe, which passes `${VAR:-default}` through literally; fixed to invoke a POSIX shell explicitly. |
 | 2026-09-03 | **`builder.md` step 4 now spells out the `notes` one-line cap inline, not just in the Return block.** User-directed, prompted by FleetView being unreadable: real runs (`2026-09-02-date-accuracy`, all four slices) showed builders writing multi-paragraph self-justification prose into `notes` — narrating which tool they used, defending compliance with hooks, restating scope — instead of the one out-of-scope item the Return block already specified. `gate_results` was separately confirmed working as designed (verbatim evidence, per `_schema.json`); step 4 now says so explicitly so a builder doesn't over-correct and start summarizing it. `builder.md` 67→75 lines. No graph run — direct edit, single node file. FleetView side of the same complaint (progressive disclosure for `gate_results`) tracked as a separate `fleetview`-repo task, per the umbrella scope rule. |
+| 2026-09-04 | **`reviewer.md` gains a 1,200-character cap on `summary` — the same overflow one layer up.** User-directed, from a review of what else FleetView renders badly. The builder-side fix the day before left the worse case untouched: `reviews.<slice>.summary` is specced as "one paragraph a human can read without opening `findings[]`" and the reviews on disk are **10,637 / 8,497 / 7,980 characters** — roughly 1,500 words in a one-paragraph field, and FleetView renders two of them side by side in narrow columns on a REJECT-then-PASS slice. Step 4 now caps it and says where the overflow goes: `findings[]` for per-issue detail, one sentence for the re-run instead of its transcript. `reviewer.md` 79→85 lines. Direct edit, single node file, no graph run. Note the cap is prose and nothing enforces it — same standing weakness as gap #19. |
