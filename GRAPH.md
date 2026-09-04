@@ -227,16 +227,24 @@ token. The moment a node is asked to author the summary as well, it can be wrong
 It reuses `verify-state.py`'s placeholder rules rather than restating them, so "written"
 means on the board exactly what it means to the audit.
 
-**It also prints itself.** `.claude/hooks/show-board.py` fires on `PostToolUse` for the
-`Agent` tool — the spawn call, which completes exactly when a node returns — and hands the
-board back as `systemMessage`. Not `SubagentStop`, which looks like the right event and is
-not: it is a *display* event, so both its stdout and its `systemMessage` go to Claude's
-context "instead of being shown in the transcript", reaching the orchestrator and never the
-human. `CURRENT-STATE.md` gap #19 carries the quotes and gap #20 the second reason.
+**It also prints itself, at dispatch.** `.claude/hooks/show-board.py` fires on `PostToolUse`
+for the `Agent` tool — the spawn call — and hands the board back as `systemMessage`,
+**observed reaching the main tab 2026-09-03**. Not `SubagentStop`, which looks like the
+right event and is not: it is a *display* event, so both its stdout and its `systemMessage`
+go to Claude's context "instead of being shown in the transcript", reaching the orchestrator
+and never the human. `CURRENT-STATE.md` gap #19 carries the quotes and gap #20 the second
+reason.
 
-So the orchestrator prints the board at the transitions the hook cannot see — after the
-gate, after a merge, at the close — and does not re-print right after a node returns
-(`feature-graph` § the board). FleetView renders the same two files with more room.
+**The hook fires when a node starts, not when it finishes** — measured, not assumed: all 32
+`Agent` events in the heartbeat land within 0.2s of a `SubagentStart`, never near a node's
+own stop. A spawn call returns a handle and the node runs in the background. So that board
+shows the run as the node *picks it up*, and no hook can print one when the node comes back:
+the event that fires then is `SubagentStop`, which cannot address a human.
+
+So there are two boards per node, from two actors. The hook prints the dispatch board for
+free. The orchestrator prints the **return** board itself, and the boards at the transitions
+no node marks at all — after the gate, after a merge, at the close (`feature-graph` § the
+board). FleetView renders the same two files with more room.
 
 Schema in `graph_agents/.graph/runs/_schema.json`. Because state is on disk, a run survives a
 crashed session, a `/clear`, or you walking away — pick it back up by pointing a fresh

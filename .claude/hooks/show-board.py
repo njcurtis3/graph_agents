@@ -1,9 +1,8 @@
 #!/usr/bin/env python
-"""PostToolUse hook: print the run board to the human when a node returns.
+"""PostToolUse hook: print the run board to the human when a node is dispatched.
 
-Fires on the `Agent` tool -- the orchestrator's spawn call -- which completes exactly
-when a subagent finishes. It renders `.graph/brief.py` and returns it as `systemMessage`,
-the documented way to put text in front of the user:
+Fires on the `Agent` tool, the orchestrator's spawn call. It renders `.graph/brief.py` and
+returns it as `systemMessage`, the documented way to put text in front of the user:
 
     {"systemMessage": "<the board>"}
 
@@ -22,11 +21,23 @@ orchestrator, which already knows, and never reaches the person reading the main
 The fleet's own heartbeat says `SubagentStop` is the wrong trigger anyway. Across the four
 runs carrying `activity.jsonl`, 471 of 503 `stop` events arrive with no `agent_type`, each
 with a unique `agent_id` that never had a matching `SubagentStart`, interleaved with a
-still-running node's tool calls. It is not a "a subagent finished" signal here. `Agent`
-`PostToolUse` is: 31 recorded, all in the main session, one per return.
+still-running node's tool calls. It is not a "a subagent finished" signal here.
+
+**WHEN this fires, measured rather than assumed (2026-09-03).** This hook was written
+believing `Agent` completes when the subagent it spawned finishes. It does not. Across the
+five runs carrying a heartbeat, all 32 recorded `Agent` events land 0.0-0.2s after a
+`SubagentStart`, and the nearest real subagent stop is between 3.5s and 1772s away -- never
+once the other way round. Subagents run in the background and the spawn call returns a
+handle immediately, so this is a **dispatch** board: it shows the run as the node picks it
+up, before that node has written anything.
+
+That is still worth printing -- it is the "off we go" card, and it costs nobody a token --
+but it means **no hook prints a board when a node comes back**. `SubagentStop` would, and
+cannot reach the human. So the post-return board is the orchestrator's own, by hand
+(`feature-graph` § the board). Two boards per node, from two different actors, on purpose.
 
 `systemMessage` also enters the orchestrator's context. That cost is real and accepted --
-about ten lines per node return, derived from a file the orchestrator already owns.
+about ten lines per dispatch, derived from a file the orchestrator already owns.
 
 ASCII glyphs always. `brief.py` picks glyphs from `sys.stdout.encoding`, which for a hook
 is a pipe and tells us nothing about the terminal that will render this; a status line is

@@ -296,12 +296,21 @@ One board, about ten lines: the gate, the goal, a line per node, a row per slice
 build and its verdict side by side, and — from `activity.jsonl` — what is running right
 now and for how long.
 
-**A node returning prints it for you.** `.claude/hooks/show-board.py` fires on the `Agent`
-tool's `PostToolUse` and renders the board as `systemMessage`, so every scout, builder,
-reviewer and integrator return already puts one on screen. Do not print it again there —
-that is the doubling this section exists to stop. Run it **yourself** only at the
-transitions no node return marks: after the human gate, after a merge you performed, and
-at the close.
+**Dispatching a node prints one for you.** `.claude/hooks/show-board.py` fires on the
+`Agent` tool's `PostToolUse` and renders the board as `systemMessage`. Measured 2026-09-03:
+that event lands within 0.2s of the node **starting**, not finishing — a spawn call returns
+a handle and the node runs in the background. So the free board is the one that shows the
+run as the node picks it up. Do not print another one right after you spawn.
+
+**You print the board when a node comes back.** No hook can: the event that fires at a
+node's return is `SubagentStop`, and its output goes to your context instead of the
+transcript, so it reaches you and never the human. This is the board that matters most —
+it is the one carrying what the node just did — and it exists only if you run it:
+
+    python graph_agents/.graph/brief.py $RUN
+
+Run it yourself after every node return, and at the transitions no node marks at all: after
+the human gate, after a merge you performed, and at the close.
 
 **Do not paste a node's return block into the main tab, and do not re-narrate it in
 prose.** Since 2026-09-03 every node's return is already a headline (`GRAPH.md` § 3,
@@ -327,9 +336,10 @@ can approve a headline.
   without writing, re-prompt *it*. Filling the key in yourself and stamping it with that
   node's name is forgery, not bookkeeping.
 - Append to `log` in state at every transition. That log is how a fresh session resumes.
-- **Let the board speak; do not relay the node.** A node's return already prints one via
-  the `Agent` hook. Run `python graph_agents/.graph/brief.py $RUN` yourself only at the
-  transitions no node return marks — the gate, a merge, the close. See § the board.
+- **Let the board speak; do not relay the node.** The `Agent` hook prints one when you
+  *dispatch* a node. Run `python graph_agents/.graph/brief.py $RUN` yourself when a node
+  **returns** — no hook can do that one — and at the transitions no node marks at all: the
+  gate, a merge, the close. See § the board.
 - **Do not close the run by hand. Use `/close-run`.** It runs `--audit`, checks every
   slice — off-plan ones included — was built and `PASS`ed, and then proves in **git** that
   the work actually merged, which no reading of `state.json` can do. Only when it exits 0
