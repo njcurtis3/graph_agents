@@ -95,9 +95,9 @@
 
 ---
 
-## Status: eight runs, seven of them executed; the first diamond has run
+## Status: nine runs, eight of them executed; the first diamond has run
 
-Built 2026-08-25 in a single session. Eight run directories on disk. The first five are
+Built 2026-08-25 in a single session. Nine run directories on disk. The first five are
 narrated in full below; three more ran 2026-08-31 → 2026-09-03 and were **missing from
 this file entirely until 2026-09-03**, when `/audit-fleet`'s first run found them.
 
@@ -623,6 +623,7 @@ still read by a human or by an agent that says which parts it actually re-read.
 | `2026-08-31-mobile-first-criteria` | umbrella (the fleet itself) | single-loop, 3 slices | **executed**, approved at the gate, 3/3 PASS on attempt 1 | Mobile-first became a routing lookup instead of a debate: `conventions/mobile-first.md`, a `ui` field on every registry entry, and matching instructions in `new-app`, `architect`, `builder` and `reviewer`. Forced single-loop by step 0.5 (it edits `.claude/agents` and `.claude/skills`). Merged `dd7ac0b` |
 | `2026-09-01-huntstack-mobile` | huntstack | single-loop, 4 slices | **executed**, approved at the gate, 4/4 PASS on attempt 1 | huntstack's React Native + Expo app at `apps/mobile/`, talking to the existing Fastify API over HTTP and sharing no code with `apps/web`. Branch `feat/mobile-expo-scaffold`. Its human-read gate was left open at close and **closed 2026-09-03** on a physical Android phone via Expo Go, against a throwaway stub API — recorded in the run's `log`, never by editing `reviews.s3`. This is the run whose `**`-shaped file sets exposed the guard's glob bug |
 | `2026-09-02-date-accuracy` | huntstack | single-loop, 3 slices + 1 off-plan | **executed**, approved at the gate, 4/4 PASS | The UTC off-by-one: season dates now render the calendar day the regulation says, in `packages/shared` and in `apps/web`'s separate local copy, without double-shifting mobile's already-guarded caller. `s4` was added off-plan to run the shared package's tests in CI. Merged `50a5299`, no conflict, no integrator. Closed with `s2`'s human-read gate deliberately **not** run and the close saying so |
+| `2026-09-04-fleetview-payload` | fleetview | single-loop, 2 slices | **executed**, approved at the gate, both PASS — **s2 only after the orchestrator overrode a reviewer's PASS** | FleetView items 4 and 5 from an improvement review. `/api/graph` became a conditional request: a strong ETag over the payload minus `generated`, 304 with no body on a match, landing on the nothing-changed path that already existed. The architect **refused the payload split** that was the obvious reading of item 4, because it cannot be built without breaking `fleetview/CLAUDE.md`'s "selection never triggers a refetch" and the test enforcing it; 304 preserves the invariant and also kills the `JSON.parse` + whole-payload `JSON.stringify` the browser ran every 4s on an unchanged poll. Growth with run count is **accepted, not fixed** — revisit at ~40 runs or ~2 MB, starting with that amendment. s2 surfaced `_mtime`, `scope_exceptions` and `written_by`, three fields the fleet had always written and the viewer had never shown. Reviewed PASS at attempt 1 and **sent back anyway**: `ACTIVE_STATUSES` includes `awaiting-approval`, so a run parked at the human gate — both clocks stopped by design — rendered a red *wedged* pill, and the test naming that rule sat on a fixture that could not fail, so deleting the guard left the suite green. Attempt 2 reproduced both mutations red. Suite 61 → 125 assertions. Merged `3e9bb04` and `29537a0`, no conflict, no integrator |
 
 Run state lives at `graph_agents/.graph/runs/<run-id>/state.json` for each of the eight.
 
