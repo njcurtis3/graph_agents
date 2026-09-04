@@ -560,9 +560,10 @@ still read by a human or by an agent that says which parts it actually re-read.
     non-display event, where the docs say *"To surface a message to the user on any platform,
     return `systemMessage` in JSON output."*
     **The delivery half is CLOSED, observed 2026-09-03.** Fresh session, `.graph/CURRENT` pointed
-    at a probe run, one `scout` spawned: the board appeared in the main tab. So `systemMessage`
-    from a non-display `PostToolUse` event does reach the user, and the doc sentence that sits
-    next to a field description reading "shown to Claude" is the one that governs.
+    at a probe run, one `scout` spawned: the board appeared in the main tab, verbatim, under a
+    `PostToolUse:Agent says:` label nested beneath the tool call. So `systemMessage` from a
+    non-display `PostToolUse` event does reach the user, and the doc sentence that sits next to a
+    field description reading "shown to Claude" is the one that governs.
     **And the test corrected the design it was verifying.** The hook was written believing `Agent`
     completes when the subagent it spawned finishes. It does not: across the five runs carrying a
     heartbeat, **all 32 `Agent` events land 0.0–0.2s after a `SubagentStart`**, with the nearest
@@ -570,6 +571,11 @@ still read by a human or by an agent that says which parts it actually re-read.
     in the background and the spawn call returns a handle immediately. The board is therefore a
     **dispatch** board: it shows the run as the node picks it up, before that node has written a
     thing.
+    The observed render says the same two things without any arithmetic, which is why it is worth
+    keeping verbatim: the harness printed `Backgrounded agent (↓ to manage)` directly above the
+    board — the handle-return, stated by the harness itself — and the board's own live lane read
+    `now  scout | 0s | 0 tools | last ?`. A node zero seconds old with zero tools spent is a node
+    that has not started working. **The board proves its own timing.**
     The consequence is not cosmetic. **No hook prints a board when a node comes back** — the event
     that fires there is `SubagentStop`, ruled out above — so the return board, which is the one
     carrying what the node just did, exists only if the orchestrator runs `brief.py` itself.
