@@ -13,9 +13,9 @@ only run when someone already knows WHICH node just finished, so it can only eve
 called by hand. A PostToolUse hook sees a file path and nothing else, so it cannot ask
 that question at all. `--audit` asks the one a lone state.json can answer instead:
 given everything written so far, did the graph's EDGES hold? Builders before the human
-gate, a review with no build behind it, a fan-in over a slice that never passed, a run
-closed with a slice still unreviewed, a key filled in around template text still left
-in place. It names no node and needs no argument beyond the run.
+gate, a review with no build behind it, a fan-in over a slice whose latest review is not
+a PASS, a run closed with a slice still unreviewed, a key filled in around template text
+still left in place. It names no node and needs no argument beyond the run.
 
 The two modes are complementary, not redundant: `--audit` never reports a key as
 merely unwritten mid-run (that is what a run in progress looks like), and the named-key
@@ -103,6 +103,130 @@ def resolve(state, key):
 def die(message):
     sys.stderr.write("verify-state: %s\n" % message)
     raise SystemExit(1)
+
+
+# ------------------------------------------------------- review attempts (2026-09-05)
+#
+# A rejected slice keeps attempt 1's REJECT at the TOP of `reviews.<slice>` and nests the
+# re-review as `attempt_2` (`attempt_3`, ...). Every attempt survives; the LATEST one
+# supplies the verdict. Two reviewers invented that shape independently and nothing in the
+# fleet read it, so a slice that was rejected and then fixed reported as failed -- which is
+# why `close-run.py` could not close 2026-09-04-payload-split and why the audit had been
+# misreporting 2026-08-25-fleet-hardening since the day it closed.
+#
+# The rule lives HERE, once, because `close-run.py` and `brief.py` already import this
+# module: four readers with four rules is how this defect comes back. `resolve()` above is
+# deliberately NOT taught about attempts -- it is a dumb dotted-path walker, and a magic
+# resolve would silently change every unrelated dotted read in three scripts.
+#
+# `fleetview/index.html` (reviewAttempts/finalVerdict/everRejected) is the reference this
+# mirrors, read and copied, never imported: it is a separate app, and importing it would be
+# the cross-app edge the umbrella invariant forbids.
+
+# fleetview's walk is `for (var i = 2; i < 10; i++)`, so it stops after attempt_9. This
+# matches that bound EXACTLY on purpose: two readers with different caps disagreeing about
+# a verdict, in a place nobody would look, is the precise divergence this rule exists to
+# prevent. Where they would silently differ -- attempt_10 and beyond -- this side is loud
+# instead of quietly authoritative. See `over_cap_attempts()`.
+ATTEMPT_CAP = 9
+
+_WARNED = set()
+
+
+def _norm(verdict):
+    """A verdict as the gates compare it. Strip and upper, and nothing else.
+
+    No mapping and no validation: an unrecognised verdict must reach the reader verbatim,
+    because "reviews.s1 is PASS|REJECT" (the untouched template) is a finding, not a typo
+    to be cleaned up on the way past.
+    """
+    return str(verdict if verdict is not None else "").strip().upper()
+
+
+def _attempt(obj, number, key):
+    """One attempt, flattened to the fields every reader needs. Mirrors fleetview's."""
+    return {"verdict": _norm(obj.get("verdict")),
+            "attempt": obj.get("attempt") or number,
+            "summary": obj.get("summary"),
+            "findings": obj.get("findings"),
+            "key": key}
+
+
+def over_cap_attempts(review):
+    """`attempt_N` keys present beyond ATTEMPT_CAP, in order. Normally empty.
+
+    Past the cap the fleet and the board WOULD disagree, so this is surfaced rather than
+    resolved: `review_attempts()` warns on stderr and `audit()` reports it as a violation.
+    Returning a stale verdict silently is the one outcome that is not allowed here.
+    """
+    if not isinstance(review, dict):
+        return []
+    over = []
+    for key in review:
+        if not key.startswith("attempt_"):
+            continue
+        try:
+            number = int(key[len("attempt_"):])
+        except ValueError:
+            continue
+        if number > ATTEMPT_CAP:
+            over.append((number, key))
+    return [key for _, key in sorted(over)]
+
+
+def review_attempts(review):
+    """Every attempt in `reviews.<slice>`, in order. The top level IS attempt 1.
+
+    Walks `attempt_2`, `attempt_3`, ... and stops at the FIRST GAP, so a lone `attempt_3`
+    with no `attempt_2` does not silently become the verdict -- a missing attempt means the
+    numbering is not what the reader thinks it is, and guessing past it is how a verdict
+    nobody wrote gets applied.
+
+    One documented divergence from fleetview, which breaks on `!a`: an EMPTY attempt dict
+    stops the walk here too. `{}` is truthy in JS, but in this file empty has always meant
+    "the node did not write it" (`is_empty`), and an empty attempt is not a re-review.
+    """
+    if not isinstance(review, dict):
+        return []
+    out = [_attempt(review, 1, "")]
+    for i in range(2, ATTEMPT_CAP + 1):
+        nested = review.get("attempt_%d" % i)
+        if not isinstance(nested, dict) or is_empty(nested):
+            break
+        out.append(_attempt(nested, i, "attempt_%d" % i))
+    for key in over_cap_attempts(review):
+        message = ("verify-state: WARNING: %s is past the attempt_%d cap this fleet and "
+                   "fleetview both stop at -- it is NOT resolved, and the two readers now "
+                   "disagree about this slice's verdict\n" % (key, ATTEMPT_CAP))
+        if message not in _WARNED:
+            _WARNED.add(message)
+            sys.stderr.write(message)
+    return out
+
+
+def final_verdict(review):
+    """The LAST attempt, or None. This is what decides pass/fail everywhere."""
+    attempts = review_attempts(review)
+    return attempts[-1] if attempts else None
+
+
+def ever_rejected(review):
+    """Did ANY attempt REJECT.
+
+    DISPLAY ONLY, forever. It must never gate anything: the fleet is built to loop, so a
+    check that blocked on "ever REJECTed" would fire on every run that did the normal thing
+    -- which is exactly the 2026-08-26 breakage recorded at `real_slices()`, where no
+    diamond could close. It exists so a rejection stays VISIBLE after it is fixed, which is
+    the regression the latest-attempt rule would otherwise cause.
+    """
+    return any(a["verdict"] == "REJECT" for a in review_attempts(review))
+
+
+def slice_verdict(state, sid):
+    """The verdict of `reviews.<sid>`'s latest attempt, normalised. "" when unwritten."""
+    _, review = resolve(state, "reviews.%s" % sid)
+    final = final_verdict(review)
+    return final["verdict"] if final else ""
 
 
 # ---------------------------------------------------------------- audit mode
@@ -258,7 +382,7 @@ def audit(state, template):
     for s in known:
         built = not unwritten(state, template, "builders.%s" % s)
         reviewed = not unwritten(state, template, "reviews.%s" % s)
-        verdict = str(resolve(state, "reviews.%s.verdict" % s)[1] or "").strip().upper()
+        verdict = slice_verdict(state, s)
 
         # The human gate is the one edge in this graph that exists to be blocking.
         if built and not approved:
@@ -278,9 +402,25 @@ def audit(state, template):
                 "run is status 'done' but reviews.%s is %s -- only PASS closes a slice"
                 % (s, verdict or "unwritten"))
 
+        # Past the cap the fleet stops resolving and the board keeps its own answer, so
+        # the disagreement is reported to a human instead of one of the two winning.
+        for over in over_cap_attempts(resolve(state, "reviews.%s" % s)[1]):
+            problems.append(
+                "reviews.%s.%s is past the attempt_%d cap that this audit and fleetview "
+                "both stop at -- its verdict is NOT resolved here, and the board and the "
+                "fleet now disagree about reviews.%s" % (s, over, ATTEMPT_CAP, s))
+
+    # This check NARROWED on 2026-09-05, and the narrowing was approved at a human gate
+    # rather than assumed. It used to mean "no slice ever REJECTed"; it now means "no
+    # slice's LATEST attempt is REJECT". `state.json` carries no ordering between the
+    # integrator's write and a re-review's, so "merged before the re-review landed" was
+    # never detectable from this file by any rule. The alternative -- blocking on
+    # `ever_rejected` -- would fire on every run that ever looped, which is the intended
+    # workflow, and would repeat the breakage recorded at `real_slices()` above. A slice
+    # still sitting at REJECT still blocks fan-in.
     if not unwritten(state, template, "integrator"):
         for s in known:
-            v = str(resolve(state, "reviews.%s.verdict" % s)[1] or "").strip().upper()
+            v = slice_verdict(state, s)
             if v != "PASS":
                 problems.append(
                     "integrator is written but reviews.%s is %s -- fan-in (step 6) runs "
