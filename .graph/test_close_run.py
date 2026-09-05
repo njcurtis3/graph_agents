@@ -68,7 +68,12 @@ def make_repo(path, branch_work="feature-x", merge=True):
 
 
 def state_for(branch, verdict="PASS", built=True, reviewed=True, approved=True,
-              status="reviewing", extra_slice=None, commit=None):
+              status="reviewing", extra_slice=None, commit=None, attempts=None):
+    """`attempts` is {N: verdict} for the re-reviews of s1, e.g. {2: "PASS"}.
+
+    They nest exactly as a second reviewer writes them: the top level stays attempt 1's
+    verdict, untouched, and each re-review lands under its own `attempt_N`.
+    """
     state = {
         "run_id": "close-self-test",
         "goal": "a test run",
@@ -90,8 +95,13 @@ def state_for(branch, verdict="PASS", built=True, reviewed=True, approved=True,
             entry["commit"] = commit
         state["builders"]["s1"] = entry
     if reviewed:
-        state["reviews"]["s1"] = {"written_by": "reviewer", "verdict": verdict,
-                                  "attempt": 1, "summary": "s", "findings": []}
+        review = {"written_by": "reviewer", "verdict": verdict,
+                  "attempt": 1, "summary": "s", "findings": []}
+        for number, again in sorted((attempts or {}).items()):
+            review["attempt_%d" % number] = {"written_by": "reviewer", "verdict": again,
+                                             "attempt": number, "summary": "s",
+                                             "findings": []}
+        state["reviews"]["s1"] = review
     if extra_slice:
         state["builders"][extra_slice] = {"written_by": "builder", "status": "done",
                                           "branch": branch or "", "changed": ["b"],
@@ -128,18 +138,31 @@ def run_close(script, *args):
     return proc.returncode, proc.stdout + proc.stderr
 
 
-def case(label, state, expect_ok, expect_text=None, args=("a-run",), **fleet_kwargs):
+def case(label, state, expect_ok, expect_text=None, args=("a-run",), absent_text=None,
+         **fleet_kwargs):
     tmp = tempfile.mkdtemp(prefix="closetest-")
     try:
         script, _ = build_fleet(tmp, state, **fleet_kwargs)
         code, out = run_close(script, *args)
-        check(label, code == 0, expect_ok)
+        if expect_ok is not None:
+            # None means this case makes no claim about the exit code, only about what the
+            # report SAYS. Two claims in one case go red together and name neither, and a
+            # case that cannot fail alone cannot show what it covers.
+            check(label, code == 0, expect_ok)
         if expect_text is not None:
             if expect_text not in out:
                 print("  FAIL %s -- missing %r in:\n%s" % (label, expect_text, out))
                 FAILURES.append(label + " (text)")
             else:
                 print("  ok   %s :: %s" % (label, expect_text))
+        if absent_text is not None:
+            # "it closed" and "the stale blocker is gone" are two claims, and a case that
+            # only checks the exit code cannot tell which one it proved.
+            if absent_text in out:
+                print("  FAIL %s -- still says %r" % (label, absent_text))
+                FAILURES.append(label + " (absent)")
+            else:
+                print("  ok   %s :: never says %r" % (label, absent_text))
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 
@@ -162,6 +185,28 @@ case("BLOCKS before the human gate", state_for("feature-x", approved=False), Fal
      "approved_by_human is not true")
 case("BLOCKS on an off-plan slice with no reviewer",
      state_for("feature-x", extra_slice="closing_fix"), False, "(off-plan)")
+
+# -- re-reviews. Attempt 1 stays at the top of `reviews.<slice>` and each re-review nests
+#    under `attempt_N`, so the verdict that counts is the LAST attempt, not the first.
+#    This is the coverage the suite never had, and its absence is why a slice that had
+#    been fixed and passed still read as REJECT here for a day.
+#
+#    (c) comes first because it is the one a lazy fix fails: an implementation that asks
+#    "did any attempt pass" rather than "what did the latest attempt say" closes this run
+#    and launders a live rejection into a clean close.
+case("STILL BLOCKS when a re-review REJECTs a slice that first passed",
+     state_for("feature-x", verdict="PASS", attempts={2: "REJECT"}), False,
+     "slice s1 is REJECT, not PASS")
+case("closeable when attempt 2 PASSed what attempt 1 REJECTed",
+     state_for("feature-x", verdict="REJECT", attempts={2: "PASS"}), True, "closeable",
+     absent_text="slice s1 is REJECT")
+case("and the close report says that slice looped, not that it passed first try",
+     state_for("feature-x", verdict="REJECT", attempts={2: "PASS"}), None,
+     "slice s1: PASS on attempt 2, after an earlier REJECT")
+case("BLOCKS when attempt_3 appears with no attempt_2 -- the walk stops at the gap and "
+     "the top-level verdict decides",
+     state_for("feature-x", verdict="REJECT", attempts={3: "PASS"}), False,
+     "slice s1 is REJECT, not PASS")
 
 # -- already closed
 case("BLOCKS a run already done", state_for("feature-x", status="done"), False,
@@ -194,6 +239,46 @@ finally:
 
 # -- argument handling
 case("exits 1 on an unknown run", state_for("feature-x"), False, args=("no-such-run",))
+
+# -- blast radius, on the two runs already on disk. Read-only: close-run.py never writes,
+#    and these assert the verdict change was AIMED at one run and did not spray.
+print()
+print("blast radius on the runs already on disk")
+
+REAL = os.path.join(HERE, "close-run.py")
+RUNS = os.path.join(HERE, "runs")
+
+# The run this whole fix exists to unblock. Its s2 was REJECTed, fixed, and passed on
+# attempt 2, and close-run.py reported it as failed anyway.
+check("2026-09-04-payload-split is on disk to be checked",
+      os.path.isdir(os.path.join(RUNS, "2026-09-04-payload-split")), True)
+_, out = run_close(REAL, "2026-09-04-payload-split")
+check("payload-split no longer reports its fixed slice as REJECT",
+      "slice s2 is REJECT" in out, False)
+check("and the loop is still visible in the close report",
+      "slice s2: PASS on attempt 2, after an earlier REJECT" in out, True)
+
+# fleet-hardening must NOT become closeable. Its `closing_fix` slice was never reviewed
+# by anyone -- a real finding, older than this suite -- and a fix that quietly closed the
+# run this whole discipline was built from would be a wrong fix that every green test
+# above would miss.
+check("2026-08-25-fleet-hardening is on disk to be checked",
+      os.path.isdir(os.path.join(RUNS, "2026-08-25-fleet-hardening")), True)
+code, out = run_close(REAL, "--recheck", "2026-08-25-fleet-hardening")
+check("fleet-hardening still exits non-zero", code != 0, True)
+check("its unreviewed closing_fix slice survives, verbatim",
+      "slice closing_fix (off-plan) has no review -- it was never independently checked"
+      in out, True)
+check("so does the audit's own line about that slice",
+      "run is status 'done' but reviews.closing_fix is unwritten -- only PASS closes a "
+      "slice" in out, True)
+check("and the authorship blocker survives, verbatim",
+      "no key in this run is authorship-stamped -- `written_by` was added to _schema.json "
+      "on 2026-08-26; runs opened before that are unverifiable on the "
+      "never-rewrite-another-node's-key contract and stay that way" in out, True)
+check("its s4, fixed and passed on attempt 2, stops being reported as REJECT",
+      "slice s4 is REJECT" in out, False)
+check("and so does s5", "slice s5 is REJECT" in out, False)
 
 print()
 if FAILURES:

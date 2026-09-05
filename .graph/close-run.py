@@ -129,6 +129,12 @@ def check(run_id, recheck=False):
 
     # -- every slice built and PASSed. `real_slices` includes off-plan ids, which is the
     #    point: `builders.closing_fix` in fleet-hardening was real work with no reviewer.
+    #    "PASSed" is the LATEST review attempt, not the top of `reviews.<slice>`: a
+    #    re-review nests as `attempt_N` and attempt 1's REJECT stays where its reviewer
+    #    wrote it, so reading the top level certified a fixed slice as failed and is why
+    #    2026-09-04-payload-split could not close. The rule is imported from
+    #    verify-state.py rather than restated here -- a second copy of it is a second
+    #    chance to disagree, which is the defect, not the fix.
     slices = verify.real_slices(state, template)
     if not slices:
         warnings.append("this run has no slices -- nothing to verify as built")
@@ -141,7 +147,8 @@ def check(run_id, recheck=False):
     for sid in slices:
         built = not verify.unwritten(state, template, "builders.%s" % sid)
         reviewed = not verify.unwritten(state, template, "reviews.%s" % sid)
-        verdict = str(verify.resolve(state, "reviews.%s.verdict" % sid)[1] or "").strip().upper()
+        review = verify.resolve(state, "reviews.%s" % sid)[1]
+        verdict = verify.slice_verdict(state, sid)
         where = "%s%s" % (sid, "" if sid in planned else " (off-plan)")
         if not built:
             blockers.append("slice %s was never built" % where)
@@ -150,6 +157,13 @@ def check(run_id, recheck=False):
                             % where)
         elif verdict != "PASS":
             blockers.append("slice %s is %s, not PASS" % (where, verdict or "unwritten"))
+        elif verify.ever_rejected(review):
+            # It closes -- and it closes as what it was. A slice that was REJECTed and
+            # then fixed is history worth keeping, so the close report says it looped
+            # rather than rendering a clean first-try PASS. `ever_rejected` is display
+            # only and must never gate anything; it is a note, never a blocker.
+            notes.append("slice %s: PASS on attempt %s, after an earlier REJECT -- the "
+                         "loop is on the record" % (where, verify.final_verdict(review)["attempt"]))
         build_status = str(verify.resolve(state, "builders.%s.status" % sid)[1] or "").strip()
         if built and build_status and build_status.lower() not in ("done",):
             blockers.append("slice %s reports builder status %r" % (where, build_status))
