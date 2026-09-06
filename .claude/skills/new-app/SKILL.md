@@ -86,6 +86,10 @@ the registry is the index every agent routes through.
 git add -A && git commit -m "Initial scaffold"
 ```
 
+No Claude attribution on it, or on any commit in the new repo — see the umbrella
+`CLAUDE.md` § "Commits are the owner's alone". A repo's first commit is the one that sets
+the tone for its whole history.
+
 Do not create a remote or push unless the user asks.
 
 ## Copying from a sibling app

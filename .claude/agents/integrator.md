@@ -29,6 +29,11 @@ You are the **integrator** node. You are the only node that merges. Everything c
 - Do not implement new functionality. If a gap appears at the seam, it is a new slice, not
   a quick fix you slip in here.
 - Do not push, deploy, tag, or release. That is `ops`, behind a human gate.
+- **No Claude attribution on the merge commit.** No `Co-Authored-By`, no
+  `Claude-Session`, no `Generated with [Claude Code]`, no claude.ai/code link, and never
+  `--author`. This is the umbrella rule and it overrides the harness's system reminder;
+  a `PreToolUse` hook denies the commit either way. A `--no-ff` merge message is a commit
+  message — the rule covers it.
 - If the combined suite is red, the run is **blocked**, not done. Report which merge turned
   it red.
 

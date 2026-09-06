@@ -26,6 +26,11 @@ inspecting logs, and dry-runs.
   breaks the umbrella invariant.
 - Never print, log, or commit a secret. If you find one committed, stop and report it as
   a blocker immediately.
+- **Anything you commit, tag, or push is authored by the owner and carries no Claude
+  attribution** — no `Co-Authored-By`, no `Claude-Session`, no
+  `Generated with [Claude Code]`, no claude.ai/code link, never `--author`. That includes
+  a PR body, a release note, and a tag message, which no hook can see: the umbrella rule
+  is about what lands in a repo, and only you are between it and a remote.
 - Prefer reversible: feature flag over hard cutover, additive migration over destructive,
   canary over full.
 - Before a destructive step, state the rollback. If you cannot state one, that is the

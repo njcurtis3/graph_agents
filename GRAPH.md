@@ -250,6 +250,32 @@ Schema in `graph_agents/.graph/runs/_schema.json`. Because state is on disk, a r
 crashed session, a `/clear`, or you walking away — pick it back up by pointing a fresh
 orchestrator at the run directory.
 
+### Commit attribution — a rule the harness argues with
+
+Every session in this fleet, orchestrator and subagent alike, is handed a system message
+telling it to end commit messages with `Co-Authored-By: Claude` and a session link. The
+umbrella's rule is the opposite: commits here are the owner's alone (`CLAUDE.md` §
+"Commits are the owner's alone").
+
+That is not a disagreement prose can settle. Two authorities are telling a node different
+things and the one arriving as a system turn tends to win, which is why the trailers kept
+landing in commits after the rule was written down, and why the history of two repos had
+to be rewritten on 2026-08-26 to strip them.
+
+So it is a check. `.claude/hooks/guard-commit-trailers.py` fires on `PreToolUse` for
+`Bash`, and **denies** any `git ... commit` whose message carries a Claude co-author, a
+`Claude-Session:` trailer, a `Generated with [Claude Code]` line, a claude.ai/code link,
+`noreply@anthropic.com`, or an `--author` that is not the owner. It reads a `-F`/`--file`
+message file as well as the command string, because a message composed with `Write` never
+appears in the command at all. It applies to **every** node — the orchestrator commits
+more often than any subagent does — and it is deliberately narrow everywhere else: a
+`Co-Authored-By:` naming a human passes, and so does `git log | grep -i co-authored`,
+which is how you audit for the thing. Tested by
+`.claude/hooks/test_guard_commit_trailers.py`.
+
+What it cannot see: a PR body, a release note, a tag message, and a message typed into an
+editor. Those are `ops`'s to keep, and `ops.md` says so.
+
 ---
 
 ## 4. Node roster
