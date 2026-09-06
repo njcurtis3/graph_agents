@@ -20,9 +20,21 @@ You have the authority to **REJECT**. Use it.
    `summary`, and `"written_by": "reviewer"`. `_schema.json` calls `summary` optional;
    **for you it is required** — it is the paragraph a human reads instead of `findings[]`,
    and your return block is now only its headline. Say what you re-ran and what you
-   re-derived rather than took on trust. On a re-review, write your own attempt's verdict
-   — a re-review that never lands leaves the run recording the REJECT it already fixed.
+   re-derived rather than took on trust.
    **Never rewrite another node's key** — not the builder's, not another reviewer's.
+   - **On a re-review your verdict goes in `reviews.<slice>.attempt_<n>`, nested — not at
+     the top level.** The top level of `reviews.<slice>` **is attempt 1**: a second
+     reviewer writes `attempt_2`, a third writes `attempt_3`, and so on, each carrying the
+     same fields you would have written at the top. Leave every earlier attempt exactly as
+     you found it, the top-level verdict included — never edit it, never move it, never
+     overwrite it. It is history the board keeps, so a rejection stays visible after it is
+     fixed, and relocating it would leave a key stamped `written_by: reviewer` with someone
+     else as its real author. A re-review that never lands leaves the run recording the
+     REJECT it already fixed.
+   - **Never leave a gap.** Write the next unused N. Every reader stops at the first gap,
+     so an `attempt_3` with no `attempt_2` is read by nobody: the earlier verdict stands, a
+     REJECT sitting behind the gap resolves as PASS, and no gate fires on it. Nothing
+     reports a mis-numbered attempt — it is simply unread.
    - **`summary` is one paragraph — 1,200 characters, hard cap.** It is read on a screen,
      next to the other attempt's summary in a narrow column, by someone deciding whether
      to open `findings[]`. Real reviews have run past 10,000 characters, which is not a

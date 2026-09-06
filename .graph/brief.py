@@ -22,6 +22,11 @@ paragraph per file because the reviewer needs that. The HUMAN channel is the mai
 and until now it was fed by pasting the machine channel into it. A run then reads as
 several thousand words of correct, necessary, unreadable detail.
 
+A slice's verdict is its LATEST review attempt, and a slice that got there the hard way
+says so -- `review PASS (looped, attempt 2: REJECT -> PASS)`. Both halves are the
+requirement: the board must stop reporting a fixed slice as failed, and it must not start
+reporting a fixed slice as though it had passed first time.
+
 Nothing here is new information. Every line is DERIVED from `state.json` plus
 `activity.jsonl`, both of which the fleet already writes. That is the whole design: a
 board no node authors cannot drift from the run, cannot be forged, and costs no node a
@@ -54,8 +59,8 @@ GOAL_WIDTH = 76
 CLOSED = ("done", "blocked", "parked")
 
 UNICODE = {"sep": "·", "ok": "✓", "no": "⛔",
-           "none": "—", "run": "…"}
-ASCII = {"sep": "|", "ok": "ok", "no": "!!", "none": "--", "run": ".."}
+           "none": "—", "run": "…", "loop": "→"}
+ASCII = {"sep": "|", "ok": "ok", "no": "!!", "none": "--", "run": "..", "loop": "->"}
 
 
 def glyphs(force_ascii):
@@ -105,12 +110,18 @@ def _fallback_resolve(state, key):
 
 
 class Reader(object):
-    """The three questions this board asks of a state file, however it can answer them.
+    """The questions this board asks of a state file, however it can answer them.
 
     With `verify-state.py` present these ARE its rules, which is the point: two
     definitions of "written" would eventually disagree, and then the board would show a
     slice as built that the audit calls unwritten. Without it, an empty-check alone --
     degraded and saying so, rather than absent.
+
+    The same argument decides the verdict, and there it is not hypothetical: a slice that
+    was REJECTed and then fixed nests the re-review as `attempt_2`, and the board read the
+    top level -- attempt 1's REJECT -- until this run. So the attempt rule is imported,
+    never restated, and where it cannot be imported the row says degraded rather than
+    guessing.
     """
 
     def __init__(self):
@@ -132,6 +143,35 @@ class Reader(object):
             return not self.verify.unwritten(state, self.template, key)
         found, value = self.resolve(state, key)
         return bool(found) and not _empty(value)
+
+    def review_attempts(self, state, sid):
+        """Every attempt on `reviews.<sid>`, oldest first. None means DEGRADED.
+
+        Delegated, and the fallback deliberately walks nothing: a local copy of the
+        attempt rule is the second definition this whole run exists to remove, and
+        reading the top-level verdict instead would print attempt 1's answer -- the exact
+        stale verdict the board has been showing.
+        """
+        if not self.verify:
+            return None
+        return self.verify.review_attempts(self.get(state, "reviews.%s" % sid))
+
+    def final_verdict(self, state, sid):
+        """The LATEST attempt's verdict, normalised. "" unwritten, None degraded."""
+        if not self.verify:
+            return None
+        return self.verify.slice_verdict(state, sid)
+
+    def ever_rejected(self, state, sid):
+        """Did ANY attempt REJECT. Display only everywhere -- and here display is the job.
+
+        Three calls walk the same review three times, as they do in `close-run.py`. Same
+        dict, same rule, so they cannot disagree; re-deriving two of them from the third
+        locally is how the copy comes back.
+        """
+        if not self.verify:
+            return None
+        return self.verify.ever_rejected(self.get(state, "reviews.%s" % sid))
 
     def slices(self, state):
         """Every slice this run knows about: planned, or written by some node."""
@@ -258,6 +298,56 @@ def clip(text, width=GOAL_WIDTH, tail="..."):
     return text if len(text) <= width else text[:width - len(tail)].rstrip() + tail
 
 
+def attempt_count(attempts):
+    """How many times a slice was reviewed, from the RESOLVED attempt list.
+
+    Not from `reviews.<slice>.attempt`, which is attempt 1's own field and stays 1 forever
+    while `attempt_2` nests underneath it -- a board reporting "attempt 1" over a hidden
+    re-review is half of this defect.
+
+    The one thing the list cannot see is a re-review from before the nesting convention,
+    where the second reviewer overwrote the top level and only bumped its own `attempt`
+    (`2026-08-25-transclusion-external-previews` s1 is one, `2026-08-26-archive-adapters`
+    s1-whoop another). Taking the larger keeps those loops visible instead of demoting
+    them to first-try passes -- this board may never make a loop LESS visible than it
+    already was.
+    """
+    reported = attempts[-1].get("attempt")
+    return max(len(attempts), reported if isinstance(reported, int) else 0)
+
+
+def review_cell(reader, state, sid, g):
+    """What the reviewer said, and -- when it took more than one go -- that it took more.
+
+    A slice that was REJECTed and then fixed must never render byte-identical to a
+    first-try PASS. The final verdict alone is true and still hides the round trip, and
+    the round trip is what a human is deciding whether to trust. So: verdict first, so the
+    column stays scannable, then the loop named, then every attempt in order.
+
+        review PASS
+        review PASS (looped, attempt 2: REJECT -> PASS)
+        review REJECT (looped, attempt 2: PASS -> REJECT)
+    """
+    attempts = reader.review_attempts(state, sid)
+    if attempts is None:
+        # No `verify-state.py`, so no attempt rule. Saying degraded is the point: the
+        # top-level verdict is sitting right there and reading it would print attempt 1's
+        # answer with no sign it is stale, which is worse than admitting the board cannot
+        # resolve this run.
+        return "%s degraded" % g["no"]
+    if not attempts:
+        return "?"
+
+    verdict = reader.final_verdict(state, sid) or "?"
+    tries = attempt_count(attempts)
+    if reader.ever_rejected(state, sid) and len(attempts) > 1:
+        chain = (" %s " % g["loop"]).join(a["verdict"] or "?" for a in attempts)
+        return "%s (looped, attempt %d: %s)" % (verdict, tries, chain)
+    if tries > 1:
+        return "%s (attempt %d)" % (verdict, tries)
+    return verdict
+
+
 def slice_row(reader, state, sid, plan, g, width):
     """One slice: what its builder did, and what its reviewer said about it."""
     built = reader.written(state, "builders.%s" % sid)
@@ -273,10 +363,7 @@ def slice_row(reader, state, sid, plan, g, width):
         build = g["none"]
 
     if reviewed:
-        review = str(reader.get(state, "reviews.%s.verdict" % sid) or "?").strip().upper()
-        tries = reader.get(state, "reviews.%s.attempt" % sid)
-        if isinstance(tries, int) and tries > 1:
-            review += " (try %d)" % tries
+        review = review_cell(reader, state, sid, g)
     elif built:
         review = "%s waiting" % g["run"]
     else:
