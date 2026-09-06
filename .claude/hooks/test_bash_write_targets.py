@@ -1,0 +1,335 @@
+#!/usr/bin/env python
+"""Self-test for bash_write_targets.py. Stdlib only, no pytest.
+
+    python graph_agents/.claude/hooks/test_bash_write_targets.py
+
+WHAT A TEST LIKE THIS CANNOT DO, SAID FIRST
+
+A suite of hand-written cases proves the classifier catches the mechanisms someone
+thought of. It cannot prove the list is complete, and that is precisely the failure
+`guard-commit-trailers.py` had twice -- a matcher that passed its own examples and then
+met a real one. So this file has two halves and they do different jobs:
+
+  * The MECHANISM cases are written here, because a mechanism has to be exercised with a
+    target that can be asserted exactly, and the corpus does not oblige by containing a
+    clean example of each. They prove detection.
+
+  * The READ-ONLY fixture is LIFTED FROM THE CORPUS -- real commands this fleet actually
+    ran, chosen for being ordinary rather than for being easy. They prove the absence of
+    false positives, which is the half imagination is worst at. `git status`, `git add`,
+    `python -m pytest`, `node test.js`, `awk 'NR>=322 ...'` with a `>` inside quotes, and
+    a `grep` whose pattern literally contains the words `copy` and `shutil`. Every one of
+    them must classify as not-a-write. Any command carrying an absolute owner path was
+    excluded when they were selected; the transcripts stay in the transcripts.
+
+The corpus half is also why `measure_bash_corpus.py` exists beside this file. This suite
+says "the cases pass"; that one says what the classifier does to all 2073 of them.
+"""
+import os
+import sys
+
+sys.path.insert(0, os.path.dirname(os.path.realpath(__file__)))
+
+from bash_write_targets import classify, has_write_signature   # noqa: E402
+
+FAILURES = []
+CASES = 0
+READ_ONLY_CASES = 0
+
+# The plan's floor, asserted rather than counted by hand at review time.
+MINIMUM_CASES = 45
+MINIMUM_READ_ONLY = 30
+
+
+def check(label, got, want):
+    global CASES
+    CASES += 1
+    if got == want:
+        print("  ok   %s" % label)
+    else:
+        print("  FAIL %s -- expected %r, got %r" % (label, want, got))
+        FAILURES.append(label)
+
+
+def writes(label, command, *expected):
+    """The command writes exactly these targets, and nothing was left unresolved."""
+    targets, unresolved = classify(command)
+    check(label, (targets, unresolved), (list(expected), False))
+    if not has_write_signature(command):
+        FAILURES.append("%s -- pre-filter missed a write it can resolve" % label)
+        print("  FAIL %s -- the pre-filter said no to a command that writes" % label)
+
+
+def unresolved(label, command, *expected):
+    """A write is present; these targets resolved and something else did not."""
+    check(label, classify(command), (list(expected), True))
+
+
+def clean(label, command):
+    """Not a write. Nothing to report and nothing to warn about."""
+    global READ_ONLY_CASES
+    READ_ONLY_CASES += 1
+    check(label, classify(command), ([], False))
+
+
+# Real commands, lifted verbatim from this fleet's own session transcripts. None of them
+# carries an absolute path or anything resembling a credential; that was the selection
+# rule. Several are here for a specific trap, noted where it is not obvious.
+READ_ONLY_CORPUS = (
+    "git status --short",
+    "git remote -v",
+    "git add -A && git status --short",
+    "git branch --show-current && git log --oneline -3 --all | cat",
+    "git config user.name && git config user.email && git diff --stat",
+    "git fetch origin master 2>&1 && git log origin/master..HEAD --oneline",
+    "git log --follow --oneline -- docs/viewer.png",
+    "git push origin main 2>&1",
+    "git show 6c7cdc2 --stat; echo \"---\"; git status --short",
+    "git status && echo --- && git diff -- web/index.html | head -200",
+    "git -C fleetview diff master s2-scope-exceptions-member-guard -- index.html | head -80",
+    "cat CLAUDE.md",
+    "cat GRAPH.md",
+    "cat -n graph_agents/.claude/settings.json",
+    "cat graph_agents/.graph/runs/_schema.json",
+    "cat graph_agents/portfolio/registry.json && echo \"=== SETTINGS ===\" && cat graph_agents/.claude/settings.json",
+    "cat graph_agents/GRAPH.md 2>/dev/null | head -200",
+    "cd graph_agents && cat GRAPH.md",
+    "ls -d fleetview 2>/dev/null && ls fleetview",
+    "ls -la && echo \"--- REGISTRY ---\" && cat graph_agents/portfolio/registry.json",
+    "wc -l \"web/index.html\"",
+    "pwd && ls .graph/runs 2>/dev/null | head -3",
+    # The pattern contains the words `copy` and `shutil`; the interpreter-body inspector
+    # must not see a grep argument as source it is meant to read.
+    "grep -n \"CURRENT\\|tempfile\\|copy\\|shutil\" .claude/hooks/test_guard_builder_scope.py | head -30",
+    "grep -rniE \"commit\" graph_agents/.claude/agents/*.md | head -60",
+    "grep -rl \"improvement review\\|improvement-review\" graph_agents/ fleetview/ 2>/dev/null | head -20",
+    # `>=` inside single quotes is arithmetic, not a redirect.
+    "awk 'NR>=322 && NR<=625' graph_agents/CURRENT-STATE.md | grep -n \"^[0-9]\\+\\.\" | tail -6",
+    "sed -n '/In Progress \\/ Next/,/^---/p' CLAUDE.md | head -60",
+    "python -m pytest -q 2>&1 | tail -10",
+    "python graph_agents/.claude/hooks/test_guard_builder_scope.py; echo \"EXIT=$?\"",
+    "python graph_agents/.graph/audit-fleet.py; echo \"EXIT=$?\"",
+    "python graph_agents/.graph/verify-state.py --audit 2026-09-01-huntstack-mobile; echo \"exit=$?\"",
+    "python graph_agents/.graph/brief.py --ascii 2026-08-26-archive-adapters | grep integrator",
+    "node test.js 2>&1 | tail -3",
+    "npm test 2>&1 | tail -10",
+    "npm run check 2>&1 | tail -20",
+    # `install` is not the coreutil here, and it is not in a command position either.
+    "pip3 install --quiet pymupdf 2>&1 | tail -15",
+    "cd fleetview && git remote -v && echo \"--- test suite ---\" && node test.js 2>&1 | tail -5",
+    # A `for` loop whose body redirects nothing; `<` is input and `ln)` is prose.
+    "cd graph_agents/.claude/agents && for f in *.md; do echo \"--- $f ($(wc -l < $f) ln)\"; sed -n '1,8p' $f; done",
+    "netstat -ano | grep 8790",
+    "ps -ef 2>/dev/null | grep -i python | grep -v grep",
+    "date",
+    "pwd",
+)
+
+
+def main():
+    print("bash_write_targets self-test\n")
+
+    # --- The ten mechanisms this fleet has actually used, each with its target. ---
+    print("the ten evidenced mechanisms:")
+    writes("1. redirect writes its target",
+           "echo hello > notes.txt", "notes.txt")
+    writes("2. append writes its target",
+           "echo hello >> notes.txt", "notes.txt")
+    writes("3. heredoc to a file writes the redirect's target",
+           "cat > graph_agents/GRAPH.md <<'EOF'\nnew body\nEOF", "graph_agents/GRAPH.md")
+    writes("4. tee writes every file operand",
+           "echo x | tee -a first.log second.log", "first.log", "second.log")
+    writes("5. install writes its destination",
+           "install -m 644 src.txt dist/out.txt", "dist/out.txt")
+    writes("6. dd writes of=",
+           "dd if=/dev/zero of=build/disk.img bs=1M count=4", "build/disk.img")
+    writes("7. git checkout writes the pathspec after --",
+           "git checkout HEAD -- graph_agents/GRAPH.md", "graph_agents/GRAPH.md")
+    writes("8. truncate writes its file operand",
+           "truncate -s 0 run.log", "run.log")
+    writes("9. mv writes destination and source both",
+           "mv old/name.md new/name.md", "old/name.md", "new/name.md")
+    writes("10. cp writes its destination, not its source",
+           "cp template.json config.json", "config.json")
+
+    # --- The four named beside them, and the interpreter bodies. ---
+    print("\nthe rest of the plan's list:")
+    writes("sed -i writes its file operands",
+           "sed -i 's/old/new/' graph_agents/GRAPH.md", "graph_agents/GRAPH.md")
+    writes("sed -i with -e still writes its file",
+           "sed -i -e 's/a/b/' notes.md", "notes.md")
+    writes("rm writes (removes) its operands",
+           "rm -rf build dist", "build", "dist")
+    writes("touch writes its operands",
+           "touch a.txt b.txt", "a.txt", "b.txt")
+    writes("mkdir writes its operands",
+           "mkdir -p out/reports", "out/reports")
+    writes("ln writes its destination",
+           "ln -s ../real.json link.json", "link.json")
+    writes("python -c writing through open()",
+           "python -c \"open('state.json','w').write('{}')\"", "state.json")
+    writes("python -c writing through pathlib",
+           "python -c \"from pathlib import Path; Path('out/report.md').write_text('x')\"",
+           "out/report.md")
+    writes("python -c through a variable assigned in the body",
+           "python -c \"p='graph_agents/GRAPH.md'; open(p,'w').write('x')\"",
+           "graph_agents/GRAPH.md")
+    writes("python -c through os.path.join of literals",
+           "python -c \"import os; open(os.path.join('a','b.json'),'w').write('{}')\"",
+           "a/b.json")
+    writes("python -c calling os.remove",
+           "python -c \"import os; os.remove('stale.json')\"", "stale.json")
+    writes("python -c calling shutil.copy",
+           "python -c \"import shutil; shutil.copy('a.txt','b.txt')\"", "b.txt")
+    writes("node -e writing through fs",
+           "node -e \"require('fs').writeFileSync('dist/app.js','x')\"", "dist/app.js")
+    writes("perl -e writing through a two-arg open",
+           "perl -e 'open(FH, \">out.txt\"); print FH \"x\";'", "out.txt")
+    writes("python - fed by a heredoc",
+           "python - <<'PY'\nfrom pathlib import Path\nPath('out.md').write_text('hi')\nPY",
+           "out.md")
+    writes("bash -c is re-classified as shell",
+           "bash -c 'echo x > inner.txt'", "inner.txt")
+
+    # --- Interpreter bodies are INSPECTED, not flagged for being interpreter bodies. ---
+    # 356 corpus commands use this shape and 57 write. Flagging the shape invents 299
+    # denials, which is the single biggest false-positive risk in the design.
+    print("\ninterpreter bodies are inspected, not flagged wholesale:")
+    clean("python -c that only reads a file",
+          "python -c \"import json; print(json.load(open('state.json')))\"")
+    clean("python -c that opens for reading explicitly",
+          "python -c \"print(open('a.txt','r').read())\"")
+    clean("python -c that only imports and prints",
+          "python -c \"import sys; print(sys.version)\"")
+    clean("python -c calling .replace on a string",
+          "python -c \"print('a-b'.replace('-','+'))\"")
+    clean("python -c calling .remove on a list",
+          "python -c \"x=[1,2]; x.remove(1); print(x)\"")
+    clean("node -e that only reads",
+          "node -e \"console.log(require('fs').readFileSync('a.js','utf8'))\"")
+    clean("a heredoc-fed body that only reads",
+          "python - <<'PY'\nimport json\nprint(json.load(open('a.json')))\nPY")
+    writes("json.dump resolves through the open() that made the handle",
+           "python -c \"import json; json.dump({}, open('out.json','w'))\"", "out.json")
+
+    # --- A heredoc body is DATA. It must not be parsed as shell. ---
+    print("\na heredoc body is data, not shell:")
+    clean("prose in a heredoc that names rm is not a delete",
+          "cat <<'EOF' | wc -l\nthe guard should not read rm -rf build as a command\nEOF")
+    clean("prose in a heredoc containing a redirect is not a redirect",
+          "cat <<'EOF' | wc -l\nwrite it with echo x > somewhere.txt\nEOF")
+    writes("but the redirect on the heredoc's own line still counts",
+           "cat >> log.md <<'EOF'\nrm -rf build\nEOF", "log.md")
+
+    # --- Quoting, /dev/null, fd dups: the shapes that make a naive matcher wrong. ---
+    print("\nredirect shapes that are not writes to a file:")
+    clean("> /dev/null is not a write worth reporting",
+          "curl -s http://localhost:8790/ > /dev/null")
+    clean("2> /dev/null is not a write worth reporting",
+          "python tool.py 2> /dev/null")
+    clean("&> /dev/null is not a write worth reporting",
+          "make check &> /dev/null")
+    clean("2>&1 is an fd dup, not a file called 1",
+          "python tool.py 2>&1 | tail -5")
+    clean("a > inside single quotes is not a redirect",
+          "grep -n 'a > b' notes.md")
+    clean("a > inside double quotes is not a redirect",
+          "echo \"a > b\"")
+    writes("a numbered fd redirect still names its file",
+           "python tool.py 2> errors.log", "errors.log")
+    writes("stdout to a file and stderr to /dev/null reports only the file",
+           "python tool.py > out.log 2>/dev/null", "out.log")
+
+    # --- cd and variables: the two things that decide the unresolved rate. ---
+    print("\ncd and variable resolution:")
+    writes("a cd is applied to a later relative target",
+           "cd graph_agents && echo x > GRAPH.md", "graph_agents/GRAPH.md")
+    writes("a cd does not touch an absolute target",
+           "cd graph_agents && echo x > /tmp/out.log", "/tmp/out.log")
+    writes("a same-command assignment resolves the target",
+           "SP=/tmp/scratch && echo x > \"$SP/run.log\"", "/tmp/scratch/run.log")
+    writes("an assignment prefixing the command resolves too",
+           "RUN=r1 python -c \"import os\" ; echo x > runs/$RUN/state.json",
+           "runs/r1/state.json")
+    writes("git -C is applied like a cd, for that command only",
+           "git -C graph_agents checkout -- GRAPH.md", "graph_agents/GRAPH.md")
+    writes("a single-quoted $ is four literal characters, not a variable",
+           "echo '$HOME' > literal.txt", "literal.txt")
+    unresolved("a variable never assigned here is a write shape, not a target",
+               "echo x > \"$CLAUDE_JOB_DIR/tmp/out.json\"")
+    unresolved("a command substitution is a write shape, not a target",
+               "echo x > \"run-$(date +%s).log\"")
+    unresolved("one resolved target and one unresolved shape are both reported",
+               "echo a > kept.txt && echo b > \"$SOMEWHERE/lost.txt\"", "kept.txt")
+    unresolved("a relative target under an unresolvable cd cannot be placed",
+               "cd \"$SOMEWHERE\" && echo x > out.log")
+    unresolved("git apply writes files named inside the patch, not on the line",
+               "git apply fix.patch")
+
+    # --- Things that look like writes and are not. ---
+    print("\nnear misses:")
+    clean("git checkout -b creates a branch, not a file",
+          "git checkout -b feat/bash-write-guard")
+    clean("git switch is never a path write",
+          "git switch master")
+    clean("git apply --check does not touch the tree",
+          "git apply --check fix.patch")
+    clean("sed without -i is a read",
+          "sed -n '1,5p' graph_agents/GRAPH.md")
+    clean("tee with no file operand writes only stdout",
+          "python tool.py | tee")
+    clean("dd with no of= writes only stdout",
+          "dd if=disk.img bs=1M count=1 | wc -c")
+    clean("a here-string is input, not output",
+          "wc -c <<< 'hello'")
+    clean("input redirection is a read",
+          "python tool.py < input.json")
+
+    # --- The pre-filter's contract with its caller. ---
+    print("\nthe pre-filter:")
+    check("the pre-filter says no to git status",
+          has_write_signature("git status --short"), False)
+    check("the pre-filter says no to python -m pytest",
+          has_write_signature("python -m pytest -q"), False)
+    check("the pre-filter says no to node test.js",
+          has_write_signature("node test.js"), False)
+    check("the pre-filter says no to a plain grep",
+          has_write_signature("grep -rn foo graph_agents/"), False)
+    check("the pre-filter says no to ls",
+          has_write_signature("ls -la"), False)
+    check("the pre-filter says no to wc",
+          has_write_signature("wc -l GRAPH.md"), False)
+    check("the pre-filter says yes to a redirect",
+          has_write_signature("echo x > out.txt"), True)
+    check("the pre-filter says yes to a heredoc",
+          has_write_signature("cat > f <<'EOF'\nx\nEOF"), True)
+    check("nothing is classified without the pre-filter agreeing first",
+          classify("git status --short"), ([], False))
+    check("a non-string is not a command",
+          classify(None), ([], False))
+    check("an empty string is not a command", classify(""), ([], False))
+
+    # --- The corpus half. These are the cases imagination does not produce. ---
+    print("\n%d real read-only commands lifted from the corpus:" % len(READ_ONLY_CORPUS))
+    for command in READ_ONLY_CORPUS:
+        shown = command if len(command) <= 62 else command[:59] + "..."
+        clean(shown, command)
+
+    print()
+    check("at least %d cases ran" % MINIMUM_CASES, CASES >= MINIMUM_CASES, True)
+    check("at least %d of them are not-a-write" % MINIMUM_READ_ONLY,
+          READ_ONLY_CASES >= MINIMUM_READ_ONLY, True)
+
+    print()
+    print("%d cases, %d of them not-a-write" % (CASES, READ_ONLY_CASES))
+    if FAILURES:
+        print("FAILED (%d):" % len(FAILURES))
+        for failure in FAILURES:
+            print("  - %s" % failure)
+        return 1
+    print("all checks passed")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
