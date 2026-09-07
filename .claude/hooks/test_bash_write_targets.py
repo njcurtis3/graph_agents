@@ -36,21 +36,30 @@ The corpus half is also why `measure_bash_corpus.py` exists beside this file. Th
 says "the cases pass"; that one says what the classifier does to all 2078 of them.
 """
 import os
+import re
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.realpath(__file__)))
 
-from bash_write_targets import classify, has_write_signature, _walk   # noqa: E402
+from bash_write_targets import (classify, has_write_signature,      # noqa: E402
+                                MAX_COMMAND, _walk)
 
 FAILURES = []
 CASES = 0
 READ_ONLY_CASES = 0
+CORPUS_CASES = 0
 
 # Every command any case in this file classifies, so the pre-filter's superset property
 # can be checked over all of them at the end rather than trusted one case at a time.
 ALL_COMMANDS = []
 
-# The plan's floor, asserted rather than counted by hand at review time.
+# The plan's floor, asserted rather than counted by hand at review time. The second one
+# counts CORPUS-DERIVED cases only, which is what `done_when` asks for -- "at least 30
+# real read-only corpus commands classified as not-a-write". Counting every `clean()`
+# call instead let hand-written near-misses pay for the fixture: 31 of them were added in
+# one attempt, and after that `READ_ONLY_CORPUS` could be cut to five entries with the
+# suite still green. A floor that a shrinking fixture cannot turn red is not enforcing
+# anything, and this one is the human's approved gate rather than the file's own idea.
 MINIMUM_CASES = 45
 MINIMUM_READ_ONLY = 30
 
@@ -87,6 +96,50 @@ def clean(label, command):
     READ_ONLY_CASES += 1
     ALL_COMMANDS.append(command)
     check(label, classify(command), ([], False))
+
+
+def corpus_clean(label, command):
+    """`clean()`, but the case came from the corpus fixture and the floor may count it."""
+    global CORPUS_CASES
+    CORPUS_CASES += 1
+    clean(label, command)
+
+
+# Words that stop being keywords the moment they are quoted, so a rewritten spelling of
+# one is not a spelling of the same command. Mirrors `_COMPOUND_KEYWORDS` in the module.
+KEYWORDS = frozenset(("{", "}", "!", "if", "then", "elif", "else", "while", "until", "do"))
+
+
+def spellings(command):
+    """The same command written the ways the shell allows its FIRST WORD to be written.
+
+    Attempt 2's sweep asked the superset question of 178 commands, one spelling each, and
+    a fresh reviewer then found 52 leaks in 713 spellings -- because the pre-filter is a
+    raw-string anchor while the parser lexes, so `\\rm`, `'rm'` and `FOO="a b" rm` are one
+    command word to the parser and three different strings to the anchor. A sample of
+    spellings is the same kind of evidence the corpus counter is: it says the blind spot
+    is empty today. Generating the families instead makes the sweep say the families are
+    not there, which is the question worth asking.
+    """
+    first = command.split(" ", 1)[0]
+    # Only a PLAIN first word gets rewritten. Quoting `FOO="a b"` or `do` produces a
+    # string the shell would not run the way the parser reads it -- bash decides
+    # assignment-ness and keyword-ness on the UNQUOTED word, so `\FOO=x rm y` and `'do'
+    # rm y` are attempts to run a command named `FOO=x` or `do`, and the `rm` never
+    # happens. Sweeping those would be asking the pre-filter to cover a write the shell
+    # does not perform, which is a different complaint (the parser over-reporting) and
+    # points the wrong way: over-reporting fails toward a denial, and the anchor cannot
+    # fix it.
+    if not re.match(r"^[A-Za-z][A-Za-z0-9_.-]*$", first) or first in KEYWORDS:
+        return []
+    rest = command[len(first):]
+    return [
+        "\\" + command,                     # escaped: `\rm -rf build`
+        "'" + first + "'" + rest,           # single-quoted verb
+        '"' + first + '"' + rest,           # double-quoted verb
+        'FOO="a b" ' + command,             # an assignment whose value contains a space
+        "{ " + command + "; }",             # a brace group, which does not scope a cd
+    ]
 
 
 def prefilter_is_sound(command):
@@ -140,6 +193,22 @@ PRE_FILTER_MATRIX = (
     "python t.py >& all.log",
     "git restore --source=HEAD notes.md",
     "git apply fix.patch",
+    "perl -i -pe 's/a/b/' notes.md",
+    "perl -pi -e 's/a/b/' notes.md",
+    "perl -i.bak -pe 's/a/b/' notes.md",
+    "node --eval=\"require('fs').writeFileSync('a.js','x')\"",
+    "python -c\"open('a.txt','w').write('x')\"",
+    "ls | xargs -i rm {}",
+    "ls | xargs -I{} rm {}",
+    "{ rm -rf build; }",
+    "do rm -rf build",
+    "if cd graph_agents; then echo x > f.md; fi",
+    "\\rm -rf build",
+    "'rm' -rf build",
+    "\"rm\" -rf build",
+    "FOO=\"a b\" rm -rf build",
+    "FOO=\"a b\" sudo rm -rf build",
+    "/bin/'rm' -rf build",
 )
 
 
@@ -366,6 +435,16 @@ def main():
     writes("node --eval writes through fs",
            "node --eval \"require('fs').writeFileSync('dist/app.js','x')\"",
            "dist/app.js")
+    # The `=`-joined and attached spellings, which the parser reads and nothing here
+    # asserted. Found by MUTATION, not by reading: disabling the attached-body branch
+    # outright left the suite green. The soundness sweep carries both commands, but it
+    # only ever asks whether the pre-filter is NARROWER than the parser -- a parser that
+    # stops resolving them satisfies it perfectly, so a sweep cannot stand in for a case.
+    writes("node --eval=BODY is the same flag joined with an =",
+           "node --eval=\"require('fs').writeFileSync('dist/app.js','x')\"",
+           "dist/app.js")
+    writes("python -c with no space before its body still has a body",
+           "python -c\"open('out.txt','w').write('x')\"", "out.txt")
     check("the pre-filter says yes to sed --in-place",
           has_write_signature("sed --in-place 's/x/y/' notes.md"), True)
     check("the pre-filter says yes to node --eval",
@@ -405,8 +484,13 @@ def main():
     clean("2>&- closes a descriptor and writes nothing",
           "python t.py 2>&-")
 
-    # --- curl and wget. 28 unique corpus commands write a real path with `curl -o` and
-    # --- attempt 1 called every one of them clean; the other 60 are `-o /dev/null`.
+    # --- curl and wget, which attempt 1 called clean in every spelling. The figure to
+    # --- quote for this is the classifier delta, reproduced independently twice over one
+    # --- denominator: adding these moves 14 corpus commands from clean to resolved, adds
+    # --- a target to 3 already-resolved ones, and moves 1 to unresolved. The unique-
+    # --- command counts are methodology-dependent -- see `_download_targets` -- and this
+    # --- comment used to carry one of them, contradicting that docstring in the same
+    # --- commit.
     print("\ncurl and wget write the file they are told to write:")
     writes("curl -o writes its output path",
            "curl -o graph_agents/GRAPH.md https://example.invalid/a",
@@ -463,6 +547,96 @@ def main():
     clean("a substitution that only reads is still clean",
           "echo \"branch $(git branch --show-current)\"")
 
+    # --- An `xargs` replace string is a PLACEHOLDER. Emitting `{}` as a RESOLVED target
+    # --- hands the guard a path that matches no approved file, which is a denial of work
+    # --- the plan allowed -- the same failure class as a leaked subshell cwd, arriving
+    # --- from a different direction. The unresolved flag is the whole honest answer.
+    print("\nan xargs replace string is a placeholder, never a resolved path:")
+    unresolved("xargs -I{} rm {} reports a shape and no target",
+               "ls *.md | xargs -I{} rm {}")
+    unresolved("the separated spelling -I {} does the same",
+               "ls *.md | xargs -I {} rm {}")
+    unresolved("a replace string appearing inside an operand is still a placeholder",
+               "ls *.md | xargs -I{} mv {} {}.bak")
+    unresolved("a replace string other than {} is honoured",
+               "ls *.md | xargs -I@@ rm @@")
+    unresolved("--replace=PAT is the same flag spelled long",
+               "ls *.md | xargs --replace=@@ rm @@")
+    # `-i` takes an OPTIONAL argument and is normally written bare, so listing it among
+    # the flags that take a value made it eat `rm` -- and the whole command came back
+    # CLEAN while three other spellings of it classified correctly.
+    unresolved("xargs -i does not swallow the command it wraps",
+               "ls | xargs -i rm {}")
+    unresolved("xargs --replace bare does not swallow it either",
+               "ls | xargs --replace rm {}")
+    unresolved("xargs -n1 still classifies, which is the spelling that always worked",
+               "ls *.md | xargs -n1 rm")
+    unresolved("an operand that is NOT the replace string still resolves",
+               "ls *.md | xargs -I{} mv {} archive/dest.md", "archive/dest.md")
+
+    # --- A brace group is not a subshell: it does NOT scope a `cd`. Ignoring the `cd`
+    # --- because a keyword sat in front of it reported the write at the wrong path, in
+    # --- the direction that denies approved work.
+    print("\na compound statement does not hide the command inside it:")
+    writes("a brace group's cd applies to the write after it",
+           "{ cd graph_agents; echo x > f.md; }", "graph_agents/f.md")
+    writes("an if body inherits the cd its condition performed",
+           "if cd graph_agents; then echo x > f.md; fi", "graph_agents/f.md")
+    writes("a while body does too",
+           "while cd graph_agents; do echo x > f.md; done", "graph_agents/f.md")
+    writes("a write verb behind a keyword is still that verb",
+           "{ rm -rf build; }", "build")
+    unresolved("a loop variable as a cd target is not knowable",
+               "for d in a b; do cd $d; echo x > f.md; done")
+    unresolved("cd a || cd b ends in one of two directories, so neither is reported",
+               "cd graph_agents || cd fleetview ; echo y > b.md")
+    clean("`for rm in a b` is a loop variable named rm, not a delete",
+          "for rm in a b; do echo $rm; done")
+
+    # --- perl's in-place edit: the same mechanism as `sed -i`, spelled by the other
+    # --- program that has it, and invisible while perl went only to the body inspector.
+    print("\nperl -i is sed -i, and the write is the flag rather than the body:")
+    writes("perl -i -pe writes its file operand",
+           "perl -i -pe 's/a/b/' notes.md", "notes.md")
+    writes("perl -pi -e is the same command",
+           "perl -pi -e 's/a/b/' notes.md", "notes.md")
+    writes("perl -i.bak keeps a backup and still writes the file",
+           "perl -i.bak -pe 's/a/b/' graph_agents/GRAPH.md", "graph_agents/GRAPH.md")
+    writes("a cd applies to a perl in-place target like any other",
+           "cd graph_agents && perl -i -pe 's/a/b/' GRAPH.md", "graph_agents/GRAPH.md")
+    clean("perl without -i is a read, exactly as sed without -i is",
+          "perl -ne 'print if /TODO/' notes.md")
+    clean("-MList::Util contains an i and is not the in-place flag",
+          "perl -MList::Util -e 'print 1'")
+
+    # --- The three spellings that made the pre-filter's superset property false. The
+    # --- parser lexes all of these into the command word `rm`; the anchor is a raw
+    # --- string and saw none of them. `writes()` asserts the pre-filter agrees.
+    print("\nan escaped, quoted or assignment-prefixed verb is the same verb:")
+    writes("a backslash-escaped verb is still that verb",
+           "\\rm -rf build", "build")
+    writes("a single-quoted verb is still that verb",
+           "'rm' -rf build", "build")
+    writes("a double-quoted verb is still that verb",
+           "\"rm\" -rf build", "build")
+    writes("an assignment whose value contains a space does not hide the verb",
+           "FOO=\"a b\" rm -rf build", "build")
+    writes("the same, in front of a wrapper",
+           "FOO=\"a b\" sudo rm -rf build", "build")
+
+    # --- `--staged` restores the INDEX. Reporting a target for it would deny a command
+    # --- that changes nothing on disk, and `git add`, which stages the same way, is
+    # --- already clean.
+    print("\ngit restore: the index is not the working tree:")
+    clean("git restore --staged . writes no file",
+          "git restore --staged .")
+    clean("the -- form is the same command",
+          "git restore --staged -- graph_agents/GRAPH.md")
+    writes("git restore --staged --worktree DOES write the tree",
+           "git restore --staged --worktree notes.md", "notes.md")
+    writes("a plain git restore writes the tree",
+           "git restore notes.md", "notes.md")
+
     # --- Things that look like writes and are not. ---
     print("\nnear misses:")
     clean("git checkout -b creates a branch, not a file",
@@ -505,35 +679,48 @@ def main():
     check("a non-string is not a command",
           classify(None), ([], False))
     check("an empty string is not a command", classify(""), ([], False))
+    # The length cap is checked BEFORE the pre-filter, so the 128KB bound actually bounds
+    # what the regex sees. `has_write_signature` is linear in a real command and
+    # quadratic in a run of separators; a cap applied afterwards bounds nothing. An
+    # oversized command is the documented fail-open answer -- a shape, never a denial.
+    check("a command past MAX_COMMAND is a shape, and the pre-filter never runs on it",
+          classify("echo " + "a" * MAX_COMMAND), ([], True))
+    check("the pre-filter itself would have said no to that same command",
+          has_write_signature("echo " + "a" * MAX_COMMAND), False)
 
     # --- The corpus half. These are the cases imagination does not produce. ---
     print("\n%d real read-only commands lifted from the corpus:" % len(READ_ONLY_CORPUS))
     for command in READ_ONLY_CORPUS:
         shown = command if len(command) <= 62 else command[:59] + "..."
-        clean(shown, command)
+        corpus_clean(shown, command)
 
-    # --- The pre-filter's superset property, checked STRUCTURALLY rather than measured.
-    # --- `measure_bash_corpus.py` runs this same question over the corpus, but a corpus
-    # --- can only say the blind spot is empty today: attempt 1's counter printed 0 while
-    # --- two spellings the parser resolved exactly were invisible to the guard, because
-    # --- the corpus happened not to contain them. This asks it of every command in this
-    # --- file plus a matrix of the spellings the parser implements.
+    # --- The pre-filter's superset property, over generated spellings rather than a
+    # --- sample. `measure_bash_corpus.py` runs this same question over the corpus, but a
+    # --- corpus can only say the blind spot is empty today: attempt 1's counter printed 0
+    # --- while two spellings the parser resolved exactly were invisible to the guard,
+    # --- because the corpus happened not to contain them. This asks it of every command
+    # --- in this file, of a matrix of the spellings the parser implements, AND of five
+    # --- rewritings of each -- escaped, single-quoted, double-quoted, behind a spaced
+    # --- assignment, and inside a brace group. Those five are where the anchor and the
+    # --- lexer disagreed; the property is ANCHOR-RELATIVE, so the way to hold it is to
+    # --- generate the families rather than to name them.
     print("\nthe pre-filter is a superset of the parser, over every command in this file:")
     swept = list(ALL_COMMANDS) + list(PRE_FILTER_MATRIX)
+    swept += [variant for command in list(swept) for variant in spellings(command)]
     leaks = [c for c in swept if not prefilter_is_sound(c)]
     check("no command here resolves a write the pre-filter cannot see (%d swept)"
           % len(swept), leaks, [])
-    for command in PRE_FILTER_MATRIX:
-        if not prefilter_is_sound(command):
-            print("  leak: %s" % (command[:59] + "..." if len(command) > 62 else command))
+    for command in leaks[:10]:
+        print("  leak: %s" % (command[:59] + "..." if len(command) > 62 else command))
 
     print()
     check("at least %d cases ran" % MINIMUM_CASES, CASES >= MINIMUM_CASES, True)
-    check("at least %d of them are not-a-write" % MINIMUM_READ_ONLY,
-          READ_ONLY_CASES >= MINIMUM_READ_ONLY, True)
+    check("at least %d of them are read-only CORPUS commands" % MINIMUM_READ_ONLY,
+          CORPUS_CASES >= MINIMUM_READ_ONLY, True)
 
     print()
-    print("%d cases, %d of them not-a-write" % (CASES, READ_ONLY_CASES))
+    print("%d cases, %d of them not-a-write, %d of those from the corpus"
+          % (CASES, READ_ONLY_CASES, CORPUS_CASES))
     if FAILURES:
         print("FAILED (%d):" % len(FAILURES))
         for failure in FAILURES:

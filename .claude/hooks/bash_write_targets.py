@@ -14,9 +14,15 @@ THE CONTRACT
 
   `has_write_signature(command)` -> bool. A cheap regex over the raw string, no parsing
   and no disk I/O. False means the command cannot write anything this file knows how to
-  detect, so a caller may skip the rest -- including whatever state it would have read
-  from disk. `classify()` calls it first itself, so the two can never disagree: if the
-  pre-filter says no, `classify` returns `([], False)` without looking further.
+  detect WHEN THE COMMAND WORD IS SPELLED PLAINLY -- unquoted and unescaped, in a
+  position this anchor recognises. That qualifier is the honest one and it is not
+  decoration: the pre-filter is a raw-string anchor while the parser's notion of a
+  command word is a post-lexer one, so the superset property is ANCHOR-RELATIVE, not
+  structural. See the note above `_COMMAND_POSITION` for which spellings the anchor
+  admits and why the claim is still stated at the narrower width. A caller may skip the
+  rest on a False -- including whatever state it would have read from disk. `classify()`
+  calls it itself, so the two can never disagree: if the pre-filter says no, `classify`
+  returns `([], False)` without looking further.
 
   `classify(command)` -> `(resolved_targets, unresolved_write_shape)`.
 
@@ -55,6 +61,14 @@ WHY A `cd` IS APPLIED, WHICH IS THE ONE PLACE A TARGET IS NOT VERBATIM
   is a WRONG resolved path -- indistinguishable downstream from a right one, and pointed
   at denying work the plan approved.
 
+  A brace group is NOT a subshell and does not scope a `cd`, and neither does an `if` or
+  a `while` body, so `{ cd graph_agents; echo x > f.md; }` writes `graph_agents/f.md`.
+  The keyword in front of the `cd` is stepped over rather than treated as the command --
+  see `_COMPOUND_KEYWORDS`, which the pre-filter's anchor mirrors exactly. `cd a || cd b`
+  is the one arrangement that resolves to nothing: only one of the two runs, this file
+  cannot know which, and composing them into `a/b` names a directory NEITHER branch is
+  in, so later relative targets become unresolved.
+
 WHAT IT DETECTS
 
   redirects           `>` `>>` `>|` `&>` `&>>` `>&` and any fd form (`2>`, `1>>`).
@@ -73,6 +87,10 @@ WHAT IT DETECTS
   git                 `checkout` / `restore` pathspecs, `apply`; `checkout -b` is a
                       branch, not a write, and neither is `switch`
   sed -i              every file operand, and ONLY with `-i`
+  perl -i             the same mechanism spelled by the only other program that has it:
+                      `perl -i -pe 's/a/b/' notes.md`, `perl -pi -e ...`. The write is
+                      the `-i`, not anything in the `-e` body -- so inspecting the body,
+                      which is all this file used to do for perl, returned clean
   rm rmdir touch mkdir ln     every operand
   interpreter bodies  `python -c`, `node -e`, `perl -e`, and `python -` fed by a heredoc:
                       the body is INSPECTED for a write call rather than flagged for
@@ -90,7 +108,9 @@ WHAT IT DETECTS
   wrapper verbs       `sudo`, `doas`, `env`, `nice`, `nohup`, `command`, `time`,
                       `timeout`, `stdbuf`, `xargs` are stripped and what they wrap is
                       dispatched as itself. `xargs` additionally reports an unresolved
-                      shape, because the files it writes arrive on stdin
+                      shape, because the files it writes arrive on stdin -- and its
+                      replace string (`-I{}`, `-i`, `--replace`) is a placeholder, never
+                      a resolved target: `xargs -I{} rm {}` is `([], True)`, not `({})`
 
 WHAT IT DOES NOT DETECT, ON PURPOSE, SO THE CALLER CAN SAY SO OUT LOUD
 
@@ -110,7 +130,16 @@ WHAT IT DOES NOT DETECT, ON PURPOSE, SO THE CALLER CAN SAY SO OUT LOUD
     the detected list instead. See `_download_targets` for the full breakdown.
   * A write flag the parser reads but a MEASUREMENT could not have shown: this list is
     kept honest by the pre-filter soundness counter in `measure_bash_corpus.py`, which
-    asks the parser directly for every command the pre-filter rejected and must print 0.
+    asks the parser directly for every command the pre-filter rejected and must print 0,
+    and by the spelling sweep in the suite, which asks the same of every command it has
+    in five spellings each rather than in the one it was written in.
+  * A command word spelled so that the PRE-FILTER's anchor and the parser's lexer
+    disagree. A backslash-escaped verb, `'rm'` and `FOO="a b" rm` used to be exactly
+    that and are admitted now; `r""m`, `$'rm'` and a line continuation written inside the
+    verb are not, and stay missed. (Spelled in words here on purpose: this is a plain
+    docstring, and a literal backslash in it is an escape sequence Python reads.)
+    They fail OPEN -- no denial, no record -- which is why the claim above `has_write_
+    signature` is worded at the width it is, and why it says nothing about quoting.
   * Anything a variable hides that was not assigned in the same command string. There is
     no environment lookup here on purpose: the classifier is pure, so its answer for a
     given string is the same in a test as it is in a hook.
@@ -146,14 +175,32 @@ NULL_SINKS = frozenset((
 # status`, `git log`, `git diff`, `grep`, `ls`, `wc`, `python -m pytest`, `node test.js` --
 # because those are the hot path and they must pay nothing.
 #
-# THE SUPERSET PROPERTY IS STRUCTURAL, NOT MEASURED, and it is spelled this way because
-# the first version of this file was neither. That version paired a verb with its write
-# flag inside ONE regex, separated by a bounded `[^|;&\n]{0,120}` window. Two spellings
-# the parser resolves exactly -- `sed --in-place` and `node --eval` -- could not match a
-# window that required a single-dash flag, so the guard never saw them while the same
-# commands spelled `-i` and `-e` were denied. The property was true only of the commands
-# that happened to be in the corpus, and a bounded window has the same defect for any
-# long flag list, any quoted `|`, and anything past 120 characters.
+# THE SUPERSET PROPERTY IS ANCHOR-RELATIVE, NOT STRUCTURAL. What is claimed, and all
+# that is claimed: this is a superset over UNQUOTED, UNESCAPED command-position
+# spellings. It is written at that width on purpose, because the pre-filter is a
+# raw-string anchor and the parser's command position is a post-lexer one -- wherever
+# the two can disagree the superset is not a proof but a list, and a list is measured by
+# whoever last extended it. An earlier version of this file said STRUCTURAL in capitals
+# and 52 of 713 swept spellings leaked past it.
+#
+# The FLAG half of it really is structural, and that part is worth keeping straight from
+# the anchor half. The first version paired a verb with its write flag inside ONE regex,
+# separated by a bounded `[^|;&\n]{0,120}` window. Two spellings the parser resolves
+# exactly -- `sed --in-place` and `node --eval` -- could not match a window that required
+# a single-dash flag, so the guard never saw them while the same commands spelled `-i`
+# and `-e` were denied. Decoupling the verb from the flag killed that entire family, and
+# no distance, ordering or window length can bring it back.
+#
+# The ANCHOR half is a list, and these are the entries: a command position, optionally
+# behind compound-statement keywords (`{ rm x; }`, `do rm x`), optionally behind `VAR=v`
+# assignments whose value may be quoted and contain spaces, optionally behind a directory
+# prefix, and optionally quoted or backslash-escaped (`\rm`, `'rm'`, `"rm"`). Those three
+# last families were the 52 leaks and they are admitted now; the suite sweeps every
+# command in it through all of them rather than sampling. What is NOT admitted, and what
+# keeps the claim at "unquoted, unescaped": anything else the shell lexer would fold into
+# the same command word -- `r""m`, `$'rm'`, a `\` line continuation between the verb's
+# letters. Those are missed writes (fail-open, no denial and no record), 0 in the corpus,
+# and outside a cooperative population's failure mode.
 #
 # So the verb and the flag are searched INDEPENDENTLY now. A paired clause fires when the
 # verb appears ANYWHERE in the string and a flag that could make that verb write appears
@@ -163,17 +210,29 @@ NULL_SINKS = frozenset((
 # The cost is over-firing on `grep -i sed`, and over-firing costs one state.json read.
 _REDIRECTION = re.compile(r">|<<")
 
-# A write verb only counts in a COMMAND POSITION -- start of input, after a separator, an
-# opening paren or a backtick, after wrapper verbs and `VAR=x` prefixes. Not because it is
-# prettier, but because that is the only place the parser below will act on one, so
-# anywhere else is a state.json read bought for nothing. The word `rm` inside a heredoc
-# paragraph is prose. `(` and `` ` `` are in the anchor class because the parser walks
-# into `$(...)` and backtick bodies, and the pre-filter has to reach where the parser goes.
-_COMMAND_POSITION = re.compile(
+# Everything the shell allows between a command position and the command WORD, spelled
+# once and shared by both anchors below so the two cannot drift. In order: start of input
+# or a separator; compound-statement keywords, because a brace group and an `if` body put
+# `rm` one word later and the parser dispatches it there; `VAR=value` prefixes, whose
+# value may be quoted and so may contain spaces (`FOO="a b" rm -rf x` -- a `\S*` value
+# was one of the three leak families); a directory prefix; and the quoting or escaping
+# that makes `\rm`, `'rm'` and `"rm"` the same command word to the lexer and to the
+# parser, and used to make them invisible here.
+#
+# `(` and `` ` `` are in the separator class because the parser walks into `$(...)` and
+# backtick bodies, and the pre-filter has to reach everywhere the parser goes.
+_PREFIX = (
     r"(?:\A|[;&|\n()`])\s*"
-    r"(?:[A-Za-z_][A-Za-z0-9_]*=\S*\s+)*"
-    r"(?:\S*/)?"
-    r"(?:tee|install|dd|truncate|mv|cp|rm|rmdir|touch|mkdir|ln|wget|eval)\b"
+    r"(?:(?:\{|\}|!|if|then|elif|else|while|until|do"
+    r"|[A-Za-z_][A-Za-z0-9_]*=(?:\"[^\"\n]*\"|'[^'\n]*'|\S*))\s+)*"
+    r"[\\'\"]*(?:\S*/)?[\\'\"]*"
+)
+
+# A write verb only counts in a COMMAND POSITION. Not because it is prettier, but because
+# that is the only place the parser below will act on one, so anywhere else is a
+# state.json read bought for nothing. The word `rm` inside a heredoc paragraph is prose.
+_COMMAND_POSITION = re.compile(
+    _PREFIX + r"(?:tee|install|dd|truncate|mv|cp|rm|rmdir|touch|mkdir|ln|wget|eval)\b"
 )
 
 # A wrapper verb in command position, for the paired clause below. It is paired rather
@@ -182,8 +241,7 @@ _COMMAND_POSITION = re.compile(
 # those inline needs a nested quantifier -- a catastrophic-backtracking shape to run on
 # every Bash call. Two flat searches say the same thing and cannot blow up.
 _WRAPPER_POSITION = re.compile(
-    r"(?:\A|[;&|\n()`])\s*(?:\S*/)?"
-    r"(?:sudo|doas|env|nice|nohup|command|time|timeout|stdbuf|xargs)\b"
+    _PREFIX + r"(?:sudo|doas|env|nice|nohup|command|time|timeout|stdbuf|xargs)\b"
 )
 
 # (a command name, a flag that can make it write). Both are searched over the whole
@@ -193,7 +251,9 @@ _PAIRED_SIGNATURES = (
      re.compile(r"\b(?:tee|install|dd|truncate|mv|cp|rm|rmdir|touch|mkdir|ln|sed|git"
                 r"|curl|wget|eval|python|python3|py|node|nodejs|perl|ruby"
                 r"|bash|sh|zsh|dash)\b")),
-    (re.compile(r"\bsed\b"),
+    # `perl` rides with `sed`: `perl -i -pe 's/a/b/' notes.md` is the same mechanism and
+    # the same flag, and it is a write even when the `-e` body contains no write call.
+    (re.compile(r"\b(?:sed|perl)\b"),
      re.compile(r"(?:\A|\s)(?:-[A-Za-z]*i|--in-place)")),
     (re.compile(r"\bgit\b"),
      re.compile(r"\b(?:checkout|restore|apply)\b")),
@@ -214,6 +274,16 @@ _WRITE_REDIRECTS = frozenset((">", ">>", ">|", "&>", "&>>", ">&"))
 
 # The separators that put their segment in a SUBSHELL, so a `cd` inside it dies with it.
 _SUBSHELL_SEPARATORS = frozenset(("|", "&"))
+
+# Compound-statement keywords that sit in front of a command word without changing which
+# command it is. This set is EXACTLY the keyword group in `_PREFIX` above, and the two
+# must stay that way: a keyword the parser steps over but the anchor does not is a write
+# the pre-filter hides. `for`, `case` and `select` are deliberately absent -- `for rm in
+# a b` is a loop variable named `rm`, not a delete, and stepping over `for` would report
+# `in`, `a` and `b` as files.
+_COMPOUND_KEYWORDS = frozenset((
+    "{", "}", "!", "if", "then", "elif", "else", "while", "until", "do",
+))
 
 _VAR = re.compile(r"\$(\{[A-Za-z_][A-Za-z0-9_]*\}|[A-Za-z_][A-Za-z0-9_]*)")
 _LEFTOVER_VAR = re.compile(r"\$[A-Za-z_{(0-9@*?!#$]")
@@ -242,10 +312,18 @@ def has_write_signature(command):
 
 def classify(command):
     """(resolved_targets, unresolved_write_shape). See the module docstring."""
-    if not has_write_signature(command):
+    if not isinstance(command, str) or not command:
         return [], False
+    # The cap goes BEFORE the pre-filter, not after it. `has_write_signature` is linear
+    # in any real command -- 1.2ms on the worst of the 2078 in the corpus, 0.13s for all
+    # of them -- but quadratic in a run of separator characters, so 50000 semicolons is
+    # 51 seconds and a cap checked afterwards bounds nothing at all. Nothing realistic
+    # gets near it. It is ordered this way because this regex now runs on every Bash call
+    # in the session, and the fix is a line move.
     if len(command) > MAX_COMMAND:
         return [], True
+    if not has_write_signature(command):
+        return [], False
     try:
         targets, unresolved = _walk(command, "", {}, 0)
     except Exception:
@@ -593,6 +671,12 @@ def _walk(command, cwd, env, depth):
             previous = ""
             continue
         moved = _walk_segment(segment, body_queue, env, cwd, depth, result)
+        if previous == "||" and moved is not cwd:
+            # `cd a || cd b` runs the second `cd` only when the first FAILED, so the
+            # shell ends in one of two directories and nothing in this string says
+            # which. Composing them -- which is what happened before -- reported later
+            # targets under `a/b/`, a path NEITHER branch ever writes.
+            moved = _UNKNOWN
         # Ends a pipeline component or is backgrounded, or follows a `|` and so is a
         # pipeline component itself. `||` is a different string and is not one of these.
         if separator not in _SUBSHELL_SEPARATORS and previous != "|":
@@ -647,6 +731,18 @@ def _walk_segment(segment, body_queue, env, cwd, depth, result):
     # After the assignments, so `SP=/tmp echo $(rm $SP/x)` sees `SP`; before the early
     # return, so a segment that is nothing BUT a substitution is still walked.
     _substitutions(segment, env, cwd, depth, result)
+
+    # A compound statement puts a keyword in front of the command word, and the command
+    # is still the command: `{ cd graph_agents; echo x > f.md; }` really does write
+    # `graph_agents/f.md`, because a brace group -- unlike `( ... )` -- is NOT a subshell
+    # and does not scope a `cd`. Applying a `cd` only when it was the first word of its
+    # segment reported that write at `f.md`, which is the same wrong-resolved-path
+    # direction the subshell fix closed, arriving from the opposite side. Handled here
+    # for every keyword rather than for `{` alone, so `do rm -rf build` is the delete it
+    # is too. The pre-filter's anchor admits the same keywords, or it would short-circuit
+    # ahead of this.
+    while expanded and expanded[0][0] in _COMPOUND_KEYWORDS:
+        expanded.pop(0)
 
     if not expanded:
         return cwd
@@ -872,6 +968,8 @@ def _command_targets(name, args, heredocs, env, cwd, depth, result):
         return
 
     if name in ("python", "python3", "py", "node", "nodejs", "perl", "ruby"):
+        if name == "perl":
+            _perl_in_place_targets(args, result, cwd)
         _interpreter_targets(name, args, heredocs, result, cwd)
         return
 
@@ -901,7 +999,10 @@ _WRAPPER_VALUED = {
     "time": (),
     "timeout": ("-s", "--signal", "-k", "--kill-after"),
     "stdbuf": ("-i", "-o", "-e", "--input", "--output", "--error"),
-    "xargs": ("-I", "-i", "-n", "-P", "-a", "-d", "-E", "-L", "-s", "--replace",
+    # `-I`, `-i` and `--replace` are NOT here. They are the replace-string flags and
+    # they do not all take a value the same way -- see `_xargs_replace_flag`, where
+    # treating a bare `-i` as one swallowed the command it wrapped.
+    "xargs": ("-n", "-P", "-a", "-d", "-E", "-L", "-s",
               "--max-args", "--max-procs", "--arg-file", "--delimiter", "--eof",
               "--max-lines", "--max-chars"),
 }
@@ -914,17 +1015,51 @@ _WRITE_VERBS = frozenset((
 ))
 
 
+def _xargs_replace_flag(text):
+    """(replace string, does it take the NEXT word) for an `xargs` replace flag, else None.
+
+    The three spellings do not agree with each other and that is GNU's doing, not ours.
+    `-I R` takes a REQUIRED argument, separately (`-I {}`) or attached (`-I{}`). `-i[R]`
+    and `--replace[=R]` take an OPTIONAL one and are normally written bare, defaulting to
+    `{}`. Listing `-i` among the flags that take a value made `ls | xargs -i rm {}` eat
+    `rm` as the value, so the whole command came back CLEAN while `xargs rm`, `xargs -n1
+    rm` and `xargs -I{} rm` all classified correctly.
+    """
+    if text == "-I":
+        return "{}", True
+    if text.startswith("-I") and len(text) > 2:
+        return text[2:], False
+    if text in ("-i", "--replace"):
+        return "{}", False
+    if text.startswith("-i") and len(text) > 2:
+        return text[2:], False
+    if text.startswith("--replace="):
+        return text[len("--replace="):], False
+    return None
+
+
 def _wrapper_targets(name, args, heredocs, env, cwd, depth, result):
     """Strip a wrapper verb and dispatch on the command it wraps."""
     if name == "command" and any(a[0] in ("-v", "-V") for a in args):
         return                                  # `command -v gh` is a lookup, not a run
     valued = _WRAPPER_VALUED[name]
+    replace = None
     index = 0
     while index < len(args):
         text = args[index][0]
         if text == "--":
             index += 1
             break
+        if name == "xargs":
+            flag = _xargs_replace_flag(text)
+            if flag is not None:
+                replace, takes_next = flag
+                if takes_next and index + 1 < len(args):
+                    replace = args[index + 1][0]
+                    index += 2
+                else:
+                    index += 1
+                continue
         if text in valued:
             index += 2
             continue
@@ -941,12 +1076,23 @@ def _wrapper_targets(name, args, heredocs, env, cwd, depth, result):
     if index >= len(args):
         return
     inner = posixpath.basename(args[index][0].replace("\\", "/"))
-    if name == "xargs" and inner in _WRITE_VERBS:
-        # `ls *.md | xargs sed -i 's/a/b/'` writes files named on STDIN. The write is
-        # real and its targets are not in this string, which is the definition of an
-        # unresolved write shape.
-        result.unresolved = True
-    _command_targets(inner, args[index + 1:], heredocs, env, cwd, depth, result)
+    inner_args = args[index + 1:]
+    if name == "xargs":
+        if inner in _WRITE_VERBS:
+            # `ls *.md | xargs sed -i 's/a/b/'` writes files named on STDIN. The write is
+            # real and its targets are not in this string, which is the definition of an
+            # unresolved write shape.
+            result.unresolved = True
+        if replace is not None:
+            # A replace string is a PLACEHOLDER, not a path. `xargs -I{} rm {}` deletes
+            # whatever arrives on stdin, and emitting `{}` as a RESOLVED target hands the
+            # caller something the module contract says is a concrete path the command
+            # will write -- which the guard then matches against the approved set, misses,
+            # and DENIES. Any operand containing the replace string is the same shape
+            # after substitution (`mv {} {}.bak`), so none of them survives as a target.
+            # The unresolved flag above is the whole honest answer here.
+            inner_args = [a for a in inner_args if replace not in a[0]]
+    _command_targets(inner, inner_args, heredocs, env, cwd, depth, result)
 
 
 def _download_targets(name, args, result, cwd):
@@ -959,13 +1105,19 @@ def _download_targets(name, args, result, cwd):
     drop out at `_is_null_sink`, 16 name a shell variable, and 13 name a literal path
     right there on the command line. By unique command that is 57 / 8 / 9 -- and the 9
     are more real use than `mv` (2) and `touch` (2) combined, both of which are detected.
-    Adding this moved 12 corpus commands from clean to resolved, gave 3 already-resolved
-    commands another target, and moved 1 to unresolved.
 
-    (The review that asked for this counted 28. That is the number of NON-`/dev/null`
-    output-flag occurrences, which is 29 here on a corpus three commands larger; roughly
-    half of them name a variable rather than a path. The mechanism is real either way,
-    and the smaller number is the one that belongs in a document.)
+    THE DURABLE FIGURE, and the one anything downstream should quote, is not any of those
+    counts: every one of them is methodology-dependent, moving between 9 and 28 depending
+    on whether occurrences or unique commands are counted and whether in-command
+    assignments are expanded first. It is the CLASSIFIER DELTA, which two people have now
+    reproduced independently over one shared denominator -- adding `curl`/`wget` moves 14
+    corpus commands from clean to resolved, gives 3 already-resolved commands another
+    target, and moves 1 to unresolved.
+
+    (The review that asked for this counted 28 unique commands. That number is real but
+    it is an OCCURRENCE count of non-`/dev/null` output flags, not a command count, and
+    the adjudication went that way; roughly half of those occurrences name a variable
+    rather than a path. The mechanism is worth detecting on any of the counts.)
 
     `curl -O` and a bare `wget URL` name the file after the remote resource, which is
     decided at runtime by the URL the transfer ends up at. Those are reported as an
@@ -1098,6 +1250,19 @@ def _git_targets(args, result, cwd):
     if subcommand not in ("checkout", "restore"):
         return                                  # `switch` and everything else: no paths
 
+    # `--staged` on its own restores the INDEX and never touches the working tree, so no
+    # file changes on disk and there is nothing here for a path guard to be about.
+    # Reporting one anyway is not harmless: `git restore --staged .` would hand the caller
+    # `.`, which matches no approved path and DENIES a command that writes nothing. The
+    # decision is also the consistent one -- `git add`, which stages the same way, is
+    # already clean -- and it is asymmetric only because `--staged --worktree` together DO
+    # write the tree, and those are still reported. Checked before the `--` split, since
+    # `git restore --staged -- .` is the same command with the same answer.
+    if (subcommand == "restore"
+            and any(a[0] in ("-S", "--staged") for a in rest)
+            and not any(a[0] in ("-W", "--worktree") for a in rest)):
+        return
+
     for position, argument in enumerate(rest):
         if argument[0] == "--":
             _add_all(rest[position + 1:], result, cwd)
@@ -1134,6 +1299,47 @@ def _looks_like_a_path(text):
 # ---------------------------------------------------------------- interpreter bodies
 
 
+# `perl -i`, `perl -i.bak`, `perl -pi`, `perl -ni.bak`. The letters allowed in front of
+# the `i` are perl's own one-letter switches, and that is what keeps `-MList::Util` --
+# which contains an `i` and would have matched `sed`'s looser `_in_place` -- out.
+_PERL_IN_PLACE = re.compile(r"^-[pnaslwcTF0]*i(?:\.\S*)?$")
+
+
+def _perl_in_place_targets(args, result, cwd):
+    """`perl -i -pe 's/a/b/' notes.md` writes `notes.md`. It is `sed -i` in every way.
+
+    Routing perl to `_interpreter_targets` alone made this invisible: that function
+    inspects the `-e` body for a write CALL, and a substitution is not one -- the write
+    comes from `-i`, exactly as it does for `sed`. So the mechanism this file implements
+    most carefully was undetected in the one other program that spells it the same way.
+    """
+    if not any(_PERL_IN_PLACE.match(a[0]) for a in args):
+        return
+    operands = []
+    index = 0
+    while index < len(args):
+        text = args[index][0]
+        if text.startswith("-") and len(text) > 1:
+            if _takes_a_body(text):
+                index += 2                      # `-e`, `-pe`: the script is the next word
+                continue
+            index += 1
+            continue
+        operands.append(args[index])
+        index += 1
+    _add_all(operands, result, cwd)
+
+
+def _takes_a_body(text):
+    """Is this single-dash flag cluster one whose NEXT word is the program text?
+
+    `-c`, `-e`, `-E`, and the clusters that end in them: `perl -pe`, `perl -ne`,
+    `node -pe`. A long flag is not this; `--eval` is handled by name.
+    """
+    return (text.startswith("-") and not text.startswith("--")
+            and len(text) > 1 and text[-1] in "ceE")
+
+
 def _interpreter_targets(name, args, heredocs, result, cwd):
     """Inspect `-c` / `-e` bodies and heredoc-fed source. Do not flag the shape.
 
@@ -1146,7 +1352,20 @@ def _interpreter_targets(name, args, heredocs, result, cwd):
     index = 0
     while index < len(args):
         text, resolved = args[index]
-        if text in ("-c", "-e", "--eval") and index + 1 < len(args):
+        # The `=`-joined and no-space spellings, which the pre-filter and `_output_flag`
+        # both already handled and this scan did not: `node --eval=BODY`, `python -cBODY`.
+        if text.startswith("--eval="):
+            bodies.append(text[len("--eval="):])
+            unresolved_body = unresolved_body or not resolved
+            index += 1
+            continue
+        if text[:2] in ("-c", "-e") and len(text) > 2 and not text.startswith("--"):
+            bodies.append(text[2:])
+            unresolved_body = unresolved_body or not resolved
+            index += 1
+            continue
+        # `-c`, `-e`, `--eval`, and the clusters that end in one: `perl -pe`, `node -pe`.
+        if (text == "--eval" or _takes_a_body(text)) and index + 1 < len(args):
             bodies.append(args[index + 1][0])
             unresolved_body = unresolved_body or not args[index + 1][1]
             index += 2
