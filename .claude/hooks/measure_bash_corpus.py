@@ -99,6 +99,9 @@ def bash_commands(directory):
 
 # Why did this land in the unresolved bucket? Shape labels only -- see the docstring.
 _SHAPES = (
+    (re.compile(r"\bxargs\b"), "xargs: the operands arrive on stdin"),
+    (re.compile(r"\b(?:curl|wget)\b[^|;&\n]{0,200}?\s-{1,2}[A-Za-z-]*O"),
+     "curl -O / wget: the filename comes from the remote resource"),
     (re.compile(r"\$\(|`"), "a $(...) or backtick substitution"),
     (re.compile(r"\bgit\b[^|;&\n]{0,60}\bapply\b"), "git apply (targets live in the patch)"),
     (re.compile(r"\bcd\s+[^\s;&|]*\$"), "a relative target under an unresolvable cd"),
@@ -109,7 +112,7 @@ _SHAPES = (
 )
 
 _VERBS = frozenset(("tee", "install", "dd", "truncate", "mv", "cp", "rm", "rmdir",
-                    "touch", "mkdir", "ln", "sed", "git"))
+                    "touch", "mkdir", "ln", "sed", "git", "curl", "wget"))
 _INTERPRETERS = frozenset(("python", "python3", "py", "node", "nodejs", "perl", "ruby",
                            "sh", "bash", "zsh", "dash"))
 
@@ -135,7 +138,8 @@ def mechanisms(command):
     found = set()
     text, bodies = bash_write_targets._strip_heredocs(command)
     heredoc = bool(bodies)
-    for segment in bash_write_targets._segments(bash_write_targets._tokenize(text)):
+    for segment, _separator in bash_write_targets._segments(
+            bash_write_targets._tokenize(text)):
         words = []
         redirect = False
         for kind, value in segment:
@@ -168,9 +172,14 @@ def main():
                         help="directory of Claude Code .jsonl transcripts")
     options = parser.parse_args()
 
+    # Neither failure path below names the directory. It is this tool's own argument
+    # rather than corpus content, but it is an absolute path under the owner's home and
+    # it is the ONLY owner-identifying string this tool could ever emit -- and a failed
+    # run is exactly the output that gets pasted into a report. A basename would not help:
+    # the default directory's basename is the owner's home path with the slashes swapped.
     if not os.path.isdir(options.transcripts):
-        print("no transcripts at %s" % options.transcripts)
-        print("nothing measured; pass --transcripts DIR")
+        print("no transcript directory at the path given; nothing measured")
+        print("pass --transcripts DIR")
         return 1
 
     total = 0
@@ -179,7 +188,8 @@ def main():
         total += 1
         unique.add(command)
     if not unique:
-        print("no Bash commands found in %s" % options.transcripts)
+        print("no Bash commands in the %d transcript files found there"
+              % len(glob.glob(os.path.join(options.transcripts, "*.jsonl"))))
         return 1
 
     buckets = collections.Counter()

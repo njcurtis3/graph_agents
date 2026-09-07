@@ -8,7 +8,7 @@ WHAT A TEST LIKE THIS CANNOT DO, SAID FIRST
 A suite of hand-written cases proves the classifier catches the mechanisms someone
 thought of. It cannot prove the list is complete, and that is precisely the failure
 `guard-commit-trailers.py` had twice -- a matcher that passed its own examples and then
-met a real one. So this file has two halves and they do different jobs:
+met a real one. So this file has three halves and they do different jobs:
 
   * The MECHANISM cases are written here, because a mechanism has to be exercised with a
     target that can be asserted exactly, and the corpus does not oblige by containing a
@@ -22,19 +22,33 @@ met a real one. So this file has two halves and they do different jobs:
     them must classify as not-a-write. Any command carrying an absolute owner path was
     excluded when they were selected; the transcripts stay in the transcripts.
 
+  * The PRE-FILTER SUPERSET SWEEP at the end asks one question of every command in this
+    file, and of a matrix of spellings besides: if `has_write_signature` says no, does
+    the parser AGREE that there is nothing here? It is the only check in the file that
+    is about a property rather than a case, and it exists because the first version of
+    this classifier failed exactly there. `sed --in-place` and `node --eval` resolved
+    their targets exactly and the pre-filter could not see either one, so `classify`
+    short-circuited to clean and the guard was blind to them -- while `-i` and `-e` were
+    denied. The corpus tool's soundness counter printed 0 the whole time, because a
+    corpus can only say the blind spot is empty today. This sweep says it is not there.
+
 The corpus half is also why `measure_bash_corpus.py` exists beside this file. This suite
-says "the cases pass"; that one says what the classifier does to all 2073 of them.
+says "the cases pass"; that one says what the classifier does to all 2078 of them.
 """
 import os
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.realpath(__file__)))
 
-from bash_write_targets import classify, has_write_signature   # noqa: E402
+from bash_write_targets import classify, has_write_signature, _walk   # noqa: E402
 
 FAILURES = []
 CASES = 0
 READ_ONLY_CASES = 0
+
+# Every command any case in this file classifies, so the pre-filter's superset property
+# can be checked over all of them at the end rather than trusted one case at a time.
+ALL_COMMANDS = []
 
 # The plan's floor, asserted rather than counted by hand at review time.
 MINIMUM_CASES = 45
@@ -53,6 +67,7 @@ def check(label, got, want):
 
 def writes(label, command, *expected):
     """The command writes exactly these targets, and nothing was left unresolved."""
+    ALL_COMMANDS.append(command)
     targets, unresolved = classify(command)
     check(label, (targets, unresolved), (list(expected), False))
     if not has_write_signature(command):
@@ -62,6 +77,7 @@ def writes(label, command, *expected):
 
 def unresolved(label, command, *expected):
     """A write is present; these targets resolved and something else did not."""
+    ALL_COMMANDS.append(command)
     check(label, classify(command), (list(expected), True))
 
 
@@ -69,7 +85,62 @@ def clean(label, command):
     """Not a write. Nothing to report and nothing to warn about."""
     global READ_ONLY_CASES
     READ_ONLY_CASES += 1
+    ALL_COMMANDS.append(command)
     check(label, classify(command), ([], False))
+
+
+def prefilter_is_sound(command):
+    """The pre-filter may cost a wasted disk read. It may never HIDE a write.
+
+    Asked of the parser directly, past the short-circuit `classify` does, which is the
+    only way to see the disagreement: when the pre-filter says no, `classify` returns
+    ([], False) whatever the parser would have said.
+    """
+    if has_write_signature(command):
+        return True
+    try:
+        return _walk(command, "", {}, 0) == ([], False)
+    except Exception:
+        return False
+
+
+# Spellings that are not otherwise a case here, swept for the superset property below.
+# The first two are the pair that made the property FALSE on attempt 1: the parser
+# resolved `sed --in-place` and `node --eval` exactly while the pre-filter, which needed
+# a single-dash flag, said the command could not write at all. The rest are the same
+# question asked of every other spelling the parser implements.
+PRE_FILTER_MATRIX = (
+    "sed --in-place 's/x/y/' graph_agents/CURRENT-STATE.md",
+    "sed --in-place=.bak 's/x/y/' notes.md",
+    "sed -ni 's/x/y/p' notes.md",
+    "sed -i.bak -e 's/x/y/' notes.md",
+    "node --eval \"require('fs').writeFileSync('a.js','x')\"",
+    "python3 -c \"open('a.txt','w').write('x')\"",
+    "py -3 -c \"open('a.txt','w').write('x')\"",
+    "perl -e 'open(FH, \">o.txt\");'",
+    "curl --output out.json https://example.invalid/a",
+    "curl --output=out.json https://example.invalid/a",
+    "curl -sSo out.json https://example.invalid/a",
+    "curl -O https://example.invalid/a/z.tar",
+    "curl --remote-name https://example.invalid/a/z.tar",
+    "wget https://example.invalid/a/z.tar",
+    "wget --output-document=out.html https://example.invalid/a",
+    "sudo rm -rf build",
+    "doas rm -rf build",
+    "env FOO=1 rm -rf build",
+    "nice -n 5 rm -rf build",
+    "nohup mkdir -p out/reports",
+    "timeout 30 rm -rf build",
+    "/usr/bin/rm -rf build",
+    "ls *.md | xargs sed -i 's/a/b/'",
+    "eval \"$CMD\"",
+    "echo $(rm -rf build)",
+    "echo `rm -rf build`",
+    "echo \"$(rm -rf build)\"",
+    "python t.py >& all.log",
+    "git restore --source=HEAD notes.md",
+    "git apply fix.patch",
+)
 
 
 # Real commands, lifted verbatim from this fleet's own session transcripts. None of them
@@ -265,6 +336,132 @@ def main():
                "cd \"$SOMEWHERE\" && echo x > out.log")
     unresolved("git apply writes files named inside the patch, not on the line",
                "git apply fix.patch")
+    # The safety net under the heredoc-interpolation narrowing, and the ONE branch in
+    # `_Result.add` no other case reaches: every unresolved() case above short-circuits
+    # earlier on `not resolved`. An UNQUOTED heredoc delimiter means the shell would have
+    # interpolated `$SP` into the body, so the body must not be read literally -- but
+    # with no assignment to interpolate there is no path either, and handing the caller
+    # `$SP/o.json` would be handing it a filename no process will ever open. Inverting
+    # `if "$" in target:` in bash_write_targets.py leaves the rest of this suite green.
+    unresolved("an unassigned $VAR in an UNQUOTED heredoc body is a shape, not a path",
+               "python - <<PY\nopen('$SP/o.json','w').write('{}')\nPY")
+    writes("the same body with the variable assigned resolves through it",
+           "SP=/tmp/scratch python - <<PY\nopen('$SP/o.json','w').write('{}')\nPY",
+           "/tmp/scratch/o.json")
+    writes("a QUOTED delimiter does not interpolate, so the $ is literal and stays",
+           "python - <<'PY'\nopen('out.json','w').write('{}')\nPY", "out.json")
+
+    # --- The LONG spellings of flags the parser acts on. Attempt 1 resolved every one
+    # --- of these exactly and the pre-filter said the command could not write at all,
+    # --- so `classify` short-circuited to clean and the guard never saw them. `writes()`
+    # --- asserts the pre-filter agrees, which is what makes these regression cases.
+    print("\nlong flag spellings, which the pre-filter must also see:")
+    writes("sed --in-place writes its file operand",
+           "sed --in-place 's/x/y/' graph_agents/CURRENT-STATE.md",
+           "graph_agents/CURRENT-STATE.md")
+    writes("sed --in-place=.bak writes its file operand",
+           "sed --in-place=.bak 's/x/y/' notes.md", "notes.md")
+    writes("sed -ni is the in-place flag in a cluster",
+           "sed -ni 's/x/y/p' notes.md", "notes.md")
+    writes("node --eval writes through fs",
+           "node --eval \"require('fs').writeFileSync('dist/app.js','x')\"",
+           "dist/app.js")
+    check("the pre-filter says yes to sed --in-place",
+          has_write_signature("sed --in-place 's/x/y/' notes.md"), True)
+    check("the pre-filter says yes to node --eval",
+          has_write_signature("node --eval \"require('fs').writeFileSync('a','x')\""),
+          True)
+
+    # --- A subshell's cwd dies with the subshell. Leaking it is a WRONG resolved path,
+    # --- which is the direction that denies work the plan approved.
+    print("\na cd inside a subshell does not escape it:")
+    writes("a cd inside ( ) does not reach the command after it",
+           "(cd graph_agents && echo x > a.md) ; echo y > b.md",
+           "graph_agents/a.md", "b.md")
+    writes("a cd inside a pipeline does not reach the command after it",
+           "cd graph_agents | cat ; echo y > b.md", "b.md")
+    writes("a backgrounded cd does not reach the command after it",
+           "cd graph_agents & echo y > b.md", "b.md")
+    writes("a cd BEFORE a subshell is still in force inside it",
+           "cd graph_agents && (echo x > a.md) && echo y > b.md",
+           "graph_agents/a.md", "graph_agents/b.md")
+    writes("nested subshells each restore the cwd they were opened at",
+           "cd a && (cd b && (cd c && echo x > deep.md)) && echo y > flat.md",
+           "a/b/c/deep.md", "a/flat.md")
+    unresolved("cd - is the previous directory, not the caller's own",
+               "cd a && cd b && cd - && echo x > f.txt")
+    unresolved("a bare cd is the home directory, which this file cannot know",
+               "cd && echo x > f.txt")
+
+    # --- `>&` is a redirect. Lexed as `>` plus `&` it becomes a segment break instead,
+    # --- and the file it names is dropped without a trace.
+    print("\n>& redirects a file, >&N duplicates a descriptor:")
+    writes("cmd >& file writes that file",
+           "python t.py >& all.log", "all.log")
+    writes("cmd 2>& file writes that file too",
+           "python t.py 2>& errors.log", "errors.log")
+    clean("2>&1 is still an fd dup, not a file called 1",
+          "python t.py 2>&1 | tail -5")
+    clean("2>&- closes a descriptor and writes nothing",
+          "python t.py 2>&-")
+
+    # --- curl and wget. 28 unique corpus commands write a real path with `curl -o` and
+    # --- attempt 1 called every one of them clean; the other 60 are `-o /dev/null`.
+    print("\ncurl and wget write the file they are told to write:")
+    writes("curl -o writes its output path",
+           "curl -o graph_agents/GRAPH.md https://example.invalid/a",
+           "graph_agents/GRAPH.md")
+    writes("curl --output writes its output path",
+           "curl --output out.json https://example.invalid/a", "out.json")
+    writes("curl --output=PATH writes it too",
+           "curl --output=out.json https://example.invalid/a", "out.json")
+    writes("curl -sSo is a short-flag cluster ending in -o",
+           "curl -sSo out.json https://example.invalid/a", "out.json")
+    writes("wget -O writes its output document",
+           "wget -O out.html https://example.invalid/a", "out.html")
+    writes("a cd applies to a curl output path like any other",
+           "cd graph_agents && curl -s -o GRAPH.md https://example.invalid/a",
+           "graph_agents/GRAPH.md")
+    clean("curl -o /dev/null is not a write worth reporting",
+          "curl -s https://example.invalid/health -o /dev/null")
+    clean("curl -o - is stdout, not a file called -",
+          "curl -s -o - https://example.invalid/a | head -5")
+    clean("a curl with no output flag writes nothing this file can see",
+          "curl -s https://example.invalid/a | head -5")
+    unresolved("curl -O names the file from the remote resource at runtime",
+               "curl -O https://example.invalid/a/z.tar")
+    unresolved("a bare wget does the same",
+               "wget https://example.invalid/a/z.tar")
+
+    # --- Shapes that came back CLEAN on attempt 1 when the stated policy for a shape
+    # --- this file cannot pin down is ([], True).
+    print("\nwrappers, eval and substitutions fail in the stated direction:")
+    writes("sudo is stripped and what it wraps is dispatched",
+           "sudo rm -rf build", "build")
+    writes("env with an assignment prefix is stripped too",
+           "env FOO=1 rm -rf build", "build")
+    writes("time is stripped",
+           "time cp template.json config.json", "config.json")
+    writes("timeout is stripped along with its duration",
+           "timeout 30 mkdir -p out/reports", "out/reports")
+    writes("a command substitution body is walked as a command",
+           "echo $(rm -rf build)", "build")
+    writes("a backtick body is walked the same way",
+           "echo `rm -rf build`", "build")
+    writes("a substitution inside double quotes is walked too",
+           "echo \"$(rm -rf build)\"", "build")
+    writes("an interpreter body inside a substitution still resolves",
+           "X=$(python -c \"open('f.txt','w').write('x')\")", "f.txt")
+    writes("eval of a literal is re-classified as shell",
+           "eval \"echo x > out.txt\"", "out.txt")
+    unresolved("eval of a variable is a shape, not a clean command",
+               "eval \"$CMD\"")
+    unresolved("xargs writes files named on stdin, not on this line",
+               "ls *.md | xargs sed -i 's/a/b/'")
+    clean("command -v is a lookup, not a run",
+          "command -v gh")
+    clean("a substitution that only reads is still clean",
+          "echo \"branch $(git branch --show-current)\"")
 
     # --- Things that look like writes and are not. ---
     print("\nnear misses:")
@@ -314,6 +511,21 @@ def main():
     for command in READ_ONLY_CORPUS:
         shown = command if len(command) <= 62 else command[:59] + "..."
         clean(shown, command)
+
+    # --- The pre-filter's superset property, checked STRUCTURALLY rather than measured.
+    # --- `measure_bash_corpus.py` runs this same question over the corpus, but a corpus
+    # --- can only say the blind spot is empty today: attempt 1's counter printed 0 while
+    # --- two spellings the parser resolved exactly were invisible to the guard, because
+    # --- the corpus happened not to contain them. This asks it of every command in this
+    # --- file plus a matrix of the spellings the parser implements.
+    print("\nthe pre-filter is a superset of the parser, over every command in this file:")
+    swept = list(ALL_COMMANDS) + list(PRE_FILTER_MATRIX)
+    leaks = [c for c in swept if not prefilter_is_sound(c)]
+    check("no command here resolves a write the pre-filter cannot see (%d swept)"
+          % len(swept), leaks, [])
+    for command in PRE_FILTER_MATRIX:
+        if not prefilter_is_sound(command):
+            print("  leak: %s" % (command[:59] + "..." if len(command) > 62 else command))
 
     print()
     check("at least %d cases ran" % MINIMUM_CASES, CASES >= MINIMUM_CASES, True)

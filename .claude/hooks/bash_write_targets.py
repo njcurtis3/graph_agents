@@ -43,13 +43,22 @@ WHY A `cd` IS APPLIED, WHICH IS THE ONE PLACE A TARGET IS NOT VERBATIM
   path that resolves against the session root, so the caller would judge `repos/GRAPH.md`
   -- a file that does not exist -- and deny a write the plan had approved. So a `cd`
   earlier in the same command string is joined onto later relative targets. An absolute
-  target is never touched. If the `cd` target itself cannot be resolved, later RELATIVE
-  targets become `unresolved_write_shape` instead of guesses; `git -C DIR` is handled the
-  same way, for that segment only.
+  target is never touched. If the `cd` target itself cannot be resolved -- an unresolvable
+  operand, `cd -`, or a bare `cd` to the home directory -- later RELATIVE targets become
+  `unresolved_write_shape` instead of guesses; `git -C DIR` is handled the same way, for
+  that segment only.
+
+  A `cd` reaches the next command only when both run in THIS shell. `( cd x && ... )`,
+  a pipeline component and a background job are subshells, and their `cd` dies with them:
+  `(cd graph_agents && echo a > a.md) ; echo b > b.md` writes `graph_agents/a.md` and then
+  `b.md`, not `graph_agents/b.md`. Leaking a subshell's cwd is not an unresolved flag, it
+  is a WRONG resolved path -- indistinguishable downstream from a right one, and pointed
+  at denying work the plan approved.
 
 WHAT IT DETECTS
 
-  redirects           `>` `>>` `>|` `&>` `&>>` and any fd form (`2>`, `1>>`)
+  redirects           `>` `>>` `>|` `&>` `&>>` `>&` and any fd form (`2>`, `1>>`).
+                      `2>&1` and `2>&-` are fd duplications and not files
   heredocs            the body is removed before parsing, so a heredoc that happens to
                       contain `>` or the word `rm` cannot be mistaken for a command; the
                       redirect on the heredoc's OWN line is what makes it a write
@@ -70,7 +79,18 @@ WHAT IT DETECTS
                       being a `-c`. Measured over the corpus: 356 commands use this
                       shape and only 57 of them write. Flagging the shape would invent
                       299 false positives.
+  curl / wget         `curl -o FILE`, `curl --output=FILE`, `wget -O FILE`, including the
+                      `-sSo FILE` cluster spelling. `-o /dev/null` and `-o -` are not
+                      writes. `curl -O` and a bare `wget URL` name their file from the
+                      remote resource at runtime, so they are an unresolved SHAPE
   sh -c / bash -c     the body is re-classified as a shell command, depth-limited
+  eval                a literal `eval "..."` is re-classified the same way
+  $(...) / backticks  the substitution body is walked as a command, so `echo $(rm -rf x)`
+                      is the delete it is
+  wrapper verbs       `sudo`, `doas`, `env`, `nice`, `nohup`, `command`, `time`,
+                      `timeout`, `stdbuf`, `xargs` are stripped and what they wrap is
+                      dispatched as itself. `xargs` additionally reports an unresolved
+                      shape, because the files it writes arrive on stdin
 
 WHAT IT DOES NOT DETECT, ON PURPOSE, SO THE CALLER CAN SAY SO OUT LOUD
 
@@ -79,11 +99,18 @@ WHAT IT DOES NOT DETECT, ON PURPOSE, SO THE CALLER CAN SAY SO OUT LOUD
     This is the largest hole and it is deliberate -- closing it means denying every test
     command, and a guard that denies pytest is switched off within a day.
   * An obfuscated write: a base64 or `exec` payload inside `python -c`, a target
-    assembled from runtime values, `eval` of a variable.
-  * `curl -o`, `wget -O`, `powershell`, `awk`'s own `print > file`, and `patch`. None of
-    these appear in the ten mechanisms this fleet has actually used, and each one added
-    is a new way to deny real work; they are named here so the limit is documented rather
-    than discovered.
+    assembled from runtime values. `eval` of a VARIABLE is here too -- it comes back as
+    an unresolved shape rather than a target, which is a record and not a denial.
+  * `powershell`, `awk`'s own `print > file`, `patch`, and a bare `>` written by a program
+    the command invokes. Each one added is a new way to deny real work; they are named
+    here so the limit is documented rather than discovered. `curl` and `wget` USED to sit
+    in this list on the grounds that they were not among the ten evidenced mechanisms.
+    Measured, that was simply wrong -- `curl` is in command position 171 times in the
+    corpus and 9 unique commands write a literal path with `-o` -- so they moved up to
+    the detected list instead. See `_download_targets` for the full breakdown.
+  * A write flag the parser reads but a MEASUREMENT could not have shown: this list is
+    kept honest by the pre-filter soundness counter in `measure_bash_corpus.py`, which
+    asks the parser directly for every command the pre-filter rejected and must print 0.
   * Anything a variable hides that was not assigned in the same command string. There is
     no environment lookup here on purpose: the classifier is pure, so its answer for a
     given string is the same in a test as it is in a hook.
@@ -111,7 +138,7 @@ NULL_SINKS = frozenset((
 ))
 
 # The pre-filter. It runs on every Bash call in the session, before the caller touches
-# disk, so it is a single regex over the raw string and nothing more.
+# disk, so it is regex over the raw string and nothing more.
 #
 # It is deliberately a SUPERSET of what the parser below can act on: a false positive here
 # costs one state.json read, while a false negative here is a write nobody ever looks at.
@@ -119,38 +146,83 @@ NULL_SINKS = frozenset((
 # status`, `git log`, `git diff`, `grep`, `ls`, `wc`, `python -m pytest`, `node test.js` --
 # because those are the hot path and they must pay nothing.
 #
-# The bounded `[^|;&\n]{0,120}` windows are the same shape that made
-# `guard-commit-trailers.py` match its own prose twice. It is safe here and it was not
-# there, for one reason: nothing in this file decides anything. A window that over-fires
-# hands the command to the parser, which then finds no target and says so.
-_SIGNATURE = re.compile(
-    r">"                                            # every redirect form
-    r"|<<"                                          # heredoc
-    # A write verb only counts in a COMMAND POSITION -- start of input, after a
-    # separator, after `VAR=x` prefixes. Not because it is prettier, but because that is
-    # the only place the parser below will act on one, so anywhere else is a state.json
-    # read bought for nothing. The word `rm` inside a heredoc paragraph is prose.
-    r"|(?:\A|[;&|\n()])\s*(?:[A-Za-z_][A-Za-z0-9_]*=\S*\s+)*(?:\S*/)?"
-    r"(?:tee|install|dd|truncate|mv|cp|rm|rmdir|touch|mkdir|ln)\b"
-    r"|\bsed\b[^|;&\n]{0,120}?\s-[A-Za-z]*i\b"
-    r"|\bgit\b[^|;&\n]{0,120}?\b(?:checkout|restore|apply)\b"
-    r"|\b(?:python|python3|py|node|perl|ruby|bash|sh)\b"
-    r"[^|;&\n]{0,200}?\s-[A-Za-z]*[ce]\b"
+# THE SUPERSET PROPERTY IS STRUCTURAL, NOT MEASURED, and it is spelled this way because
+# the first version of this file was neither. That version paired a verb with its write
+# flag inside ONE regex, separated by a bounded `[^|;&\n]{0,120}` window. Two spellings
+# the parser resolves exactly -- `sed --in-place` and `node --eval` -- could not match a
+# window that required a single-dash flag, so the guard never saw them while the same
+# commands spelled `-i` and `-e` were denied. The property was true only of the commands
+# that happened to be in the corpus, and a bounded window has the same defect for any
+# long flag list, any quoted `|`, and anything past 120 characters.
+#
+# So the verb and the flag are searched INDEPENDENTLY now. A paired clause fires when the
+# verb appears ANYWHERE in the string and a flag that could make that verb write appears
+# ANYWHERE in the string. No distance, ordering, quoting or window length can hide a
+# pairing the parser would act on, and each flag pattern is a deliberate superset of the
+# predicate the parser uses (`_in_place`, `_output_flag`, the `-c`/`-e`/`--eval` scan).
+# The cost is over-firing on `grep -i sed`, and over-firing costs one state.json read.
+_REDIRECTION = re.compile(r">|<<")
+
+# A write verb only counts in a COMMAND POSITION -- start of input, after a separator, an
+# opening paren or a backtick, after wrapper verbs and `VAR=x` prefixes. Not because it is
+# prettier, but because that is the only place the parser below will act on one, so
+# anywhere else is a state.json read bought for nothing. The word `rm` inside a heredoc
+# paragraph is prose. `(` and `` ` `` are in the anchor class because the parser walks
+# into `$(...)` and backtick bodies, and the pre-filter has to reach where the parser goes.
+_COMMAND_POSITION = re.compile(
+    r"(?:\A|[;&|\n()`])\s*"
+    r"(?:[A-Za-z_][A-Za-z0-9_]*=\S*\s+)*"
+    r"(?:\S*/)?"
+    r"(?:tee|install|dd|truncate|mv|cp|rm|rmdir|touch|mkdir|ln|wget|eval)\b"
+)
+
+# A wrapper verb in command position, for the paired clause below. It is paired rather
+# than folded into `_COMMAND_POSITION` because `nice -n 5 rm`, `timeout 30 mkdir` and
+# `xargs -I {} rm` put arbitrary operands between the wrapper and the verb, and matching
+# those inline needs a nested quantifier -- a catastrophic-backtracking shape to run on
+# every Bash call. Two flat searches say the same thing and cannot blow up.
+_WRAPPER_POSITION = re.compile(
+    r"(?:\A|[;&|\n()`])\s*(?:\S*/)?"
+    r"(?:sudo|doas|env|nice|nohup|command|time|timeout|stdbuf|xargs)\b"
+)
+
+# (a command name, a flag that can make it write). Both are searched over the whole
+# string and independently of each other -- see the note above.
+_PAIRED_SIGNATURES = (
+    (_WRAPPER_POSITION,
+     re.compile(r"\b(?:tee|install|dd|truncate|mv|cp|rm|rmdir|touch|mkdir|ln|sed|git"
+                r"|curl|wget|eval|python|python3|py|node|nodejs|perl|ruby"
+                r"|bash|sh|zsh|dash)\b")),
+    (re.compile(r"\bsed\b"),
+     re.compile(r"(?:\A|\s)(?:-[A-Za-z]*i|--in-place)")),
+    (re.compile(r"\bgit\b"),
+     re.compile(r"\b(?:checkout|restore|apply)\b")),
+    (re.compile(r"\b(?:python|python3|py|node|nodejs|perl|ruby|bash|sh|zsh|dash)\b"),
+     re.compile(r"(?:\A|\s)(?:-[A-Za-z]*[ce]|--eval)")),
+    (re.compile(r"\bcurl\b"),
+     re.compile(r"(?:\A|\s)(?:-[A-Za-z0-9#]*[oO]|--output|--remote-name)")),
 )
 
 # Longest first: `<<<` is a herestring and `<<-` a heredoc, and neither may be read as
-# `<<` plus something.
-_OPERATORS = ("<<<", "&>>", "<<-", ">>", "<<", "&&", "||", ">|", "&>",
+# `<<` plus something. `>&` sits before `>` for the same reason -- lexed as `>` plus `&`
+# it becomes a segment break and `cmd >& file` loses its file entirely.
+_OPERATORS = ("<<<", "&>>", "<<-", ">>", "<<", "&&", "||", ">|", "&>", ">&",
               ">", "<", "|", ";", "&", "(", ")")
 
 _SEPARATORS = frozenset(("|", "||", "&&", ";", "&", "\n", "(", ")"))
-_WRITE_REDIRECTS = frozenset((">", ">>", ">|", "&>", "&>>"))
+_WRITE_REDIRECTS = frozenset((">", ">>", ">|", "&>", "&>>", ">&"))
+
+# The separators that put their segment in a SUBSHELL, so a `cd` inside it dies with it.
+_SUBSHELL_SEPARATORS = frozenset(("|", "&"))
 
 _VAR = re.compile(r"\$(\{[A-Za-z_][A-Za-z0-9_]*\}|[A-Za-z_][A-Za-z0-9_]*)")
 _LEFTOVER_VAR = re.compile(r"\$[A-Za-z_{(0-9@*?!#$]")
 _ASSIGNMENT = re.compile(r"^([A-Za-z_][A-Za-z0-9_]*)=(.*)$", re.DOTALL)
 _ABSOLUTE = re.compile(r"^(?:/|~|\\\\|[A-Za-z]:[\\/])")
 _HEREDOC_START = re.compile(r"<<-?\s*(\"[^\"]*\"|'[^']*'|[A-Za-z_][A-Za-z0-9_]*)")
+_SUBSTITUTION = re.compile(r"\$\(|`")
+_SHORT_CLUSTER = re.compile(r"^[A-Za-z0-9#]*$")
+_DURATION = re.compile(r"^[0-9]+(?:\.[0-9]+)?[smhd]?$")
 
 # The cwd of a segment whose `cd` could not be resolved. Distinct from "" -- which means
 # the caller's own cwd -- because a relative target under an UNKNOWN cwd is an unresolved
@@ -160,7 +232,12 @@ _UNKNOWN = object()
 
 def has_write_signature(command):
     """Could this command write anything? Cheap, no parsing, no disk."""
-    return bool(isinstance(command, str) and command and _SIGNATURE.search(command))
+    if not isinstance(command, str) or not command:
+        return False
+    if _REDIRECTION.search(command) or _COMMAND_POSITION.search(command):
+        return True
+    return any(verb.search(command) and flag.search(command)
+               for verb, flag in _PAIRED_SIGNATURES)
 
 
 def classify(command):
@@ -377,18 +454,29 @@ def _operator_at(text, index):
 
 
 def _segments(tokens):
-    """Token lists split on `|`, `&&`, `;`, newline and friends."""
+    """[(token list, the separator that ENDED it), ...], split on `|`, `&&`, `;` and kin.
+
+    The separator is kept rather than thrown away because it decides SCOPE, and scope is
+    what makes a `cd` reach the next command or not. `(` and `)` come back as their own
+    entries with an empty token list, so the walker can push and pop a cwd around a
+    subshell instead of letting a `cd` inside one escape into the rest of the line.
+    """
     out = []
     current = []
     for kind, value in tokens:
         if kind == "op" and value in _SEPARATORS:
-            if current:
-                out.append(current)
+            if value in ("(", ")"):
+                if current:
+                    out.append((current, ""))
+                    current = []
+                out.append(([], value))
+                continue
+            out.append((current, value))
             current = []
             continue
         current.append((kind, value))
     if current:
-        out.append(current)
+        out.append((current, ""))
     return out
 
 
@@ -488,8 +576,28 @@ def _walk(command, cwd, env, depth):
     body_queue = list(bodies)
     env = dict(env)
 
-    for segment in _segments(_tokenize(text)):
-        cwd = _walk_segment(segment, body_queue, env, cwd, depth, result)
+    # A `cd` reaches the next command only when both of them run in THIS shell. Inside
+    # `( ... )` it dies at the closing paren, and a pipeline component or a background
+    # job is a subshell too, so its `cd` dies with the component. Getting this wrong is
+    # not an unresolved flag -- it is a WRONG resolved path, which nothing downstream can
+    # tell from a right one, and it fails in the direction that denies approved work.
+    scopes = []
+    previous = ""
+    for segment, separator in _segments(_tokenize(text)):
+        if not segment and separator == "(":
+            scopes.append(cwd)
+            previous = ""
+            continue
+        if not segment and separator == ")":
+            cwd = scopes.pop() if scopes else cwd
+            previous = ""
+            continue
+        moved = _walk_segment(segment, body_queue, env, cwd, depth, result)
+        # Ends a pipeline component or is backgrounded, or follows a `|` and so is a
+        # pipeline component itself. `||` is a different string and is not one of these.
+        if separator not in _SUBSHELL_SEPARATORS and previous != "|":
+            cwd = moved
+        previous = separator
     return result.targets, result.unresolved
 
 
@@ -514,12 +622,14 @@ def _walk_segment(segment, body_queue, env, cwd, depth, result):
             continue
         if value in _WRITE_REDIRECTS:
             if index < len(segment) and segment[index] == ("op", "&"):
-                index += 2                              # `>&1`: an fd dup, not a file
+                index += 2                              # `> &1`: an fd dup, not a file
                 continue
             if index < len(segment) and segment[index][0] == "word":
                 target, resolved = _expand(segment[index][1], env)
-                result.add(target, resolved, cwd)
                 index += 1
+                if value == ">&" and (target.isdigit() or target == "-"):
+                    continue                            # `2>&1`, `2>&-`: an fd dup
+                result.add(target, resolved, cwd)
             continue
 
     # Leading `NAME=value` -- the assignments that make `$SP/out.log` resolvable at all.
@@ -533,6 +643,10 @@ def _walk_segment(segment, body_queue, env, cwd, depth, result):
             continue
         leading = False
         expanded.append((text, resolved))
+
+    # After the assignments, so `SP=/tmp echo $(rm $SP/x)` sees `SP`; before the early
+    # return, so a segment that is nothing BUT a substitution is still walked.
+    _substitutions(segment, env, cwd, depth, result)
 
     if not expanded:
         return cwd
@@ -562,12 +676,69 @@ def _walk_segment(segment, body_queue, env, cwd, depth, result):
     return cwd
 
 
+def _substitutions(segment, env, cwd, depth, result):
+    """Walk the body of every `$(...)` and backtick in this segment as a command.
+
+    `echo $(rm -rf build)` really does delete `build`, and `X=$(python -c "...")` really
+    does run the interpreter body. The first version of this file returned ([], False)
+    for both -- CLEAN -- because `_tokenize` swallows a substitution whole and nobody
+    ever looked inside. Clean is the wrong answer in the wrong direction: this module's
+    stated policy is that a shape it cannot resolve comes back ([], True), and a shape it
+    CAN resolve should come back with the path. A substitution runs in a subshell, so its
+    own `cd` starts fresh and cannot leak back out here.
+    """
+    for kind, value in segment:
+        if kind != "word":
+            continue
+        for chunk, expandable in value:
+            if not expandable or not _SUBSTITUTION.search(chunk):
+                continue
+            for body in _substitution_bodies(chunk):
+                if body.strip():
+                    result.merge(_walk(body, "", env, depth + 1), cwd)
+
+
+def _substitution_bodies(text):
+    """The inner text of every `$(...)` and `` `...` `` in one expandable chunk."""
+    out = []
+    index = 0
+    length = len(text)
+    while index < length:
+        if text[index] == "$" and text[index + 1:index + 2] == "(":
+            depth = 0
+            cursor = index + 1
+            while cursor < length:
+                if text[cursor] == "(":
+                    depth += 1
+                elif text[cursor] == ")":
+                    depth -= 1
+                    if depth == 0:
+                        break
+                cursor += 1
+            out.append(text[index + 2:cursor])
+            index = cursor + 1
+            continue
+        if text[index] == "`":
+            end = text.find("`", index + 1)
+            end = length if end < 0 else end
+            out.append(text[index + 1:end])
+            index = end + 1
+            continue
+        index += 1
+    return out
+
+
 def _new_cwd(args, cwd):
-    operands = [a for a in args if not a[0].startswith("-")]
+    # `-` is an OPERAND of `cd`, not a flag, and dropping it with the flags is what made
+    # the `target == "-"` branch below unreachable -- so `cd -` fell through to `return
+    # ""`, the RESOLVED "caller's own cwd" sentinel, and every later relative target was
+    # placed at a directory the command was not in. A bare `cd` has the same defect for a
+    # different reason: it goes to the home directory, which this file cannot know.
+    operands = [a for a in args if a[0] == "-" or not a[0].startswith("-")]
     if not operands:
-        return ""                                       # `cd` alone: home. Unknowable.
+        return _UNKNOWN                                 # `cd` alone: home. Unknowable.
     target, resolved = operands[0]
-    if not resolved or target == "-":
+    if not resolved or target == "-":                   # `cd -`: the previous directory
         return _UNKNOWN
     if _ABSOLUTE.match(target):
         return target.replace("\\", "/").rstrip("/")
@@ -614,6 +785,23 @@ def _add_all(operands, result, cwd):
 
 def _command_targets(name, args, heredocs, env, cwd, depth, result):
     """Everything that is a write because of WHICH command it is, not because of a `>`."""
+    if name in _WRAPPER_VALUED:
+        _wrapper_targets(name, args, heredocs, env, cwd, depth, result)
+        return
+
+    if name == "eval":
+        # `eval "echo x > out.txt"` is that redirect. `eval "$CMD"` is the documented
+        # hole -- but it is an unresolved write shape now, not a clean command.
+        if all(resolved for _text, resolved in args):
+            result.merge(_walk(" ".join(t for t, _r in args), "", env, depth + 1), cwd)
+        else:
+            result.unresolved = True
+        return
+
+    if name in ("curl", "wget"):
+        _download_targets(name, args, result, cwd)
+        return
+
     if name == "tee":
         _add_all(_operands(args), result, cwd)
         return
@@ -696,6 +884,141 @@ def _command_targets(name, args, heredocs, env, cwd, depth, result):
         for text in bodies:
             result.merge(_walk(text, "", env, depth + 1), cwd)
         return
+
+
+# Verbs that run ANOTHER command. Each maps to the flags of its own that take a value, so
+# the wrapper can be stripped and the thing it wraps dispatched as itself: `sudo rm -rf
+# build` is the write `rm -rf build` is. The first version of this file had no such
+# branch, so every one of these came back CLEAN -- and a wrapper verb also walked past
+# the pre-filter, which is why `_COMMAND_POSITION` now allows them in front of a verb.
+_WRAPPER_VALUED = {
+    "sudo": ("-u", "-g", "-p", "--user", "--group", "--prompt"),
+    "doas": ("-u", "-C"),
+    "env": ("-u", "--unset"),
+    "nice": ("-n", "--adjustment"),
+    "nohup": (),
+    "command": (),
+    "time": (),
+    "timeout": ("-s", "--signal", "-k", "--kill-after"),
+    "stdbuf": ("-i", "-o", "-e", "--input", "--output", "--error"),
+    "xargs": ("-I", "-i", "-n", "-P", "-a", "-d", "-E", "-L", "-s", "--replace",
+              "--max-args", "--max-procs", "--arg-file", "--delimiter", "--eof",
+              "--max-lines", "--max-chars"),
+}
+
+# The verbs `_command_targets` treats as writes. Only `xargs` needs to ask: the files it
+# writes arrive on stdin rather than on this command line.
+_WRITE_VERBS = frozenset((
+    "tee", "install", "dd", "truncate", "mv", "cp", "rm", "rmdir", "touch", "mkdir",
+    "ln", "sed", "git", "curl", "wget",
+))
+
+
+def _wrapper_targets(name, args, heredocs, env, cwd, depth, result):
+    """Strip a wrapper verb and dispatch on the command it wraps."""
+    if name == "command" and any(a[0] in ("-v", "-V") for a in args):
+        return                                  # `command -v gh` is a lookup, not a run
+    valued = _WRAPPER_VALUED[name]
+    index = 0
+    while index < len(args):
+        text = args[index][0]
+        if text == "--":
+            index += 1
+            break
+        if text in valued:
+            index += 2
+            continue
+        if text.startswith("-") and len(text) > 1:
+            index += 1
+            continue
+        if _ASSIGNMENT.match(text):
+            index += 1                          # `env FOO=1 rm x`
+            continue
+        if name == "timeout" and _DURATION.match(text):
+            index += 1                          # `timeout 30 python t.py`
+            continue
+        break
+    if index >= len(args):
+        return
+    inner = posixpath.basename(args[index][0].replace("\\", "/"))
+    if name == "xargs" and inner in _WRITE_VERBS:
+        # `ls *.md | xargs sed -i 's/a/b/'` writes files named on STDIN. The write is
+        # real and its targets are not in this string, which is the definition of an
+        # unresolved write shape.
+        result.unresolved = True
+    _command_targets(inner, args[index + 1:], heredocs, env, cwd, depth, result)
+
+
+def _download_targets(name, args, result, cwd):
+    """`curl -o` / `-O`, `wget -O`. Added after the corpus was measured, not before.
+
+    The docstring used to name `curl` among the mechanisms this fleet has never used.
+    That claim was false in the direction that matters. Read through this file's own
+    lexer, `curl` sits in COMMAND POSITION 171 times across the 2078 unique corpus
+    commands, and 93 of those invocations carry an output flag: 64 write `/dev/null` and
+    drop out at `_is_null_sink`, 16 name a shell variable, and 13 name a literal path
+    right there on the command line. By unique command that is 57 / 8 / 9 -- and the 9
+    are more real use than `mv` (2) and `touch` (2) combined, both of which are detected.
+    Adding this moved 12 corpus commands from clean to resolved, gave 3 already-resolved
+    commands another target, and moved 1 to unresolved.
+
+    (The review that asked for this counted 28. That is the number of NON-`/dev/null`
+    output-flag occurrences, which is 29 here on a corpus three commands larger; roughly
+    half of them name a variable rather than a path. The mechanism is real either way,
+    and the smaller number is the one that belongs in a document.)
+
+    `curl -O` and a bare `wget URL` name the file after the remote resource, which is
+    decided at runtime by the URL the transfer ends up at. Those are reported as an
+    unresolved SHAPE rather than guessed from the URL: a wrong resolved path is worse
+    than an honest unresolved one, because nothing downstream can tell it was a guess.
+    """
+    letter, longs = (("o", ("--output",)) if name == "curl"
+                     else ("O", ("--output-document",)))
+    named = False
+    index = 0
+    while index < len(args):
+        text, resolved = args[index]
+        if name == "wget" and text in ("--spider", "--version", "--help"):
+            return                              # asks, does not fetch
+        value = _output_flag(text, letter, longs)
+        if value is not None:
+            named = True
+            if not value:
+                if index + 1 >= len(args):
+                    result.unresolved = True
+                    return
+                index += 1
+                value, resolved = args[index]
+            if value != "-":                    # `-o -` / `-O -` is stdout
+                result.add(value, resolved, cwd)
+        index += 1
+    if named:
+        return
+    if name == "wget" or any(_output_flag(a[0], "O", ("--remote-name",
+                                                      "--remote-name-all")) is not None
+                             for a in args):
+        result.unresolved = True
+
+
+def _output_flag(text, letter, longs):
+    """None when `text` is not this output flag; "" when its value is the NEXT argument.
+
+    Otherwise the value carried inside the flag itself -- `-ofile`, `--output=file`.
+    `curl -sSo out.json` is a short-flag cluster ending in the flag that takes the value,
+    which is why the letter is looked for anywhere in the cluster rather than at the end.
+    """
+    for long_flag in longs:
+        if text == long_flag:
+            return ""
+        if text.startswith(long_flag + "="):
+            return text[len(long_flag) + 1:]
+    if text == "-" or not text.startswith("-") or text.startswith("--"):
+        return None
+    cluster = text[1:]
+    position = cluster.find(letter)
+    if position < 0 or not _SHORT_CLUSTER.match(cluster[:position]):
+        return None
+    return cluster[position + 1:]
 
 
 def _flag_value(args, flags):
@@ -853,6 +1176,11 @@ def _interpreter_targets(name, args, heredocs, result, cwd):
 # needs a writable file OBJECT, and the only way to get one is the `open(..., "w")` this
 # table already resolves. Counting them too meant `json.dump(d, open(p, "w"))` resolved
 # `p` from the `open` and then reported an unresolvable write anyway, from the `dump`.
+# THE RESIDUAL, on the record rather than left to be rediscovered: a handle that did NOT
+# come from a literal `open()` -- `tempfile.NamedTemporaryFile("w", delete=False)`, or
+# `os.fdopen(3, "w")` -- followed by a dump or a `writelines` is now ([], False) where it
+# used to be unresolved-and-recorded. Contrived, and 0 commands in the corpus; it is the
+# price of removing the double count.
 _WRITE_CALLS = {
     "write_text": "receiver",
     "write_bytes": "receiver",
