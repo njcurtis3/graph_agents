@@ -33,6 +33,28 @@ Scope, stated honestly:
   should not be running, but that is `--audit`'s finding to report, and denying every
   write instead would deadlock a run whose approval simply has not been recorded yet.
 
+BASH IS COVERED TOO, as of 2026-09-06 -- gap #13. Registering this guard on `Write|Edit`
+alone meant a builder writing through `sed -i`, a heredoc, `tee`, `python -c` or a plain
+redirect left the approved file set entirely: no denial, no record, no trace. The matcher
+is `Write|Edit|Bash` now, and `bash_write_targets.classify` resolves what a command is
+about to write. Every target it resolves goes through the SAME `approved_paths` /
+`covered` / `_match` / `worktree_context` a `Write` goes through -- there is no second
+matcher, because this guard has been fixed twice already for having two that drifted.
+
+  What that coverage is NOT. A command whose write shape cannot be resolved -- a target
+  behind an unassigned shell variable, a `$(...)` substitution -- is ALLOWED with a
+  warning naming it. So is a write performed by a program the command merely invokes:
+  `npm run build`, `make`, `pytest`, `bash script.sh`. Both are deliberate. The
+  population here is cooperative, and a guard that denies `pytest`, or denies what it
+  merely failed to parse, is switched off within a day and then closes nothing at all.
+  The warning is the point in those cases: gap #13's complaint was "no record", and a
+  record is what the unresolved branch leaves.
+
+  A Bash write to a temp directory or to `/dev/null` is allowed and not reported. Those
+  are sinks, not the tree the plan is about. `bash_write_targets` drops the null sinks
+  itself; the temp roots are dropped here, and deliberately NOT added to the approved
+  set, so a `Write` tool call to a temp path is denied exactly as it was before.
+
 The escape hatch is `scope_exceptions` in the run's `state.json`, which the orchestrator
 owns. Adding a path there is deliberate and auditable; editing `architect.plan` to widen
 the file set would be the orchestrator rewriting another node's key, which is exactly
@@ -55,6 +77,10 @@ FLEET = os.path.normpath(os.path.join(HERE, "..", ".."))      # graph_agents/
 UMBRELLA = os.path.dirname(FLEET)                             # repos/
 CURRENT = os.path.join(FLEET, ".graph", "CURRENT")
 CLOSED = ("done", "blocked")
+
+# How much of a command to quote back in a denial. Enough to recognise it, not enough to
+# paste a 40KB heredoc into the builder's context.
+COMMAND_ECHO = 400
 
 
 def norm(path):
@@ -166,10 +192,11 @@ def _match(target, approved):
     """One approved entry against one target path.
 
     Exact hit, or living under an approved directory, or -- when the entry still carries
-    a wildcard after `approved_paths` reduced its trailing one -- an fnmatch. Both call
-    sites go through here on purpose: the absolute rule and the worktree rule drifted
+    a wildcard after `approved_paths` reduced its trailing one -- an fnmatch. Every call
+    site goes through here on purpose: the absolute rule and the worktree rule drifted
     apart once already, and a matcher that lives in two places is a matcher that will
-    disagree with itself.
+    disagree with itself. The Bash branch added in 2026-09-06 resolves paths and then
+    asks THIS, for the same reason.
     """
     if target == approved or target.startswith(approved + "/"):
         return True
@@ -222,6 +249,86 @@ def worktree_context(target):
     return None, None
 
 
+def in_scope(target, allowed, rel_map):
+    """Is this normalised absolute path inside the approved set? The only scope answer.
+
+    A `Write`'s `file_path` and each path `bash_write_targets` resolved out of a Bash
+    command are judged by exactly this function, so the two tools cannot come to
+    different conclusions about the same file.
+    """
+    if covered(target, allowed):
+        return True
+
+    # Diamond mode: the builder is in a linked worktree, so its absolute path is rooted
+    # somewhere else entirely and can never equal the plan's umbrella-relative path. Match
+    # the repo-relative path against the same repo's approved entries instead. Without
+    # this the guard denies EVERY write by EVERY builder in a diamond -- which it did,
+    # undetected, from the day it was written until the first run actually fanned out.
+    main_root, rel = worktree_context(target)
+    if main_root and rel:
+        entries = rel_map.get(main_root) or {}
+        if any(_match(rel, a) for a in entries):
+            return True
+    return False
+
+
+def transient_roots():
+    """Temp directories, whose contents are not the tree any plan is about.
+
+    Read from the environment rather than through `tempfile`, which pulls in `shutil` on
+    import; this runs before every Bash call and the hot path should not pay for a module
+    it needs one string from.
+    """
+    roots = []
+    for name in ("TMPDIR", "TEMP", "TMP"):
+        value = os.environ.get(name)
+        if value and value.strip():
+            roots.append(norm(value.strip()))
+    roots.append(norm("/tmp"))
+    return roots
+
+
+def bash_targets(command, cwd):
+    """(targets, unresolved) for a Bash command; (None, None) if it cannot write at all.
+
+    (None, None) is the pre-filter's answer and it is the reason this function exists
+    separately: `has_write_signature` is a regex over the raw string, and returning here
+    means the caller never opens `.graph/CURRENT` or a `state.json`. Measured over the
+    2089 unique commands this fleet has run, 676 of them -- 32.3% -- take that exit and
+    pay no disk I/O at all. The guard now sees every Bash call, so that matters.
+
+    The import is deliberately HERE and not at module top. A top-level `ImportError`
+    raises before `main()`'s fail-closed handler can catch it, the hook exits non-zero,
+    and the harness reads that as a hook error and lets the write through -- which would
+    silently re-open gap #17 in the act of closing gap #13. Imported inside the try, a
+    missing or broken classifier denies and says so.
+    """
+    if HERE not in sys.path:
+        sys.path.insert(0, HERE)
+    from bash_write_targets import classify, has_write_signature
+
+    if not has_write_signature(command):
+        return None, None
+
+    targets, unresolved = classify(command)
+
+    # A target is returned as the command wrote it, with any `cd` in the same command
+    # already applied. Relative means relative to the shell's cwd, which the payload
+    # carries; the launch rule (`repos/`) is the fallback, and it is what the Bash tool
+    # actually uses in every run this fleet has executed.
+    base = cwd if isinstance(cwd, str) and cwd.strip() else UMBRELLA
+    skip = transient_roots()
+
+    resolved = []
+    for target in targets:
+        absolute = norm(target if os.path.isabs(target) else os.path.join(base, target))
+        if any(_match(absolute, root) for root in skip):
+            continue                          # a temp file is a sink, not the plan's tree
+        if absolute not in resolved:
+            resolved.append(absolute)
+    return resolved, unresolved
+
+
 def deny(reason):
     """Emit the deny decision. The only thing in this file that stops a write."""
     json.dump({
@@ -233,14 +340,42 @@ def deny(reason):
     }, sys.stdout)
 
 
+def warn(message):
+    """Leave a record without stopping anything. Carries NO `permissionDecision`.
+
+    That absence is the whole mechanism: a `PreToolUse` payload with no decision is "no
+    opinion", so the tool proceeds. `additionalContext` puts the text in the builder's
+    context and `systemMessage` puts it in front of the human, matching what the
+    PostToolUse flag hooks in this directory already do.
+    """
+    json.dump({
+        "hookSpecificOutput": {
+            "hookEventName": "PreToolUse",
+            "additionalContext": message,
+        },
+        "systemMessage": message,
+    }, sys.stdout)
+
+
 def decide():
     payload = json.load(sys.stdin)
 
     if str(payload.get("agent_type") or "").strip() != "builder":
         return
 
-    path = (payload.get("tool_input") or {}).get("file_path")
-    if not path:
+    tool_input = payload.get("tool_input") or {}
+    path = tool_input.get("file_path")
+    command = tool_input.get("command")
+
+    if path:
+        targets, unresolved = [norm(path)], False
+    elif isinstance(command, str) and command.strip():
+        targets, unresolved = bash_targets(command, payload.get("cwd"))
+        if targets is None:
+            return          # no write shape; nothing was read from disk to decide it
+        if not targets and not unresolved:
+            return          # a write shape whose every target is a sink
+    else:
         return
 
     state, run_dir = open_run()
@@ -255,32 +390,48 @@ def decide():
     if allowed is None:
         return          # no file set to compare against
 
-    target = norm(path)
-    if covered(target, allowed):
+    outside = [t for t in targets if not in_scope(t, allowed, rel_map)]
+    listed = "\n".join("  - %s" % shown for shown in sorted(allowed.values()))
+
+    if outside:
+        if path:
+            what = "`%s`" % path
+        else:
+            what = ("this command writes %s:\n%s\n\n  %s\n"
+                    % ("a file" if len(outside) == 1 else "files",
+                       "\n".join("  - %s" % t for t in outside),
+                       command.strip()[:COMMAND_ECHO]))
+        deny(
+            "[plan-scope] %s is not in the file set a human approved for run `%s`.\n"
+            "Approved:\n%s\n"
+            "Do not work around this. Stop, report to the orchestrator what you need "
+            "and why the approved set was wrong, and let it decide: either the work "
+            "belongs to a different slice, or the orchestrator records the extension "
+            "in `scope_exceptions` and in this slice's `deviation_from_approved_plan`. "
+            "Silently widening scope after the gate is the failure the gate exists to "
+            "prevent." % (what, os.path.basename(run_dir), listed)
+        )
         return
 
-    # Diamond mode: the builder is in a linked worktree, so its absolute path is rooted
-    # somewhere else entirely and can never equal the plan's umbrella-relative path. Match
-    # the repo-relative path against the same repo's approved entries instead. Without
-    # this the guard denies EVERY write by EVERY builder in a diamond -- which it did,
-    # undetected, from the day it was written until the first run actually fanned out.
-    main_root, rel = worktree_context(target)
-    if main_root and rel:
-        entries = rel_map.get(main_root) or {}
-        if any(_match(rel, a) for a in entries):
-            return
-
-    listed = "\n".join("  - %s" % shown for shown in sorted(allowed.values()))
-    deny(
-        "[plan-scope] `%s` is not in the file set a human approved for run `%s`.\n"
-        "Approved:\n%s\n"
-        "Do not work around this. Stop, report to the orchestrator what you need "
-        "and why the approved set was wrong, and let it decide: either the work "
-        "belongs to a different slice, or the orchestrator records the extension "
-        "in `scope_exceptions` and in this slice's `deviation_from_approved_plan`. "
-        "Silently widening scope after the gate is the failure the gate exists to "
-        "prevent." % (path, os.path.basename(run_dir), listed)
-    )
+    if unresolved:
+        # The fail-OPEN half, and the reason gap #13 is "mostly" closed rather than
+        # closed. The command writes something whose target could not be pinned to a
+        # path -- an unassigned variable, a substitution, operands arriving on stdin --
+        # so there is nothing to compare against the approved set. Measured at 2.63% of
+        # the corpus. Denying on it would be denying what we failed to understand, which
+        # gets a guard routed around; allowing it silently is the exact hole this run was
+        # opened to close. So: allow, and leave the record.
+        warn(
+            "[plan-scope] This Bash command writes something, and the target could not "
+            "be resolved from the command string -- so it was NOT checked against the "
+            "file set a human approved for run `%s`. Allowed, and recorded here.\n\n"
+            "  %s\n\n"
+            "Approved:\n%s\n"
+            "Builder: if that write lands outside the approved set, it is still a scope "
+            "violation and still yours to stop and report. Spelling the path literally "
+            "instead of through a variable lets the guard do this for you."
+            % (os.path.basename(run_dir), command.strip()[:COMMAND_ECHO], listed)
+        )
 
 
 def main():
@@ -298,6 +449,9 @@ def main():
     (the `agent_type` check above exempts the orchestrator and every other node), says
     exactly what broke, and is fixed in a minute. Failing open silently voids a human
     approval and leaves no trace. So: deny, loudly, naming this file as the problem.
+
+    This is also why `bash_write_targets` is imported inside `decide()` rather than at
+    module top: an import that fails up there is not caught here at all.
 
     A malformed payload is the one case still treated as an allow: without a parseable
     payload there is no `agent_type`, so the deny could not be scoped to builders and
