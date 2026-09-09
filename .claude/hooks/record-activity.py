@@ -26,6 +26,16 @@ Which is enough for four things the fleet could not previously answer:
 `agent_type` is absent for the main session, so those events are recorded as
 `orchestrator` -- it is a participant in the run and its writes belong in the record.
 
+`parent` (`parent_tool_use_id`, when the payload carries one) is recorded too, added
+2026-09-09 to diagnose gap #20: 1,411 of 1,496 `stop` events carry an `agent_id` that
+never had a matching `start`, are stamped `orchestrator` for lack of `agent_type`, and
+interleave with live work rather than clustering at a run's end -- not what "a subagent
+finished" should look like. The leading hypothesis is that the harness fires
+`SubagentStop` for something that isn't a `Task`-tool spawn -- a backgrounded `Bash`
+process, or an internal tool-use agent behind `WebSearch`/`WebFetch` -- and `parent`
+is the field that would show a phantom nested under a real node's own `tool_use_id`
+rather than orphaned. Unverified; this only logs the field, it draws no conclusion.
+
 Silent when no run is open or the run is closed. Never blocks, never raises: an
 unwritable log must not cost a tool call. Exit 0 always.
 """
@@ -81,6 +91,8 @@ def main():
     }
     if payload.get("agent_id"):
         line["id"] = str(payload["agent_id"])
+    if payload.get("parent_tool_use_id"):
+        line["parent"] = str(payload["parent_tool_use_id"])
     if event == "tool" and payload.get("tool_name"):
         line["tool"] = str(payload["tool_name"])
 
