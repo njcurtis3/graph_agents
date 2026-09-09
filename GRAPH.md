@@ -132,7 +132,17 @@ graph_agents/.graph/runs/<run-id>/state.json      # relative to repos/
 ```
 
 Contract for every node:
-1. **On start:** read `state.json`. That is your only inherited context.
+1. **On start:** read your brief — `python graph_agents/.graph/brief.py --for
+   <node>[:<slice>] <run-id>`. That is your primary inherited context: your goal, the
+   plan entry that concerns you, and whatever a node in your position needs from
+   whoever ran before you (scout's facts for a builder, a builder's report for its
+   reviewer, the whole built/reviewed picture for the fan-in nodes). It is derived —
+   never authored — from the same `state.json` this section has always described, so it
+   cannot drift from the file and costs no node a token to keep in sync. Read
+   `state.json` directly only for a key your brief omits that you actually need; do not
+   default to the full file out of habit, because that is the token cost this brief
+   exists to remove. `--for` degrades by naming what's missing rather than guessing —
+   `.graph/brief.py`'s own docstring has the shape per node type.
 2. **On finish:** append your result to your own key, including `written_by` naming
    yourself. Never rewrite another node's key, and never stamp `written_by` on one that
    is not yours.
@@ -284,7 +294,7 @@ editor. Those are `ops`'s to keep, and `ops.md` says so.
 |---|---|---|---|---|
 | `scout` | haiku | read-only | no | Find the facts. What exists, where, what breaks. |
 | `architect` | opus | read-only | no | Goal + facts → plan + graph shape. The router. |
-| `builder` | opus | isolated worktree † | yes | Implement exactly one slice. |
+| `builder` | sonnet | isolated worktree † | yes | Implement exactly one slice. |
 | `reviewer` | opus | fresh, never the builder's | no | Adversarial. Has authority to REJECT. |
 | `integrator` | opus | main tree | yes | The one owned merge point. Resolves conflicts. |
 | `ops` | opus | main tree | yes | CI, env, deploy. Always behind a human gate. |
@@ -308,7 +318,8 @@ globs, greps, reads, and reports `file:line`. That is pattern-matching, not reas
 haiku does it at roughly a fifth the cost of a mid-tier model, and it is usually the
 single biggest lever on a run's total spend.
 
-Everything else stays on opus, and two nodes especially must never be downgraded:
+`architect`, `reviewer`, `integrator` and `ops` stay on opus, and two of them especially
+must never be downgraded:
 
 - **`reviewer`** — its entire value is catching what the builder missed. A verifier that
   misses the bug is *worse* than no verifier, because it launders a bad diff as reviewed.
@@ -317,6 +328,15 @@ Everything else stays on opus, and two nodes especially must never be downgraded
   2026-08-25 huntstack run it was the architect that caught `survey_type` having five live
   values with a wrong schema comment; a flat-threshold badge built from the ticket text
   would have shipped broken.
+
+**`builder` is sonnet** (changed 2026-09-09), and this is not the same argument as the
+scout downgrade. A builder does not decide anything a human hasn't already approved — it
+executes exactly one slice against a file set and a `done_when` a human signed off at the
+gate (§5). The judgment already happened before the builder ever starts. What's left is
+implementation against a fixed contract, and the reviewer — never downgraded, always a
+fresh context — exists specifically to catch what a builder misses. That division of
+labor is what makes tiering the builder safe: cheapen the checker and you remove the
+reason the graph exists; cheapen the executor and the checker still does its job.
 
 **The consequence of a cheap scout:** haiku is less able to self-scope, so its brief must
 be tighter. Tell it exactly which questions to answer and which files to start from.

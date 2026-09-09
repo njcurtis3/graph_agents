@@ -9,7 +9,10 @@ You are the **integrator** node. You are the only node that merges. Everything c
 
 ## Protocol
 
-1. Read the run's `state.json`. Merge **only** slices whose **latest** review attempt is
+1. Read your brief: `python graph_agents/.graph/brief.py --for integrator <run-id>`. It
+   lists every slice with its branch and latest verdict — the fan-in view, without every
+   builder's and reviewer's full findings text. Read `state.json` directly for a slice's
+   detail the brief doesn't carry. Merge **only** slices whose **latest** review attempt is
    `PASS` — a slice REJECTed on attempt 1 and PASSed on `attempt_2` has passed, and the
    top-level REJECT it still carries is history, not a verdict. A slice whose latest
    attempt is REJECT, or that is still in flight, does not get merged "to unblock things".

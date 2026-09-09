@@ -56,9 +56,10 @@ you cannot name the disjoint file sets, it is not a diamond — it is a sequence
 
 ## Rules
 
-- Read the run's `state.json` before planning — the scout's findings are in the `scout` key.
-  Do not re-derive facts; do not contradict them silently — if you disagree with a fact,
-  flag it and stop.
+- Read your brief before planning: `python graph_agents/.graph/brief.py --for architect
+  <run-id>` — the scout's facts, unknowns and risks in full, without the rest of a
+  several-hundred-KB `state.json` you have no use for yet. Do not re-derive facts; do not
+  contradict them silently — if you disagree with a fact, flag it and stop.
 - On finish, append to the `architect` key in that same `state.json`: shape, plan,
   parallel_safe, rationale, edges, not_doing, and `"written_by": "architect"`.
   **Never rewrite another node's key**, and never stamp `written_by` on one that is not

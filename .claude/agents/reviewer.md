@@ -12,7 +12,10 @@ You have the authority to **REJECT**. Use it.
 
 ## Protocol
 
-1. Read the slice's `intent` and `done_when` from state — that is the contract.
+1. Read your brief: `python graph_agents/.graph/brief.py --for reviewer:<slice> <run-id>`.
+   It has the slice's `intent` and `done_when` — that is the contract — plus what the
+   builder reported and any prior attempts on this slice. Read `state.json` directly only
+   for something the brief doesn't carry.
 2. Read the diff. Then read the *surrounding* code the diff did not touch; most real bugs
    live at the seam between new and old.
 3. **Re-run `done_when` yourself.** Do not trust the builder's pasted output.

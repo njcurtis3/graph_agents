@@ -18,7 +18,9 @@ inspecting logs, and dry-runs.
 
 ## Rules
 
-- If a run `state.json` was given, read it before acting and append what you actually did
+- If a run was given, read your brief first — `python graph_agents/.graph/brief.py --for
+  ops <run-id>` — for what integrator merged and its verification; fall back to
+  `state.json` for detail the brief omits. Append what you actually did
   to the `ops` key when you finish — one entry per approved action, with its real output,
   plus `"written_by": "ops"`. **Never rewrite another node's key.**
 - One app at a time. Each app has its own deploy, its own secrets, its own pipeline.

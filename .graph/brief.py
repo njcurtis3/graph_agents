@@ -4,6 +4,7 @@
     python graph_agents/.graph/brief.py             # the open run (.graph/CURRENT)
     python graph_agents/.graph/brief.py <run-id>
     python graph_agents/.graph/brief.py --ascii <run-id>
+    python graph_agents/.graph/brief.py --for <node>[:<slice>] [<run-id>]
 
     2026-09-02-date-accuracy | huntstack | building | gate ok
       goal   Fix the UTC off-by-one so season dates render the day the regulation says
@@ -21,6 +22,16 @@ other -- and it is deliberately unbudgeted: a builder's `changed` entry runs to 
 paragraph per file because the reviewer needs that. The HUMAN channel is the main tab,
 and until now it was fed by pasting the machine channel into it. A run then reads as
 several thousand words of correct, necessary, unreadable detail.
+
+`--for` is a THIRD channel: not human, not the raw machine file, but the slice of the
+machine file one node actually needs to do its job. `state.json`'s "on start" contract
+used to mean "read the whole file" -- every node inheriting every other node's context
+whether it uses it or not, which on a several-hundred-KB run is tens of thousands of
+tokens of keys the node reading them will never touch. A builder does not need the
+reviewer's schema comment or another slice's file list; it needs its own plan entry, the
+facts that justified it, and -- on a re-run -- what the last review said was wrong.
+`--for` derives exactly that, per node type, from the same `state.json` this file has
+always read. Nothing here is authored either: same guarantee as the board, smaller slice.
 
 A slice's verdict is its LATEST review attempt, and a slice that got there the hard way
 says so -- `review PASS (looped, attempt 2: REJECT -> PASS)`. Both halves are the
@@ -452,10 +463,200 @@ def board(state, path, g):
     return lines
 
 
+# -------------------------------------------------------------------- --for
+
+def _plan_entry(reader, state, sid):
+    entries = reader.get(state, "architect.plan")
+    if isinstance(entries, list):
+        for entry in entries:
+            if isinstance(entry, dict) and entry.get("slice") == sid:
+                return entry
+    return None
+
+
+def _fmt_plan_entry(entry):
+    lines = ["  slice  %s" % entry.get("slice")]
+    if entry.get("intent"):
+        lines.append("    intent      %s" % entry["intent"])
+    files = entry.get("files")
+    if files:
+        lines.append("    files       %s" % ", ".join(files))
+    if entry.get("done_when"):
+        lines.append("    done_when   %s" % entry["done_when"])
+    if str(entry.get("risk") or "").strip():
+        lines.append("    risk        %s" % entry["risk"])
+    return lines
+
+
+def _fmt_review_attempts(attempts):
+    """Every past attempt on a slice, oldest first -- what a re-run needs to fix."""
+    lines = []
+    for a in attempts:
+        lines.append("    attempt %s: %s" % (a.get("attempt"), a.get("verdict") or "?"))
+        if a.get("summary"):
+            lines.append("      %s" % a["summary"])
+        for f in a.get("findings") or []:
+            if isinstance(f, dict):
+                where = f.get("file") or "?"
+                if f.get("line"):
+                    where += ":%s" % f["line"]
+                lines.append("      - [%s] %s -- %s" % (
+                    f.get("severity") or "?", where, f.get("issue") or ""))
+    return lines
+
+
+def node_brief(reader, state, node, sid):
+    """The slice of `state.json` one node type actually needs to do its job.
+
+    Not a smaller board -- a different shape per node, because each reads for a
+    different purpose: a builder needs its own plan entry and why it exists, a
+    reviewer needs that same entry plus what the builder claims it did, an
+    integrator needs the whole built/reviewed picture because fan-in has no smaller
+    unit than "everything that passed." Falls back to naming what is missing rather
+    than guessing, same rule as the rest of this file.
+    """
+    lines = []
+    lines.append("goal   %s" % clip(reader.get(state, "goal"), width=200))
+    lines.append("app    %s" % (reader.get(state, "app") or "?"))
+    lines.append("status %s" % (reader.get(state, "status") or "?"))
+
+    if node == "scout":
+        lines.append("")
+        lines.append("(first node on this run -- nothing yet to inherit)")
+        return lines
+
+    if node == "architect":
+        lines.append("")
+        if reader.written(state, "scout"):
+            for f in reader.get(state, "scout.facts") or []:
+                lines.append("  fact     %s" % f)
+            for u in reader.get(state, "scout.unknowns") or []:
+                lines.append("  unknown  %s" % u)
+            for r in reader.get(state, "scout.risks") or []:
+                lines.append("  risk     %s" % r)
+        else:
+            lines.append("(scout has not written yet)")
+        return lines
+
+    if node in ("builder", "reviewer") and not sid:
+        lines.append("")
+        lines.append("!! --for %s needs a slice: --for %s:<slice>" % (node, node))
+        return lines
+
+    if node == "builder":
+        entry = _plan_entry(reader, state, sid)
+        lines.append("")
+        if entry:
+            lines.extend(_fmt_plan_entry(entry))
+        else:
+            lines.append("!! no architect.plan entry for slice %s" % sid)
+        facts = reader.get(state, "scout.facts") or []
+        if facts:
+            lines.append("")
+            lines.append("  scout facts")
+            for f in facts:
+                lines.append("    - %s" % f)
+        attempts = reader.review_attempts(state, sid)
+        if attempts:
+            lines.append("")
+            lines.append("  prior review attempts on this slice (fix what these flagged)")
+            lines.extend(_fmt_review_attempts(attempts))
+        return lines
+
+    if node == "reviewer":
+        entry = _plan_entry(reader, state, sid)
+        lines.append("")
+        if entry:
+            lines.extend(_fmt_plan_entry(entry))
+        else:
+            lines.append("!! no architect.plan entry for slice %s" % sid)
+        lines.append("")
+        if reader.written(state, "builders.%s" % sid):
+            b = reader.get(state, "builders.%s" % sid) or {}
+            lines.append("  builder reported")
+            lines.append("    status   %s" % b.get("status"))
+            lines.append("    branch   %s" % (b.get("branch") or "(none)"))
+            if b.get("changed"):
+                lines.append("    changed  %s" % ", ".join(str(c) for c in b["changed"]))
+            if b.get("notes"):
+                lines.append("    notes    %s" % b["notes"])
+            if b.get("gate_results"):
+                lines.append("    gate_results")
+                lines.append("      %s" % b["gate_results"])
+            if b.get("deviation_from_approved_plan"):
+                lines.append("    deviation  %s" % b["deviation_from_approved_plan"])
+        else:
+            lines.append("!! builder has not written builders.%s yet" % sid)
+        attempts = reader.review_attempts(state, sid)
+        if attempts:
+            lines.append("")
+            lines.append("  prior review attempts on this slice (yours is the next one)")
+            lines.extend(_fmt_review_attempts(attempts))
+        return lines
+
+    if node in ("integrator", "ops"):
+        lines.append("")
+        entries = reader.get(state, "architect.plan")
+        plan = {}
+        if isinstance(entries, list):
+            for e in entries:
+                if isinstance(e, dict) and isinstance(e.get("slice"), str):
+                    plan[e["slice"]] = e
+        for slice_id in reader.slices(state):
+            entry = plan.get(slice_id, {})
+            built = reader.written(state, "builders.%s" % slice_id)
+            verdict = reader.final_verdict(state, slice_id) if built else None
+            b = reader.get(state, "builders.%s" % slice_id) or {}
+            lines.append("  %s  %s  branch=%s  verdict=%s" % (
+                slice_id, entry.get("intent") or "?",
+                b.get("branch") or "(none)", verdict or "--"))
+        if node == "ops":
+            lines.append("")
+            if reader.written(state, "integrator"):
+                i = reader.get(state, "integrator") or {}
+                lines.append("  integrator merged  %s" % ", ".join(
+                    str(m) for m in (i.get("merged") or [])))
+                if i.get("verification"):
+                    lines.append("  integrator verification  %s" % i["verification"])
+            else:
+                lines.append("!! integrator has not written yet")
+        return lines
+
+    lines.append("")
+    lines.append("!! unknown node %r -- expected one of: scout, architect, builder, "
+                  "reviewer, integrator, ops" % node)
+    return lines
+
+
 def main(argv):
     force_ascii = "--ascii" in argv
     argv = [a for a in argv if a != "--ascii"]
     g = glyphs(force_ascii)
+
+    if "--for" in argv:
+        i = argv.index("--for")
+        try:
+            target = argv[i + 1]
+        except IndexError:
+            sys.stderr.write("brief: --for needs a value, e.g. --for builder:s1\n")
+            return 1
+        rest = argv[:i] + argv[i + 2:]
+        node, _, sid = target.partition(":")
+        run_id = rest[0] if rest else open_run()
+        if not run_id:
+            sys.stderr.write("brief: no run given, and .graph/CURRENT names none\n")
+            return 1
+        try:
+            state, _path = load_state(run_id)
+        except (OSError, ValueError) as exc:
+            sys.stderr.write("brief: cannot read run %s (%s)\n" % (run_id, exc))
+            return 1
+        if not isinstance(state, dict):
+            sys.stderr.write("brief: %s is not a JSON object\n" % run_id)
+            return 1
+        for line in node_brief(Reader(), state, node, sid):
+            print(line)
+        return 0
 
     run_id = argv[0] if argv else open_run()
     if not run_id:
