@@ -123,9 +123,21 @@ Set `approved_by_human: true` only after they actually say so.
 
 **The approved file set is now a boundary, not a description.**
 `.claude/hooks/guard-builder-scope.py` is a `PreToolUse` hook that **denies** a
-`Write`/`Edit` from any `builder` to a path outside the union of `architect.plan[].files`
-(plus the run's own `state.json`). It reads the run through `.graph/CURRENT`, so step 1's
-pointer is load-bearing here.
+`Write`/`Edit` — and since 2026-09-09 a `Bash` write — from any `builder` to a path outside
+the union of `architect.plan[].files` (plus the run's own `state.json`).
+For `Bash` the command string is classified for write targets (redirect, heredoc, `tee`,
+`sed -i`, `rm`, `cp`, `curl -o`, an interpreter body) and each resolved path is judged the
+same way. It reads the run through `.graph/CURRENT`, so step 1's pointer is load-bearing
+here.
+
+**Read the `Bash` half as mostly guarded, not guarded.** What the guard cannot see it
+allows: a write performed by a program the builder invokes (`npm run build`, `pytest`, a
+script written to an approved path and then run) is out of scope by design, since catching
+it means denying every test command. A write shape whose target cannot be resolved from
+the string — a shell variable, a `$(...)`, a command over the classifier's 128KB cap —
+is allowed and **recorded as a warning**, which closes the trace half of the hole where it
+cannot close the denial half. Plan on that: the gate's file set is a permission grant
+enforced on three tools, not a sandbox.
 
 When a builder comes back saying it was denied, that is the gate working. Decide, do not
 reflex-widen:

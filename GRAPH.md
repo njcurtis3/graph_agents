@@ -351,11 +351,15 @@ Place them exactly where a mistake gets expensive to undo:
 
 - after `architect` — before any code exists (cheapest possible place to change your mind).
   **What you approve here is now binding**: `.claude/hooks/guard-builder-scope.py` denies
-  a builder's `Write`/`Edit` outside `architect.plan[].files`, so the file set is a
-  boundary rather than a description. Widening it after the fact is possible, deliberate
-  and recorded — `scope_exceptions` plus the slice's `deviation_from_approved_plan` —
-  never silent. Read the file list at the gate as if it were a permission grant, because
-  it is one.
+  a builder's `Write`/`Edit` outside `architect.plan[].files`, and denies a `Bash` command
+  whose write target it can resolve outside them — a redirect, a heredoc, `tee`, `sed -i`,
+  `rm`, `cp`, `curl -o`, a `python -c` body. So the file set is a boundary rather than a
+  description. It is **mostly** a boundary on `Bash`: a write by a program the builder
+  invokes (`pytest`, `npm run build`) is deliberately not caught, and a target that cannot
+  be resolved from the command string is allowed with a warning rather than denied. Read
+  the file list at the gate as a permission grant on three tools with a documented hole,
+  not as a sandbox. Widening it after the fact is possible, deliberate and recorded —
+  `scope_exceptions` plus the slice's `deviation_from_approved_plan` — never silent.
 - before `ops` — deploys, DB migrations, anything that costs money or touches prod
 - before creating a new app — a new repo is a long-term maintenance commitment
 
