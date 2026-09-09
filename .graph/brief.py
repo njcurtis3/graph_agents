@@ -500,8 +500,10 @@ def _fmt_review_attempts(attempts):
                 where = f.get("file") or "?"
                 if f.get("line"):
                     where += ":%s" % f["line"]
-                lines.append("      - [%s] %s -- %s" % (
-                    f.get("severity") or "?", where, f.get("issue") or ""))
+                origin = str(f.get("origin") or "").strip()
+                tail = "  (traces to %s)" % origin if origin else ""
+                lines.append("      - [%s] %s -- %s%s" % (
+                    f.get("severity") or "?", where, f.get("issue") or "", tail))
     return lines
 
 

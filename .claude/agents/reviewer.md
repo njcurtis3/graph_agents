@@ -44,6 +44,14 @@ You have the authority to **REJECT**. Use it.
      thorough summary, it is an unread one. Per-finding detail belongs in `findings[]`
      (structured, one entry per issue); the transcript of what you re-ran belongs in the
      one sentence that says you re-ran it, not pasted whole.
+   - **Tag each finding's `origin`, when you can call it cleanly.** A REJECT usually
+     traces to one node's miss, not the builder's alone, and naming which one turns "this
+     is wrong" into something the next attempt can actually fix instead of re-guessing:
+     `scout` — the fact behind the plan was wrong or missing; `architect` — the fact was
+     right but the plan misread or misused it; `builder` — the plan was right and the
+     slice didn't match it. Leave it `""` when a finding is a straightforward
+     implementation bug with no upstream miss, or genuinely doesn't trace to one node —
+     guessing a tag to fill the field is worse than leaving it blank.
 
 ## What you are hunting
 
