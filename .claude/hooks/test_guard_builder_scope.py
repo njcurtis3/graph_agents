@@ -29,11 +29,18 @@ import os
 import subprocess
 import sys
 import tempfile
+import time
 
 HERE = os.path.dirname(os.path.realpath(__file__))
 HOOK = os.path.join(HERE, "guard-builder-scope.py")
 FLEET = os.path.normpath(os.path.join(HERE, "..", ".."))
 UMBRELLA = os.path.dirname(FLEET)
+
+# The one thing imported rather than driven through stdin. The cap cases below have to
+# sit either side of the classifier's real limit, and a second copy of the number here
+# would drift from the one the hook enforces -- which is the bug those cases exist for.
+sys.path.insert(0, HERE)
+from bash_write_targets import MAX_COMMAND        # noqa: E402
 
 FAILURES = []
 
@@ -160,8 +167,13 @@ def outcome(command, agent="builder", cwd=None, run_in=None):
     return "allow", ""
 
 
-def heredoc(target):
-    return "cat <<'EOF' > %s\nhello\nEOF" % target
+def heredoc(target, body="hello"):
+    return "cat <<'EOF' > %s\n%s\nEOF" % (target, body)
+
+
+def heredoc_of(target, size):
+    """A heredoc writing `target` whose whole command string is at least `size` chars."""
+    return heredoc(target, "x" * size)
 
 
 def with_faulted_hook(needle, replacement, body):
@@ -301,6 +313,31 @@ def main():
         check("the denial quotes the command back", "sed -i" in reason, True)
         check("the denial names the approved set", "huntstack/apps/mobile" in reason, True)
 
+        # ...and it has to READ. Both branches shared one template ending in "... is not
+        # in the file set a human approved", which suited a `Write`'s single path and
+        # left the Bash branch dangling that predicate after the echoed command, so the
+        # builder read it as though the COMMAND were the thing not in the file set. A
+        # denial a builder cannot parse is one that gets routed around, so the wording is
+        # asserted here and not left to whoever reads the diff.
+        check("the Bash denial states the whole claim as one sentence",
+              "This Bash command writes a path that is not in the file set a human "
+              "approved for run" in reason, True)
+        # Ordering, not just presence: the old template put the claim AFTER the echoed
+        # command, which is exactly what made it read as though the command were the
+        # thing not in the file set. Substring checks cannot see that; position can.
+        claim, echoed = reason.find("is not in the file set"), reason.find("sed -i")
+        check("...and states that claim BEFORE the command it echoes, never after it",
+              claim >= 0 and echoed > claim, True)
+        check("...and says how to proceed", "scope_exceptions" in reason, True)
+        check("...and agrees in number when several paths are outside",
+              "writes paths that are not in the file set"
+              in outcome("echo a > huntstack/apps/web/a.tsx && "
+                         "echo b > huntstack/apps/web/b.tsx")[1], True)
+        # The `Write` branch keeps the wording it already read well with.
+        check("the Write denial still names the path and the claim together",
+              "main.tsx` is not in the file set a human approved for run"
+              in run_hook(builder_writing("huntstack/apps/web/main.tsx"))[1], True)
+
         print("\n  ...and commands that write nothing pay nothing:")
         for read_only in ("git status", "git diff --stat", "python -m pytest",
                           "node test.js", "grep -rn scope .", "ls -la", "npm run build"):
@@ -355,6 +392,73 @@ def main():
                         "tool_input": {"command": {"not": "a string"}}})[0], False)
 
     with_run(state_with(["huntstack/apps/mobile/**"]), bash)
+
+    # --- The escape hatch, which has to reach BOTH tools or it is not an escape. ---
+    # `scope_exceptions` is how the orchestrator widens a file set deliberately and
+    # auditably. It is read by `approved_paths`, so the Bash branch inherits it for free
+    # -- but "for free" is what nobody notices breaking.
+    print("\nthe `scope_exceptions` escape hatch reaches Bash too:")
+
+    def excepted(_run_dir):
+        check("a Bash write to an excepted path is ALLOWED",
+              outcome(heredoc("huntstack/apps/web/main.tsx"))[0], "allow")
+        check("a Write to the same excepted path is ALLOWED",
+              run_hook(builder_writing("huntstack/apps/web/main.tsx"))[0], False)
+        check("...and a path the exception does NOT name is still DENIED",
+              outcome(heredoc("huntstack/apps/web/other.tsx"))[0], "deny")
+
+    granted = state_with(["huntstack/apps/mobile/**"])
+    granted["scope_exceptions"] = ["huntstack/apps/web/main.tsx"]
+    with_run(granted, excepted)
+
+    # --- The classifier's length cap, and the hook's ordering around it. ---
+    # `classify` checks `MAX_COMMAND` BEFORE its own pre-filter and says why in words:
+    # `has_write_signature` is linear in any real command but quadratic in a run of
+    # separator characters, so "a cap checked afterwards bounds nothing at all". The hook
+    # ran that regex first and checked nothing, which put a 24.3s pre-filter in front of a
+    # hook registered with `timeout: 10` -- reached by the one input the cap exists to
+    # stop. The stopwatch below is the assertion that would have caught it.
+    print("\nthe classifier's length cap runs before the pre-filter:")
+
+    def oversize(_run_dir):
+        # A run of separator characters: cheap to type, quadratic to pre-filter, and it
+        # writes nothing at all. 601000 characters.
+        pathological = ("(" + "a/" * 300) * 1000
+        started = time.perf_counter()
+        state, text = outcome(pathological)
+        elapsed = time.perf_counter() - started
+        check("a 601KB pathological command answers in bounded time (%.2fs)" % elapsed,
+              elapsed < 5.0, True)
+        check("...and answers with a WARNING, not a denial and not silence", state, "warn")
+        check("...and the record says the command was too long to parse",
+              "longer than the write classifier's cap" in text, True)
+        check("...and it does not paste 601KB back into the builder's context",
+              len(text) < 5000, True)
+
+        # Finding :416. An over-cap write to an APPROVED path used to be told its target
+        # could not be resolved from the command string. It was resolved perfectly -- the
+        # classifier hit its cap and never looked. Saying the wrong one of those tells a
+        # builder to spell a path literally that already is literal.
+        state, text = outcome(heredoc_of("huntstack/apps/mobile/App.tsx",
+                                         MAX_COMMAND + 1000))
+        check("a large in-scope write WARNS (the cap fired, so nothing was judged)",
+              state, "warn")
+        check("...and the reason given is the cap, not an unresolvable target",
+              ("longer than the write classifier's cap" in text
+               and "could not be resolved from the command string" not in text), True)
+        check("...and it names the run and the approved set anyway",
+              "huntstack/apps/mobile" in text, True)
+        # ...and the cap is what changed the answer, not size in general.
+        check("the same write just under the cap is still ALLOWED",
+              outcome(heredoc_of("huntstack/apps/mobile/App.tsx",
+                                 MAX_COMMAND // 2))[0], "allow")
+        # The honest hole, pinned so it stays deliberate: past the cap the guard has no
+        # opinion about scope, so an OUT-of-scope write is recorded rather than denied.
+        check("an over-cap write to an out-of-scope path is recorded, not denied",
+              outcome(heredoc_of("huntstack/apps/web/main.tsx",
+                                 MAX_COMMAND + 1000))[0], "warn")
+
+    with_run(state_with(["huntstack/apps/mobile/**"]), oversize)
 
     def bash_closed(_run_dir):
         check("a closed run does not constrain a Bash write",
@@ -449,9 +553,9 @@ def main():
             check("a guard with no classifier still exits 0", code, 0)
 
         with_faulted_hook(
-            "from bash_write_targets import classify, has_write_signature",
+            "from bash_write_targets import MAX_COMMAND, classify, has_write_signature",
             "from bash_write_targets_deliberately_absent import "
-            "classify, has_write_signature",
+            "MAX_COMMAND, classify, has_write_signature",
             body)
 
     with_run(state_with(["huntstack/apps/mobile/**"]), classifier_missing)

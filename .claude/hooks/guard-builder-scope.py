@@ -82,6 +82,13 @@ CLOSED = ("done", "blocked")
 # paste a 40KB heredoc into the builder's context.
 COMMAND_ECHO = 400
 
+# What `bash_targets` puts in its second slot when a Bash command was NOT judged against
+# the approved set. Both are allow-and-record, and they are two labels rather than one
+# boolean because they are two different facts about the command -- and a warning that
+# reports the wrong one of them tells the builder to fix something that is not broken.
+UNRESOLVED_SHAPE = "shape"      # parsed, but a target is a runtime value
+OVER_MAX_COMMAND = "size"       # never parsed: longer than the classifier's cap
+
 
 def norm(path):
     """Absolute, junction-resolved, forward-slashed, case-folded on Windows."""
@@ -291,6 +298,10 @@ def transient_roots():
 def bash_targets(command, cwd):
     """(targets, unresolved) for a Bash command; (None, None) if it cannot write at all.
 
+    `unresolved` is False, `UNRESOLVED_SHAPE` or `OVER_MAX_COMMAND` -- truthy in the two
+    cases the caller must allow and record, and specific enough that the record says
+    which one happened.
+
     (None, None) is the pre-filter's answer and it is the reason this function exists
     separately: `has_write_signature` is a regex over the raw string, and returning here
     means the caller never opens `.graph/CURRENT` or a `state.json`. Measured over the
@@ -302,10 +313,36 @@ def bash_targets(command, cwd):
     and the harness reads that as a hook error and lets the write through -- which would
     silently re-open gap #17 in the act of closing gap #13. Imported inside the try, a
     missing or broken classifier denies and says so.
+
+    It sits above the length cap and the pre-filter rather than below them, which means a
+    broken classifier denies EVERY builder Bash call and not only write-shaped ones --
+    `git status` included. That is deliberate and it is the safe direction, but an
+    orchestrator recovering from it should know why it looks that way. Narrowing it would
+    mean answering "could this write?" without the classifier, i.e. a second copy of the
+    pre-filter living here; this guard has been fixed twice for having two matchers that
+    drifted, and a locked-out builder that is told what broke costs a minute where a
+    silently unguarded run costs a whole human approval.
     """
     if HERE not in sys.path:
         sys.path.insert(0, HERE)
-    from bash_write_targets import classify, has_write_signature
+    from bash_write_targets import MAX_COMMAND, classify, has_write_signature
+
+    # The cap goes BEFORE the pre-filter, in exactly the order `classify` puts it and for
+    # the reason it states in words: `has_write_signature` is linear in any real command
+    # but quadratic in a run of separator characters, so "a cap checked afterwards bounds
+    # nothing at all". Running the regex first put that cost straight back -- a 601KB
+    # command shaped `("(" + "a/" * 300) * 1000` spent 24.3s in the pre-filter, against
+    # the `timeout: 10` this hook is registered with, while `classify` answered in
+    # microseconds because its own cap fired first.
+    #
+    # `MAX_COMMAND` is IMPORTED, never restated. Two copies of a constant drift, and that
+    # is the same class of bug this guard has already been fixed for twice.
+    if len(command) > MAX_COMMAND:
+        # `classify` would return ([], True) here without reading the string at all, so
+        # nothing is known about this command -- not its targets, not even whether it
+        # writes. Allow and record, and let the caller say THAT rather than blaming an
+        # unresolvable target it never looked for.
+        return [], OVER_MAX_COMMAND
 
     if not has_write_signature(command):
         return None, None
@@ -326,7 +363,7 @@ def bash_targets(command, cwd):
             continue                          # a temp file is a sink, not the plan's tree
         if absolute not in resolved:
             resolved.append(absolute)
-    return resolved, unresolved
+    return resolved, (UNRESOLVED_SHAPE if unresolved else False)
 
 
 def deny(reason):
@@ -392,46 +429,86 @@ def decide():
 
     outside = [t for t in targets if not in_scope(t, allowed, rel_map)]
     listed = "\n".join("  - %s" % shown for shown in sorted(allowed.values()))
+    run_name = os.path.basename(run_dir)
 
     if outside:
+        # Each branch writes its own complete sentence. They used to share one template
+        # ending in "... is not in the file set a human approved", which read correctly
+        # for a `Write`'s single path and left the Bash branch dangling that predicate
+        # after the echoed command -- so the builder read it as though the COMMAND were
+        # the thing not in the file set. A denial nobody can parse is a denial that gets
+        # routed around instead of obeyed, which is the failure this whole guard exists
+        # to avoid.
         if path:
-            what = "`%s`" % path
+            headline = ("`%s` is not in the file set a human approved for run `%s`."
+                        % (path, run_name))
         else:
-            what = ("this command writes %s:\n%s\n\n  %s\n"
-                    % ("a file" if len(outside) == 1 else "files",
-                       "\n".join("  - %s" % t for t in outside),
-                       command.strip()[:COMMAND_ECHO]))
+            headline = ("This Bash command writes %s that %s not in the file set a "
+                        "human approved for run `%s`:\n%s\n\nThe command:\n  %s"
+                        % ("a path" if len(outside) == 1 else "paths",
+                           "is" if len(outside) == 1 else "are",
+                           run_name,
+                           "\n".join("  - %s" % t for t in outside),
+                           command.strip()[:COMMAND_ECHO]))
         deny(
-            "[plan-scope] %s is not in the file set a human approved for run `%s`.\n"
+            "[plan-scope] %s\n\n"
             "Approved:\n%s\n"
             "Do not work around this. Stop, report to the orchestrator what you need "
             "and why the approved set was wrong, and let it decide: either the work "
             "belongs to a different slice, or the orchestrator records the extension "
             "in `scope_exceptions` and in this slice's `deviation_from_approved_plan`. "
             "Silently widening scope after the gate is the failure the gate exists to "
-            "prevent." % (what, os.path.basename(run_dir), listed)
+            "prevent." % (headline, listed)
         )
         return
 
     if unresolved:
         # The fail-OPEN half, and the reason gap #13 is "mostly" closed rather than
-        # closed. The command writes something whose target could not be pinned to a
-        # path -- an unassigned variable, a substitution, operands arriving on stdin --
-        # so there is nothing to compare against the approved set. Measured at 2.63% of
-        # the corpus. Denying on it would be denying what we failed to understand, which
-        # gets a guard routed around; allowing it silently is the exact hole this run was
-        # opened to close. So: allow, and leave the record.
-        warn(
-            "[plan-scope] This Bash command writes something, and the target could not "
-            "be resolved from the command string -- so it was NOT checked against the "
-            "file set a human approved for run `%s`. Allowed, and recorded here.\n\n"
-            "  %s\n\n"
-            "Approved:\n%s\n"
-            "Builder: if that write lands outside the approved set, it is still a scope "
-            "violation and still yours to stop and report. Spelling the path literally "
-            "instead of through a variable lets the guard do this for you."
-            % (os.path.basename(run_dir), command.strip()[:COMMAND_ECHO], listed)
-        )
+        # closed. Something about this command could not be judged, so there is nothing
+        # to compare against the approved set. Denying on it would be denying what we
+        # failed to understand, which gets a guard routed around; allowing it silently is
+        # the exact hole this run was opened to close. So: allow, and leave the record.
+        #
+        # WHICH failure it was is not decoration. The two get different sentences because
+        # only one of them is the builder's to do anything about, and the size case used
+        # to be reported as the shape case: a 294KB heredoc to an APPROVED path was told
+        # its target could not be resolved and advised to spell the path literally, when
+        # the path already was literal and had been resolved perfectly -- the classifier
+        # had simply hit its cap and never looked. A boundary that explains itself wrongly
+        # is worse than one that says nothing.
+        if unresolved == OVER_MAX_COMMAND:
+            # No advice to give: nothing was parsed, so nothing is known about this
+            # command -- not its targets, not whether it writes at all.
+            warn(
+                "[plan-scope] This Bash command is longer than the write classifier's "
+                "cap (%d characters), so it was NOT parsed and NOT checked against the "
+                "file set a human approved for run `%s`. Nothing is known about what it "
+                "writes -- including whether it writes at all. Allowed, and recorded "
+                "here.\n\n"
+                "  %s\n\n"
+                "Approved:\n%s\n"
+                "Builder: if this command writes outside the approved set, that is still "
+                "a scope violation and still yours to stop and report. The cap is "
+                "`MAX_COMMAND` in `bash_write_targets.py`; a command this long is "
+                "usually a large heredoc, and writing the file with the `Write` tool "
+                "instead puts it back inside the guard."
+                % (len(command), run_name, command.strip()[:COMMAND_ECHO], listed)
+            )
+        else:
+            # Parsed, but a target is a runtime value -- an unassigned variable, a
+            # substitution, operands arriving on stdin. Measured at 2.63% of the corpus.
+            warn(
+                "[plan-scope] This Bash command writes something, and the target could "
+                "not be resolved from the command string -- so it was NOT checked "
+                "against the file set a human approved for run `%s`. Allowed, and "
+                "recorded here.\n\n"
+                "  %s\n\n"
+                "Approved:\n%s\n"
+                "Builder: if that write lands outside the approved set, it is still a "
+                "scope violation and still yours to stop and report. Spelling the path "
+                "literally instead of through a variable lets the guard do this for you."
+                % (run_name, command.strip()[:COMMAND_ECHO], listed)
+            )
 
 
 def main():
