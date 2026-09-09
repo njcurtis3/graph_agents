@@ -1,11 +1,45 @@
 # CURRENT-STATE — graph_agents
 
-> **Last verified: 2026-09-06**
+> **Last verified: 2026-09-09**
 >
 > A point-in-time snapshot **verified against disk**, not a living spec. `GRAPH.md` and
 > `CLAUDE.md` describe how the fleet is *supposed* to work; this file records what is
 > *actually true right now*. **Stale entries here are worse than missing ones** — if you
 > change the fleet, update this file in the same session, and bump the date above.
+>
+> **What the 2026-09-09 pass covers.** Run `2026-09-06-bash-write-guard`, three sequential
+> slices, and the prose it made false. Re-measured with `wc -l` this pass, every count
+> below taken from disk rather than from a gate report: `guard-builder-scope.py` 326→557,
+> `test_guard_builder_scope.py` 247→614, `GRAPH.md` 362→366, `feature-graph/SKILL.md`
+> 362→374, `builder.md` 80→89, plus three new files at 1689, 734 and 272. Re-ran all five
+> fleet suites on the run branch — `test_bash_write_targets.py` (199 cases),
+> `test_guard_builder_scope.py` (82 checks), `test_hooks_resolve.py` (9 commands),
+> `test_close_run.py`, `test_audit_fleet.py` — all exit 0, and `audit-fleet.py` afterwards.
+> Read the run's whole `log` and both `reviews` keys before writing, which is where the
+> numbers in gap #13 come from: the unresolved-write-shape rate, the pre-filter's two
+> different rates, the curl classifier delta, and five figures this run measured its way
+> out of and which must not be restated in their earlier form.
+> `audit-fleet.py` afterwards reports **112 claims checked, 4 drifted**, and all four are
+> named rather than left to be rediscovered: the *twelve runs vs 13 directories* headline
+> and the branch reading `feat/bash-write-guard` instead of `master` are this run being in
+> flight and resolve when it closes and merges; the two saying `bash_write_targets.py` and
+> `measure_bash_corpus.py` are "registered" with no `settings.json` entry are the auditor's
+> rule that every non-`test_` `.py` under `hooks/` is a hook, meeting a module and a
+> measurement tool — real, new, and booked in the What-is-live row rather than silenced.
+>
+> **What the 2026-09-09 pass does NOT cover.** No narrative section of any run was
+> re-read, here or in the run states — the per-run *what happened* sections, the Decisions
+> log above the row added today, and every gap other than #13 stand as earlier passes left
+> them. The roster's execution counts were **deliberately not bumped**: the auditor
+> measures scout 13 / architect 13 / builder 36 / reviewer 35 against the 12/12/34/33 in
+> the table, but this run is still open and writing its own keys as this pass runs, so any
+> number written here would be stale before the run closed. The **Status headline and the
+> Runs table are untouched on purpose** — that is `/close-run`'s work, and the auditor's
+> "twelve runs vs 13 directories" line is this run's own directory in flight. Two claims
+> this file does **not** make and a reader should not infer: nothing here says what the
+> harness does when a `PreToolUse` hook exceeds its `timeout` (unknown to this fleet — see
+> gap #13, item 10), and nothing here says the guard's linked-worktree path is tested (it
+> is reviewer-verified only, item 14).
 >
 > **What the 2026-09-06 second pass covers.** The commit-attribution guard: read every file it touches, ran its 38 subprocess cases and `test_hooks_resolve.py` (9 commands, all resolve) and `test_guard_builder_scope.py`, and verified the hook **live, twice** in a throwaway repo — a trailered commit denied, the same commit clean going through authored `njcurtis3` — once before the matcher was tightened and once after. Re-measured with `wc -l`: `CLAUDE.md` 95→113, `GRAPH.md` 336→362, `new-app` 96→100, `builder.md` 75→80, `integrator.md` 47→52, `ops.md` 49→54, plus the two new files at 217 and 234. Roster execution counts bumped to the auditor's measured values (scout 12, architect 12, builder 34, reviewer 33, integrator 1, ops 0) — those are counts of *written keys*, not a judgment that each node did its job. Audited all 11 sibling repos for existing contamination with `git log --all` and booked the result as gap #21. `audit-fleet.py` re-runs at **107 claims checked, none drifted**.
 >
@@ -173,19 +207,20 @@ this fleet has written a line of product code yet**", eleven hours after one had
 | Thing | State | Path |
 |---|---|---|
 | Umbrella constitution | live | `graph_agents/CLAUDE.md` (113 ln) |
-| Graph spec | live | `graph_agents/GRAPH.md` (362 ln) |
+| Graph spec | live | `graph_agents/GRAPH.md` (366 ln) |
 | Portfolio index | live, **5 nodes** — 2 products, 2 tools, 1 site — ids and `kind` verified 2026-08-31. **Narrowed from 8 to 4 on 2026-08-31**: `koenrane.xyz`, `personal-archive`, `thrml`, `whoop-med-tracker` removed at the owner's direction — those repos are personal, not part of the development umbrella going forward. Not deleted from disk, just deregistered; the fleet routes to none of them. **`telosrg-site` added same day** via `/new-app` — the org's public marketing site. Also gained `org`/`org_status`/`org_domain`/`org_domain_status`/`org_github`/`org_github_status` fields (2026-08-31): "Telos Research Group", working name not yet a formed legal entity; domain `telosrg.com` **purchased** 2026-08-31 (re-verified registered via RDAP against Verisign after the owner reported buying it); GitHub org **github.com/TelosRG registered** 2026-08-31 (re-verified via `api.github.com/orgs/TelosRG` after the owner reported creating it) | `graph_agents/portfolio/registry.json` (139 ln), **untracked on purpose** — see below |
 | Run-state schema | live | `graph_agents/.graph/runs/_schema.json` (32 ln) |
 | Root memory shim | live, `@`-imports the constitution | `repos/CLAUDE.md` |
 | `.claude` junction | live, verified same-dir | `repos/.claude` → `graph_agents/.claude` |
 | 6 agent nodes | live; **5 of 6** have executed as registered agents — `integrator` first ran 2026-08-26 (`archive-adapters`). **`ops` is the only node never executed** | `.claude/agents/` |
-| 5 skills | `feature-graph` exercised 3× (362 ln); `new-app` **exercised three times** — `personal-archive` 2026-08-26, `roamex` 2026-08-28, `telosrg-site` 2026-08-31 (100 ln); `fleetview` exercised (56 ln); `close-run` **added 2026-09-03, first real closes 2026-09-05 — the payload-split and review-attempts runs** (84 ln); `audit-fleet` **added 2026-09-03, exercised on this file the same day** (86 ln) | `.claude/skills/` |
+| 5 skills | `feature-graph` exercised 3× (374 ln); `new-app` **exercised three times** — `personal-archive` 2026-08-26, `roamex` 2026-08-28, `telosrg-site` 2026-08-31 (100 ln); `fleetview` exercised (56 ln); `close-run` **added 2026-09-03, first real closes 2026-09-05 — the payload-split and review-attempts runs** (84 ln); `audit-fleet` **added 2026-09-03, exercised on this file the same day** (86 ln) | `.claude/skills/` |
 | Fleet auditor | live, **added 2026-09-03**, and the first checker whose first run found live drift in this file. Diffs the *checkable* claims here against disk: every `(N ln)`, the roster's model/tool/line/has-executed cells against frontmatter and run state, app + node + skill counts, each registered app's directory and repo and entry docs, the Runs table against the run directories and their own `status`, branch and remote against git, `settings.json` hooks against the hook files **both ways**, and `Last verified:` against the commit dates of fleet definition files. Reports only drift. **It never writes, and in particular never stamps the date** — that decision is marked do-not-revisit. Prose is out of scope by construction | `graph_agents/.graph/audit-fleet.py` (589 ln), `graph_agents/.graph/test_audit_fleet.py` (352 ln), `.claude/skills/audit-fleet/SKILL.md` |
 | Close checker | live, **added 2026-09-03**, and **first used for real 2026-09-05** — it REFUSED `2026-09-04-payload-split`, which is why `2026-09-05-review-attempts` exists. Answers whether a run may be closed: `--audit` clean, gate passed, every slice — off-plan included — built and `PASS`, and **the work proved present in git** rather than in `state.json`. That fourth check is the one nothing else in the fleet makes. Read-only like `verify-state.py`; on green it prints the close for the orchestrator to write. Re-run against all 8 historical runs: `archive-adapters` reports closeable under `--recheck`, `fleet-hardening` reported **8 blockers**; since 2026-09-05 it reports **3** — the four verdict-based ones were a tooling blind spot, not findings, and the survivors (`closing_fix` unreviewed, no authorship stamps) are the real answer about it. `--recheck` exists to audit an already-closed run | `graph_agents/.graph/close-run.py` (254 ln), `graph_agents/.graph/test_close_run.py` (289 ln), `.claude/skills/close-run/SKILL.md` |
 | Scout fact collector | live, **added 2026-08-28**, not yet exercised by a real scout run. Verified by hand across all 8 apps: correct git/HEAD/dirty/identity, `--all` and `--json` modes, and the registry-vs-disk contradiction lines. Computes, never caches — a per-app fact *store* was designed and **rejected on evidence** the same day (see Decisions log) | `graph_agents/.graph/scout-facts.py` (250 ln), `scout.md` step 0 |
 | Staleness hook | live, **observed firing** 2026-08-25; rewritten 2026-08-26 (junction paths, run-close, `.py`) — 20 synthetic payloads pass | `.claude/settings.json`, `.claude/hooks/flag-stale-state.py` (114 ln) |
 | State verifier | live, **two modes**. Named-key mode: advisory, a check the orchestrator runs. `--audit` mode: fires from a hook, checks edge ordering. **Fixed 2026-08-26 (`4cbe78c`)** — it counted `_schema.json`'s example slice as real, so the fan-in check fired on *every* run reaching an integrator and no diamond could close green. 5 new fixtures + byte-identical output on all four prior runs | `graph_agents/.graph/verify-state.py` (560 ln), `graph_agents/.graph/test_verify_state.py` (238 ln) |
-| Plan-scope guard | live. **Fixed 2026-08-26 (`46e0f25`) to be worktree-aware** — it resolved plan entries against `repos/`, so it denied *every* write by *every* builder in a diamond. **Fixed again 2026-09-02: it did not glob.** A plan entry of `<dir>/**` normalised with its literal `**` attached, and since no real file is equal to or prefixed by a path ending in `**`, it denied *every* write under an approved directory — it blocked 3 of 4 slices of `2026-09-01-huntstack-mobile`, whose file sets were exactly that. Trailing `**`/`*` segments are now reduced to the directory they stand for at parse time, residual wildcards fall through to `fnmatch`, and both match sites share one `_match()` so they cannot drift apart a third time. **Now has a real self-test** (14 cases, previously the 14 "synthetic cases" lived only in a builder's transcript). **Exercised for real** across 9 builder runs with zero false denials since. ⚠️ **Matcher is `Write\|Edit` only, so a Bash write bypasses it entirely** — see gap #13. **Now fails CLOSED (2026-09-02)**: `main()` wraps `decide()` and emits a deny naming the hook itself as broken, and `settings.json` no longer swallows errors — a crash blocks builders loudly instead of silently voiding the human gate (gap #17, closed). All seven hook commands are now cwd-independent via `${CLAUDE_PROJECT_DIR:-.}` and covered by `test_hooks_resolve.py` (gap #18, closed) | `.claude/settings.json`, `.claude/hooks/guard-builder-scope.py` (326 ln), `.claude/hooks/test_guard_builder_scope.py` (247 ln) |
+| Plan-scope guard | live. **Fixed 2026-08-26 (`46e0f25`) to be worktree-aware** — it resolved plan entries against `repos/`, so it denied *every* write by *every* builder in a diamond. **Fixed again 2026-09-02: it did not glob.** A plan entry of `<dir>/**` normalised with its literal `**` attached, and since no real file is equal to or prefixed by a path ending in `**`, it denied *every* write under an approved directory — it blocked 3 of 4 slices of `2026-09-01-huntstack-mobile`, whose file sets were exactly that. Trailing `**`/`*` segments are now reduced to the directory they stand for at parse time, residual wildcards fall through to `fnmatch`, and both match sites share one `_match()` so they cannot drift apart a third time. **Now has a real self-test** (82 checks, up from 14; previously the 14 "synthetic cases" lived only in a builder's transcript). **Exercised for real** across 9 builder runs with zero false denials since. **Matcher is `Write\|Edit\|Bash` since 2026-09-09** — run `2026-09-06-bash-write-guard`, which narrows gap #13 to **mostly guarded** rather than closing it, and the honest limits are listed there in full. How the Bash half works: `bash_write_targets.py` classifies a command string into resolved write targets and an unresolved-write-shape flag, and every resolved path is judged by the **same `_match()`/`approved_paths()`** the `Write` branch uses — one matcher extended, not a second hook that can drift from it. Redirects, heredocs, `tee`, `sed -i`, `perl -i`, `rm`, `mkdir`, `touch`, `cp`, `mv`, `install`, `dd`, `truncate`, `ln`, `git checkout/restore/apply`, `curl -o`/`wget -O` and inspected `python -c`/`node -e` bodies are read; wrappers, `eval` of a literal, `$(...)` bodies and `xargs` are unwrapped. A correction the run measured and this file should not lose: `install`, `dd`, `truncate` and `ln` are implemented and tested but appear **0 times in command position** in the corpus — the scout's counts for them were substring hits (`npm install`, `dd` inside a hash, "truncate" in prose), and the mechanism list was planned partly on those. `curl` sits at 171 command-position uses, which is why it was added mid-slice on the human's call. **What it cannot resolve it ALLOWS and records** — 2.63% of real commands (55 of 2091 when last measured) are a write shape whose target is a variable or a substitution, and those emit a warning rather than a denial, which closes the trace half of gap #13 where it cannot close the denial half. A cheap regex pre-filter runs before any disk read so read-only work pays nothing: **pre-filter PASS rate 67.7%, zero-disk-I/O share 32.3%** (676 of 2091) — two different numbers, which this run conflated four times before measuring them apart; expect roughly one Bash call in three to skip the state read, not two in three. The pre-filter is a superset of the parser **anchor-relative, over unquoted, unescaped command-position spellings** — not a proof, a list, and the spellings outside it (`r""m`, `$'rm'`, a line continuation inside the verb) fail OPEN, 0 in the corpus. `MAX_COMMAND` (128KB) is checked **before** the pre-filter, so it bounds inputs above 128KB; it does **not** bound the pre-filter, whose regex is quadratic below the cap (gap #13, item 10). Adding `curl`/`wget` moved **14 corpus commands from clean to resolved**, added a target to 3 already-resolved ones and moved 1 to unresolved — the durable figure, since the corpus is live and grew 2073 → 2091 during this run's own passes. **Fails closed both ways**: a broken or missing classifier denies *every* builder Bash call, `git status` included, naming this hook — proven across eleven fault injections — while a classifier that returns a confident wrong answer is not detectable at all. **A changed matcher took effect MID-SESSION**: the `s2` builder's own Bash calls became guarded the moment `settings.json` was written, with no restart. Observed once, live, by that builder and corroborated by its reviewer from the shipped `warn()` string — **not independently reproduced**, because the guard exempts every non-`builder` agent, so a reviewer's own calls stay silent either way. **Fails CLOSED since 2026-09-02**: `main()` wraps `decide()` and emits a deny naming the hook itself as broken, and `settings.json` no longer swallows errors — a crash blocks builders loudly instead of silently voiding the human gate (gap #17, closed). All seven hook commands are now cwd-independent via `${CLAUDE_PROJECT_DIR:-.}` and covered by `test_hooks_resolve.py` (gap #18, closed) | `.claude/settings.json`, `.claude/hooks/guard-builder-scope.py` (557 ln), `.claude/hooks/test_guard_builder_scope.py` (614 ln) |
+| Bash write classifier | live, **added 2026-09-09**, and **not a hook** — a pure module the plan-scope guard imports (inside `main()`'s `try`, never at module top, because a top-level `ImportError` exits non-zero and the harness reads that as a hook error and lets the write through). `classify(command)` returns resolved target paths plus an unresolved-write-shape flag and holds **no opinion about scope**: it returns paths, the guard judges them. Self-tested at **199 cases**, 77 of them not-a-write and 42 of those lifted from the real corpus, with every command in the file swept through five re-spellings to check the pre-filter never hides a write the parser would act on. `measure_bash_corpus.py` is the measurement tool, run by hand, and the source of every ratio in the guard row above: it reads this machine's session transcripts **read-only** (owner-approved for this run) and emits counts, rates and shape labels — never command text, because those transcripts carry absolute owner paths. ⚠️ **Both files live in `.claude/hooks/` and neither is registered**, so `audit-fleet.py` reports each as "is registered — no settings.json entry runs it": its rule is that every non-`test_` `.py` under `hooks/` is a hook, and a module and a measurement tool are neither. Booked rather than silenced; the fix is to relocate them or to teach the auditor the difference, and it belongs to a later run | `.claude/hooks/bash_write_targets.py` (1689 ln), `.claude/hooks/test_bash_write_targets.py` (734 ln), `.claude/hooks/measure_bash_corpus.py` (272 ln) |
 | Commit-attribution guard | live, **added 2026-09-06**, and **verified live the same session** — a `git commit` carrying a Claude co-author was denied in a throwaway repo, then the same commit without it went through authored `njcurtis3`; re-verified after the matcher was tightened. The fleet's **second blocking hook** and the first registered on `Bash`. Denies any real `git commit` whose message carries a Claude co-author, a `Claude-Session:` trailer, a `Generated with [Claude Code]` line, a claude.ai/code link, `noreply@anthropic.com`, or an `--author` that is not the owner; reads a `-F`/`--file` message file as well as the command string, because a message composed with `Write` never appears in the command at all. Applies to **every** `agent_type`, orchestrator included — unlike the plan-scope guard, which is builder-only. **It denied its own documentation within minutes of being written**: the first matcher was `git…commit` on one line, and a heredoc writing the sentence *"denies any `git … commit`"* tripped it. `git` must now sit in a command position with only git's own globals between it and `commit`, and the false positive is pinned by three cases — prose about committing is not committing, and a guard that cannot tell them apart gets routed around instead of obeyed. **Its own first commit message was then denied too**, for enumerating the patterns it blocks — accepted rather than fixed, because tightening the *command* matcher worked (prose about running a command is not running it) and there is no equivalent move for a message (a trailer in a commit message IS prose in a commit message). Write about them without writing them. A `Co-Authored-By:` naming a **human** passes, and so does `git log \| grep -i co-authored`, which is how you audit for the thing. Fails **closed for commits and silent for everything else** — it sees every `Bash` call in the session, so a crash must not block `ls`; the last-ditch branch in `main()` emits the deny without going through `deny()`, since `deny()` is one of the things that can break. 38 subprocess cases | `.claude/settings.json`, `.claude/hooks/guard-commit-trailers.py` (223 ln), `.claude/hooks/test_guard_commit_trailers.py` (234 ln) |
 | Run board | live, **added 2026-09-03**, **used by real runs from 2026-09-04**, and since 2026-09-05 it draws a slice that looped. Renders one run's `state.json` + `activity.jsonl` as a ~10-line board: gate, goal, a line per node, a row per slice pairing build with verdict, and the in-flight lane. Authored by nothing — every value is derived, and the placeholder rules are imported from `verify-state.py` rather than restated, so "written" means the same to the board as to the audit. Verified against all 8 runs on disk (diamond, off-plan slices, an untouched template run, a `parked` run, runs with no heartbeat) plus a synthetic mid-flight fixture; ASCII fallback when the console encoding cannot take the glyphs | `graph_agents/.graph/brief.py` (479 ln), `graph_agents/.graph/test_brief.py` (191 ln), `feature-graph` § the board |
 | Run board hook | live, **added 2026-09-03**, and **observed rendering in the main tab the same day** — a fresh session, `.graph/CURRENT` pointed at a probe run, one `scout` spawned, board on screen. That closes the delivery half of gap #19: `systemMessage` from a non-display `PostToolUse` event does reach the user. The same test corrected the design: it fires at **dispatch, not at return**. All 32 `Agent` events across the five runs carrying a heartbeat land within 0.2s of a `SubagentStart` and never near a node's own stop, because a spawn call returns a handle and the node runs in the background. So this prints the board a node *picks up*, and the post-return board is the orchestrator's own by hand — no hook can print that one, since the event that fires there is `SubagentStop`. Silent on every other tool, on `SubagentStop`, on a subagent caller, on a closed run and on no open run. Self-tested through 24 subprocess cases against a **copied** fleet in a temp dir rather than by borrowing the live `.graph/CURRENT` | `.claude/settings.json`, `.claude/hooks/show-board.py` (118 ln), `.claude/hooks/test_show_board.py` (160 ln) |
@@ -215,7 +250,7 @@ this explanation and this explanation did not exist; both ends were fixed 2026-0
 |---|---|---|---|---|
 | `scout` | haiku | Read, Glob, Grep, Bash, WebSearch, WebFetch | 67 | yes, 12 runs |
 | `architect` | opus | Read, Glob, Grep, Bash | 96 | yes, 12 runs |
-| `builder` | opus | Read, Write, Edit, Glob, Grep, Bash | 80 | yes, 34 slices |
+| `builder` | opus | Read, Write, Edit, Glob, Grep, Bash | 89 | yes, 34 slices |
 | `reviewer` | opus | Read, Glob, Grep, Bash | 97 | yes, 33 reviews |
 | `integrator` | opus | Read, Write, Edit, Glob, Grep, Bash | 52 | yes, 1 run |
 | `ops` | opus | Read, Write, Edit, Glob, Grep, Bash | 54 | **no** |
@@ -232,6 +267,14 @@ Return block already capped at one line — while `gate_results` stayed verbatim
 designed. Step 4 now spells out the `notes` cap inline next to where it's written, not
 just in the Return block, and states explicitly that `gate_results` is the one field
 allowed to be long.
+
+`builder` moved a third time on 2026-09-09, 80→89, and this one was forced rather than
+chosen: step 1 said a `PreToolUse` hook denies a `Write`/`Edit` outside the approved set,
+which after run `2026-09-06-bash-write-guard` taught a builder the opposite of the truth —
+that a Bash write was unwatched. Step 1 and the first **Hard boundaries** bullet now name
+`Bash` and, in the same breath, what the guard does **not** catch, so no node is taught to
+trust it further than it goes. `GRAPH.md` § 5 and `feature-graph` step 5 carry the same
+correction; those three files are the fleet's only prose about that boundary.
 
 `reviewer` moved 79→85 on 2026-09-04 for the same reason, one layer over: `summary` is
 specced as "one paragraph a human can read without opening `findings[]`" and the reviews
@@ -505,15 +548,94 @@ still read by a human or by an agent that says which parts it actually re-read.
     `["a","b"]` as the template now produces the warning and still exits correctly.
 12. ~~No `.gitattributes`, and `core.autocrlf` is `true` globally.~~ **Closed** 2026-08-25,
     same pass. `graph_agents/.gitattributes` added: `* text=auto eol=lf`.
-13. **The plan-scope guard covers `Write`/`Edit` only, so a Bash write bypasses it entirely.**
-    `settings.json` registers the `PreToolUse` matcher as `Write|Edit`, and every `builder` has
-    `Bash`. A builder writing through `sed`, a heredoc or `python -c` never reaches the hook: no
-    denial, no record, no trace. The approved file set is presented to a human at the step-4 gate as
-    a permission boundary; it is a boundary on **two write paths out of several**. **Raised by a
-    builder itself, unprompted** — `s1-whoop` reported that it had deliberately kept using `Edit`
-    *because* a Bash edit would have evaded the guard silently. That is simultaneously the best
-    evidence the fleet's norms hold and the clearest statement that the machinery does not. Open;
-    it is the most serious gap on this list.
+13. **A Bash write is now MOSTLY GUARDED — narrowed 2026-09-09, deliberately not closed.**
+    Run `2026-09-06-bash-write-guard`, three sequential slices, `Write|Edit` →
+    `Write|Edit|Bash`. A builder's Bash command is classified for write targets and every
+    path that resolves is judged against the approved file set by the same matcher a
+    `Write` goes through, so `sed -i`, a heredoc, `tee`, `rm`, `cp`, `curl -o` and a
+    `python -c` body are denied outside scope where they used to pass unseen — and a write
+    shape whose target cannot be resolved is **allowed with a warning**, which leaves a
+    record where it cannot leave a denial. The original raising stands as written:
+    **raised by a builder itself, unprompted** — `s1-whoop` reported that it had
+    deliberately kept using `Edit` *because* a Bash edit would have evaded the guard
+    silently. That is still the best evidence the fleet's norms hold.
+    **The phrase is "mostly guarded" by the human's own condition at the gate**, and the
+    reason is worth keeping: a snapshot that reads *closed* over a boundary that is
+    measurably open is worse than the documented hole it replaces. So the limits are a
+    list, not an implication. Items 1–9 are the NOT DOING list approved **before** the
+    build; 10–16 are what the build and its five reviews then found.
+    1. **NOT** catching writes performed by a program the builder invokes: `npm run
+       build`, `make`, `bash script.sh`, `pytest`, or a script written to an approved file
+       and then executed. **This is the largest hole and it is deliberate** — catching it
+       means denying every test command, and a guard that denies `pytest` is switched off
+       within a day.
+    2. **NOT** catching obfuscated writes: a base64 or `exec` payload inside `python -c`, a
+       target assembled by joining runtime variables, `eval` of a variable.
+    3. **NOT** catching writes whose target is a shell variable the parser cannot resolve
+       within the single command string. These **allow with a warning; they do not deny**.
+       The plan estimated 126 of 2070 unique corpus commands (6%); measured against the
+       built classifier it is **2.63% — 55 of 2091 when last measured**, inside the 3%
+       budget the architect set. The bucket is 24 unassigned variables, 15 `$(...)` or
+       backtick substitutions, 7 heredoc-fed interpreters, 5 interpreter bodies and 4
+       `xargs` — noise, not a mechanism hiding in it.
+    4. **NOT** catching a write by any tool other than `Write`, `Edit` and `Bash`.
+       `NotebookEdit` and MCP tools stay unguarded.
+    5. **NOT** closing gap #14 (the `scope_exceptions` placeholder parsed as a path) or
+       gap #15 (the staleness hook firing in worktrees), even though both live in these
+       files and both are tempting.
+    6. **NOT** adding caching to `open_run()`. The pre-filter solves the hot path; a state
+       cache inside a `PreToolUse` hook is a correctness hazard of its own and needs its
+       own run.
+    7. **NOT** switching the guard from deny to *ask* for the unresolvable bucket.
+       Subagent `ask` behaviour is unverified harness behaviour, and a plan should not
+       branch on one.
+    8. **NOT** touching the Status headline count or the Runs table in this file. That
+       belongs to `/close-run`.
+    9. **NOT** writing anything to the session scratchpad during the build — the guard
+       lands mid-run and the scratchpad is outside every approved set.
+    10. **The pre-filter regex is quadratic below the cap, and the human decided to
+        document it rather than fix it.** `MAX_COMMAND` (128KB) is checked *before* the
+        pre-filter, so it bounds inputs above 128KB — it does **not** bound the pre-filter.
+        Measured: 32,000 semicolons is ~15.1s of pre-filter, at 32KB, well under the cap,
+        against the `timeout: 10` the hook is registered with. The decision and its
+        reasoning: the approved threat model is a **cooperative population**, an actual
+        evader has strictly easier routes already on this list, and rewriting the hot
+        regex of a classifier validated by three reviews trades a correctness risk for a
+        low-severity stall. What the harness does when a `PreToolUse` hook exceeds its
+        timeout is **NOT ESTABLISHED** — two probes were blocked by the safety classifier
+        and the builder correctly did not route around them, so this file asserts neither
+        deny, nor allow, nor error.
+    11. **Partial-quoting and intra-word-backslash spellings leak the pre-filter.** The
+        superset property is **anchor-relative, over unquoted, unescaped command-position
+        spellings** — a list, not a proof. An independent sweep of 1221 spellings found
+        ~90 leaks, every one inside the two families the module already names as missed.
+        They fail open: no denial, no record. 0 in the corpus.
+    12. **`exec rm -rf build` is not caught** — `exec` is not in the wrapper-verb list,
+        while `command rm -rf build` is. Fails open, 0 in the corpus.
+    13. **`cd a || echo x > f.md` assumes the `cd` was taken**, so it reports `a/f.md` for
+        a write that lands at `f.md`. Deny direction — an approved path can be denied on a
+        command that writes it. Same shape behind an `if`. 0 in the corpus.
+    14. **The guard's linked-worktree path has no self-test** and is reviewer-verified
+        only. This matters more than its size: diamonds run in linked worktrees, and this
+        guard once denied *every* builder write in one, undetected, because it had never
+        fired there. The Bash branch just doubled the number of callers depending on it.
+    15. **The fail-closed trap catches a classifier that breaks, not one that lies.**
+        Eleven fault modes — deleted, empty, syntax error, raise-on-import, each symbol
+        stripped — were proven to deny and exit 0. A stub returning a well-formed wrong
+        answer (`has_write_signature → False`) goes silent, and a `PreToolUse` hook cannot
+        tell *this writes nothing* from *I decided not to look*. Inherent to the deny-list
+        design, recorded so nobody reads the trap as wider than it is.
+    16. **Known debt: `bash_write_targets.py:97` states a measured claim that does not
+        reproduce** — "356 commands use this shape and only 57 of them write … 299 false
+        positives" could not be reproduced under four independent readings, on any
+        denominator. The design conclusion survives and is in fact understated; only the
+        pair of numbers is wrong. Byte-identical across all three of that slice's commits,
+        so two reviewers passed it before a third caught it. The human decided **not** to
+        reopen the slice to correct it, so it is booked here instead of fixed.
+    One number this list deliberately does not carry: **a corpus size as a fixed fact.**
+    The corpus is live and growing — 2073 → 2078 → 2089 → 2091 across this run's own
+    passes — so the ratios and the classifier deltas are the durable figures and an
+    absolute count is only ever true on the day it was taken.
 14. **`--audit` parses the untouched `scope_exceptions` placeholder as a file path.**
     `approved_paths()` skips prose with a heuristic — a space and no separator — and the
     `_schema.json` placeholder contains `/` (in "Write/Edit"), so it slips through, becomes a bogus
@@ -894,6 +1016,8 @@ What `2026-08-25-refuge-freshness` found in huntstack, independent of the featur
 | 2026-08-26 | `fleet-hardening`'s stale `reviews.s4`/`s5` keys are **left as they are** | The audit found a closed run whose state contradicts its own log. Editing those keys to make the audit green would be the orchestrator writing a reviewer's key — the exact contract violation the state file exists to prevent — and would destroy the evidence that the fleet ran for a day with an unverified close. The record stands; the gap list carries the finding |
 | 2026-08-28 | **Scout memory is a collector, not a cache — a per-app fact store was designed and rejected** | Past scout keys were checked against reality before building: `"graph_agents/ is NOT a git repository"` (2026-08-25) had become false, and `"6 app directories"` (2026-08-26) had become eight. Scouts do repeat work, but the facts they repeat most are the ones that rot fastest — and one of them, git-repo status, decides graph shape via § "No repo, no diamond". A cache would have served a confident wrong answer to the one question that must not be wrong; a stale `false` forces an unnecessary single-loop, a stale `true` fans builders out with no isolation. The facts are also one `git rev-parse` cheap, so caching them saves nothing worth the risk. `scout-facts.py` stores nothing and therefore cannot go stale |
 | 2026-08-26 | A prose cross-reference from an app to `graph_agents/` is **not** a forbidden edge; the test is whether deleting `graph_agents/` breaks the app's build, test or deploy | `new-app` mandates apps carry `see ../graph_agents/CLAUDE.md` verbatim, which read as a violation of "no app depends on the fleet". The distinction was real but unwritten, so the constitution now states it mechanically instead of leaving it to be re-litigated |
+| 2026-09-09 | **A changed `settings.json` matcher takes effect MID-SESSION — so a hook change is sequenced LAST in a run.** New fleet fact, measured rather than assumed: scout searched and found it recorded nowhere | The `s2` builder of `2026-09-06-bash-write-guard` wrote `Write\|Edit\|Bash` into `settings.json` and its *own* next Bash calls were guarded, with no restart and no re-registration. Corroborated by its reviewer — the pasted deny/warn text is byte-for-byte the string that commit's hook ships — but **not independently reproduced**, because the guard exempts every non-`builder` agent, so a reviewer's own calls stay silent whichever matcher is loaded. Recorded at that width: observed once, live, not a harness guarantee. The consequence is the rule: the switch goes live under the feet of whoever throws it, so a slice that changes a matcher must be the last thing a run does, and everything that has to be written *around* the new boundary is written before the flip. `feature-graph` step 0.5 already says to start a fresh session before the next run; this says the change bites before that session ever starts |
+| 2026-09-09 | **Gap #13 closes to "mostly guarded", never to "closed"** | Human's own condition at the step-4 gate, and the 9-item NOT DOING list was approved as the literal content of the new gap text. A deny-list over command strings cannot be complete — it fails open on an invoked program, on obfuscation, and on a target assembled at runtime — and a snapshot that reads *closed* over a boundary measurably 2.63% open is worse than the documented hole it replaced. The same rule governed the run's own numbers: five figures were corrected mid-run, and each correction was recorded rather than the earlier number quietly kept |
 
 ---
 
@@ -958,3 +1082,4 @@ What `2026-08-25-refuge-freshness` found in huntstack, independent of the featur
 | 2026-09-03 | **`builder.md` step 4 now spells out the `notes` one-line cap inline, not just in the Return block.** User-directed, prompted by FleetView being unreadable: real runs (`2026-09-02-date-accuracy`, all four slices) showed builders writing multi-paragraph self-justification prose into `notes` — narrating which tool they used, defending compliance with hooks, restating scope — instead of the one out-of-scope item the Return block already specified. `gate_results` was separately confirmed working as designed (verbatim evidence, per `_schema.json`); step 4 now says so explicitly so a builder doesn't over-correct and start summarizing it. `builder.md` 67→75 lines. No graph run — direct edit, single node file. FleetView side of the same complaint (progressive disclosure for `gate_results`) tracked as a separate `fleetview`-repo task, per the umbrella scope rule. |
 | 2026-09-04 | **`reviewer.md` gains a 1,200-character cap on `summary` — the same overflow one layer up.** User-directed, from a review of what else FleetView renders badly. The builder-side fix the day before left the worse case untouched: `reviews.<slice>.summary` is specced as "one paragraph a human can read without opening `findings[]`" and the reviews on disk are **10,637 / 8,497 / 7,980 characters** — roughly 1,500 words in a one-paragraph field, and FleetView renders two of them side by side in narrow columns on a REJECT-then-PASS slice. Step 4 now caps it and says where the overflow goes: `findings[]` for per-issue detail, one sentence for the re-run instead of its transcript. `reviewer.md` 79→85 lines. Direct edit, single node file, no graph run. Note the cap is prose and nothing enforces it — same standing weakness as gap #19. |
 | 2026-09-06 | **Claude commit attribution is now a check, not a convention — `guard-commit-trailers.py`, the fleet's second blocking hook and the first on `Bash`.** Owner-directed, prompted by the trailers landing in fleet commits *consistently* despite the rule being written down since 2026-08-26, when the history of two repos had to be rewritten to strip them. The diagnosis is that prose could never have held: Claude Code injects an attribution instruction into **every** session, orchestrator and subagent alike, as a system turn, so a node reading `CLAUDE.md` is being told opposite things by two authorities and the system turn tends to win. Four layers landed: the hook (denies the co-author, `Claude-Session`, the generated-with line, a claude.ai/code link, `noreply@anthropic.com`, and a non-owner `--author`; reads a `-F` message file too; applies to every `agent_type`); a new **invariant section in the constitution** and a restatement in the root `CLAUDE.md` that both say explicitly that the harness reminder does not apply here; a rule apiece in `builder.md`, `integrator.md` and `ops.md` — `ops` carries the part no hook can see, the PR body, release note and tag message; and `GRAPH.md` § 3 explaining why it is machinery rather than a sentence. **It denied its own documentation within minutes**: the first matcher was `git…commit` on one line and a heredoc writing that very sentence tripped it, so `git` must now sit in a command position with only git's own globals in between, pinned by three cases. Verified live twice in-session (denied, then the same commit clean, authored `njcurtis3`), 38 subprocess cases, `test_hooks_resolve.py` green at 9 commands. **Not** applied to history: 12 already-contaminated commits survive in `graph_agents` (4), `koenrane.xyz` (7) and `whoop-med-tracker` (1) — rewriting them means a force-push and is the owner's call, recorded in gap form rather than done unasked |
+| 2026-09-09 | **The plan-scope guard now reads a builder's Bash command before it runs — gap #13 narrowed to *mostly guarded*.** Run `2026-09-06-bash-write-guard`, three sequential slices: a standalone write-target classifier (`bash_write_targets.py`, 199 self-test cases) plus a corpus measurement tool; then the matcher `Write\|Edit` -> `Write\|Edit\|Bash` on the existing guard, with the classifier imported inside `main()`'s `try` so a broken import denies loudly instead of failing open; then this file and the three fleet docs that had said `Write`/`Edit`. Measured, not asserted: 2.63% of real commands are a write shape whose target cannot be resolved and are allowed **with a warning**; the pre-filter passes 67.7% of commands, so 32.3% touch no disk at all. **Not closed** — the 16 named limits are in gap #13, led by the deliberate one: a write by a program the builder invokes is not caught, because catching it means denying every test command |
