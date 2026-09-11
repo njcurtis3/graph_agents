@@ -71,6 +71,45 @@ with tempfile.TemporaryDirectory() as tmp:
     check("tokens_used_by on a missing file returns None, never a fabricated 0",
           ra.tokens_used_by(os.path.join(tmp, "does-not-exist.jsonl")) is None)
 
+# ---------- last_said_by ----------
+
+with tempfile.TemporaryDirectory() as tmp:
+    good = os.path.join(tmp, "agent-x.jsonl")
+    with open(good, "w", encoding="utf-8") as fh:
+        fh.write(json.dumps({"message": {"content": [
+            {"type": "text", "text": "First, reading the file.\n"}]}}) + "\n")
+        fh.write(json.dumps({"message": {"content": [
+            {"type": "tool_use", "name": "Read", "input": {}}]}}) + "\n")
+        fh.write("not json at all, a torn final line\n")
+        fh.write(json.dumps({"message": {"content": [
+            {"type": "text", "text": "  Now editing   the   file.  "},
+            {"type": "tool_use", "name": "Edit", "input": {}}]}}) + "\n")
+    check("last_said_by keeps only the NEWEST text block across turns",
+          ra.last_said_by(good) == "Now editing the file.")
+
+    toolonly = os.path.join(tmp, "agent-tool-only.jsonl")
+    with open(toolonly, "w", encoding="utf-8") as fh:
+        fh.write(json.dumps({"message": {"content": [
+            {"type": "tool_use", "name": "Read", "input": {}}]}}) + "\n")
+    check("last_said_by is None when a transcript has tool_use but no text block",
+          ra.last_said_by(toolonly) is None)
+
+    empty = os.path.join(tmp, "agent-empty2.jsonl")
+    open(empty, "w").close()
+    check("last_said_by on an empty file is None, not a fabricated caption",
+          ra.last_said_by(empty) is None)
+
+    check("last_said_by on a missing file returns None",
+          ra.last_said_by(os.path.join(tmp, "does-not-exist.jsonl")) is None)
+
+    long_text = os.path.join(tmp, "agent-long.jsonl")
+    with open(long_text, "w", encoding="utf-8") as fh:
+        fh.write(json.dumps({"message": {"content": [
+            {"type": "text", "text": "x" * 300}]}}) + "\n")
+    said = ra.last_said_by(long_text)
+    check("last_said_by caps a long block at SAY_MAX_CHARS, ellipsized",
+          said is not None and len(said) == ra.SAY_MAX_CHARS and said.endswith("…"))
+
 # ---------- main() end-to-end, via a fake HOME + stdin ----------
 
 
@@ -109,9 +148,10 @@ with tempfile.TemporaryDirectory() as tmp:
                                   ra.encode_cwd(r"C:\Users\test\repos"), "sessA", "subagents")
     os.makedirs(subagents_dir)
     with open(os.path.join(subagents_dir, "agent-b1.jsonl"), "w", encoding="utf-8") as fh:
-        fh.write(json.dumps({"message": {"usage": {
-            "input_tokens": 1, "output_tokens": 999,
-            "cache_creation_input_tokens": 0, "cache_read_input_tokens": 0}}}) + "\n")
+        fh.write(json.dumps({"message": {
+            "usage": {"input_tokens": 1, "output_tokens": 999,
+                      "cache_creation_input_tokens": 0, "cache_read_input_tokens": 0},
+            "content": [{"type": "text", "text": "Reading the target file first."}]}}) + "\n")
 
     run_main_with({
         "hook_event_name": "PostToolUse", "tool_name": "Edit",
@@ -126,9 +166,11 @@ with tempfile.TemporaryDirectory() as tmp:
           lines and lines[0].get("tokens") == 1000)
     check("main() still records the tool name alongside tokens",
           lines and lines[0].get("tool") == "Edit")
+    check("main() attached the real last-said caption from the same transcript",
+          lines and lines[0].get("say") == "Reading the target file first.")
 
     # A second tool event for an orchestrator-side call (no agent_id) must never
-    # attempt token accounting -- there is no per-instance transcript to sum.
+    # attempt token or say accounting -- there is no per-instance transcript to read.
     run_main_with({
         "hook_event_name": "PostToolUse", "tool_name": "Read",
         "cwd": r"C:\Users\test\repos", "session_id": "sessA",
@@ -137,9 +179,11 @@ with tempfile.TemporaryDirectory() as tmp:
         lines = [json.loads(l) for l in fh if l.strip()]
     check("an orchestrator-side event (no agent_id) carries no tokens field",
           "tokens" not in lines[-1])
+    check("an orchestrator-side event (no agent_id) carries no say field",
+          "say" not in lines[-1])
 
     # A tool event whose subagent transcript does not exist yet must not raise
-    # and must simply omit tokens.
+    # and must simply omit tokens and say.
     run_main_with({
         "hook_event_name": "PostToolUse", "tool_name": "Edit",
         "agent_type": "builder", "agent_id": "no-such-agent",
@@ -149,6 +193,8 @@ with tempfile.TemporaryDirectory() as tmp:
         lines = [json.loads(l) for l in fh if l.strip()]
     check("a missing transcript omits tokens rather than raising or faking 0",
           "tokens" not in lines[-1])
+    check("a missing transcript omits say rather than raising or faking a caption",
+          "say" not in lines[-1])
 
 
 passed = sum(1 for _, ok in checks if ok)

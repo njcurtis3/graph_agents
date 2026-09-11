@@ -10,8 +10,8 @@ delete. The hook layer, by contrast, already runs alongside every node and is ha
 So this writes `.graph/runs/<run>/activity.jsonl`: one compact JSON object per line.
 
     {"t": 1756209600.4, "ev": "start", "agent": "builder",  "id": "abc123"}
-    {"t": 1756209601.9, "ev": "tool",  "agent": "builder",  "id": "abc123", "tool": "Edit", "tokens": 4213}
-    {"t": 1756209640.2, "ev": "stop",  "agent": "builder",  "id": "abc123", "tokens": 5890}
+    {"t": 1756209601.9, "ev": "tool",  "agent": "builder",  "id": "abc123", "tool": "Edit", "tokens": 4213, "say": "Adding the retry wrapper around fetchState."}
+    {"t": 1756209640.2, "ev": "stop",  "agent": "builder",  "id": "abc123", "tokens": 5890, "say": "Done -- all three call sites now retry."}
 
 Which is enough for four things the fleet could not previously answer:
 
@@ -46,10 +46,21 @@ that carries an `agent_id`, this sums those four fields across every line of tha
 agent's transcript and writes the running total as `tokens` -- a cumulative count for that
 one instance, so the last value written is that instance's true final count.
 
-This is a real coupling to an undocumented, internal Claude Code storage layout rather
+`say` (added 2026-09-11) is the same idea applied to what an agent is actually saying, not
+just how much it costs. The same transcript line that carries `message.usage` also carries
+`message.content`, a list of blocks -- `text` blocks are the agent's own prose, `tool_use`
+blocks are calls. `last_said_by` walks the transcript and keeps the newest `text` block it
+finds, collapsed to one line and capped at 220 chars so activity.jsonl stays a heartbeat
+log and not a second copy of the transcript. Written as `say` on the same `tool`/`stop`
+events as `tokens`, from the same file read -- a snapshot of the latest thing said, not a
+running total, so unlike `tokens` a later write simply REPLACES the field rather than
+accumulating it.
+
+Both are a real coupling to an undocumented, internal Claude Code storage layout rather
 than to any documented hook field -- accepted deliberately (see fleetview's token-counter
-work) because the alternative is fabricating a number, and unwritten if the layout doesn't
-match: `tokens_used_by` returns `None` on any read/parse failure and the field is simply
+work) because the alternative is fabricating a number or a quote, and unwritten if the
+layout doesn't match: `tokens_used_by` returns `None` on any read/parse failure and
+`last_said_by` returns `None` when no text block is found, and each field is simply
 omitted from the line, exactly like every other best-effort field here.
 
 Silent when no run is open or the run is closed. Never blocks, never raises: an
@@ -124,6 +135,50 @@ def tokens_used_by(path):
                     total += value
     return total
 
+
+SAY_MAX_CHARS = 220
+
+
+def last_said_by(path):
+    """The newest thing an agent's own transcript has it saying, or None.
+
+    Walks every turn in the transcript looking for `message.content` blocks of
+    type "text" (an agent's own prose, as opposed to a "tool_use" block); keeps
+    only the latest one found, so a later turn always overwrites an earlier one.
+    Collapsed to one line and capped so this stays a caption, not a transcript
+    excerpt. Returns None when the file can't be read, is empty, or never once
+    contains a text block -- never a fabricated placeholder string.
+    """
+    try:
+        fh = open(path, encoding="utf-8")
+    except OSError:
+        return None
+    said = None
+    with fh:
+        for line in fh:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                obj = json.loads(line)
+            except ValueError:
+                continue        # a torn final line while Claude Code is mid-append
+            content = ((obj.get("message") or {}).get("content")
+                       if isinstance(obj, dict) else None)
+            if not isinstance(content, list):
+                continue
+            for block in content:
+                if isinstance(block, dict) and block.get("type") == "text":
+                    text = block.get("text")
+                    if isinstance(text, str) and text.strip():
+                        said = text.strip()
+    if said is None:
+        return None
+    said = " ".join(said.split())
+    if len(said) > SAY_MAX_CHARS:
+        said = said[:SAY_MAX_CHARS - 1].rstrip() + "…"
+    return said
+
 HERE = os.path.dirname(os.path.realpath(__file__))
 FLEET = os.path.normpath(os.path.join(HERE, "..", ".."))
 CURRENT = os.path.join(FLEET, ".graph", "CURRENT")
@@ -180,6 +235,9 @@ def main():
         tokens = tokens_used_by(tpath) if tpath else None
         if tokens is not None:
             line["tokens"] = tokens
+        say = last_said_by(tpath) if tpath else None
+        if say is not None:
+            line["say"] = say
 
     path = os.path.join(run_dir, "activity.jsonl")
     try:
