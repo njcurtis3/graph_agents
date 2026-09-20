@@ -509,6 +509,52 @@ def main():
     closed_state["status"] = "done"
     with_run(closed_state, closed)
 
+    def parked(_run_dir):
+        check("a parked run does not constrain the next builder either",
+              run_hook(builder_writing("huntstack/apps/web/src/main.tsx"))[0], False)
+
+    parked_state = state_with(["huntstack/apps/mobile/**"])
+    parked_state["status"] = "parked"
+    with_run(parked_state, parked)
+
+    # --- The schema placeholder is prose, not a path (gap #14). ---
+    # `scope_exceptions`' untouched placeholder contains "Write/Edit", so the "a space and
+    # no separator means prose" heuristic read a paragraph of schema documentation as an
+    # approved path: it polluted the `Approved:` list a denied builder is shown with the
+    # schema's own prose, which is the list that is supposed to tell them what to do next.
+    print("\nan untouched _schema.json placeholder is never a path:")
+
+    schema_path = os.path.join(FLEET, ".graph", "runs", "_schema.json")
+    with open(schema_path, encoding="utf-8") as fh:
+        placeholder = json.load(fh)["scope_exceptions"][0]
+    check("the placeholder really would slip the prose heuristic (else this proves nothing)",
+          " " in placeholder and "/" in placeholder, True)
+
+    def placeheld(_run_dir):
+        denied, reason = run_hook(builder_writing("huntstack/apps/web/other.tsx"))
+        check("an out-of-scope write is still DENIED with the placeholder present",
+              denied, True)
+        check("...and the Approved: list quotes no schema prose at it",
+              placeholder[:40] in reason, False)
+        check("...while the real plan entry still grants what it granted",
+              run_hook(builder_writing("huntstack/apps/mobile/src/App.tsx"))[0], False)
+
+    with_placeholder = state_with(["huntstack/apps/mobile/**"])
+    with_placeholder["scope_exceptions"] = [placeholder]
+    with_run(with_placeholder, placeheld)
+
+    def only_placeholder(_run_dir):
+        # No real file set at all -- "no opinion", the same answer an unplanned run gets.
+        # Documented as a loosening in `schema_placeholders`: this used to deny every
+        # write against a file set of one junk path, which is the wrong diagnosis to
+        # hand a builder whose run was never really planned.
+        check("a plan of nothing but placeholder prose yields no opinion",
+              run_hook(builder_writing("huntstack/apps/web/other.tsx"))[0], False)
+
+    bare = state_with([])
+    bare["scope_exceptions"] = [placeholder]
+    with_run(bare, only_placeholder)
+
     # --- Fail-closed (gap #17, closed 2026-09-02). ---
     # A crashing guard used to be indistinguishable from a guard with no opinion, so a
     # typo in the hook silently stopped guarding builders instead of blocking them.

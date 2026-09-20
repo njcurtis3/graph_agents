@@ -76,7 +76,11 @@ HERE = os.path.dirname(os.path.realpath(__file__))
 FLEET = os.path.normpath(os.path.join(HERE, "..", ".."))      # graph_agents/
 UMBRELLA = os.path.dirname(FLEET)                             # repos/
 CURRENT = os.path.join(FLEET, ".graph", "CURRENT")
-CLOSED = ("done", "blocked")
+SCHEMA = os.path.join(FLEET, ".graph", "runs", "_schema.json")
+# `parked` added 2026-09-19, matching `show-board.py`. A pointer left on a parked run --
+# `2026-08-25-refuge-freshness` has been parked since it opened -- must no more constrain
+# a later builder than a pointer left on a closed one.
+CLOSED = ("done", "blocked", "parked")
 
 # How much of a command to quote back in a denial. Enough to recognise it, not enough to
 # paste a 40KB heredoc into the builder's context.
@@ -118,6 +122,55 @@ def open_run():
     return (state, run_dir) if isinstance(state, dict) else (None, None)
 
 
+def schema_placeholders():
+    """Every string `_schema.json` uses as untouched template text, as a set.
+
+    A run's `state.json` starts as a copy of the schema, and its placeholders are PROSE
+    describing what a key is for. `scope_exceptions`' placeholder contains "Write/Edit",
+    so the "a space and no separator means prose" heuristic below reads it as a path:
+    it became a bogus approved entry and a bogus `rel_map` root, and the `Approved:` list
+    a denied builder was shown carried a paragraph of schema documentation in it (gap
+    #14, found in `2026-08-26-archive-adapters` and worked around there by setting that
+    one run's `scope_exceptions` to `[]`).
+
+    Identity against the schema is used rather than a smarter prose heuristic because it
+    is exact: the question "is this the untouched template?" has a correct answer on disk,
+    and `verify-state.py` already answers it the same way for the keys it checks. A
+    missing or malformed schema returns an empty set -- the heuristic still runs, and the
+    worst case is the pre-existing cosmetic pollution rather than a guard that stops
+    working.
+
+    One behaviour change worth stating, because it is a loosening: a gated run whose plan
+    has NO real files and whose only entry is that placeholder used to yield a file set of
+    one junk path, and so denied every builder write. It now yields no file set at all,
+    which `main()` treats as "no opinion" -- the same answer it already gives an ungated
+    or unplanned run. A human gate passed over an empty plan is a broken run either way;
+    this stops it being reported as a scope violation, which is the wrong diagnosis.
+    """
+    try:
+        with open(SCHEMA, encoding="utf-8") as fh:
+            schema = json.load(fh)
+    except (OSError, ValueError):
+        return set()
+
+    found = set()
+
+    def walk(node):
+        if isinstance(node, str):
+            text = node.strip()
+            if text:
+                found.add(text)
+        elif isinstance(node, list):
+            for item in node:
+                walk(item)
+        elif isinstance(node, dict):
+            for item in node.values():
+                walk(item)
+
+    walk(schema)
+    return found
+
+
 def approved_paths(state, run_dir):
     """{normalised path: as the plan wrote it}. The key compares, the value is read.
 
@@ -140,9 +193,15 @@ def approved_paths(state, run_dir):
     if isinstance(exceptions, list):
         entries.extend(f for f in exceptions if isinstance(f, str))
 
+    placeholders = schema_placeholders()
+
     planned = False
     for entry in entries:
         entry = entry.strip()
+        # An untouched `_schema.json` placeholder is template prose, never a path, however
+        # many slashes its sentences happen to contain. Exact identity, checked first.
+        if entry in placeholders:
+            continue
         # A plan whose `files` still reads like prose is not a file set. Anything with a
         # space and no separator is a description, and treating it as a path would let
         # the union match nothing and deny everything.
