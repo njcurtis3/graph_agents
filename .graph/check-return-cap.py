@@ -23,16 +23,29 @@ one agent instance:
 That is the same undocumented, internal storage layout `record-activity.py`'s `tokens`/
 `say` fields already lean on (see that file's module docstring) -- taken again here,
 deliberately, for the same reason: the alternative is not checking the rule at all.
-Per `graph_agents/CLAUDE.md` ("copy, don't couple"), the path derivation and the
-text-block walk below are COPIED from `record-activity.py`, not imported -- a checker
-importing a hook would inherit the hook's own failure modes (silent-on-stdin-error, exit
-0 always) as its own, which are the wrong defaults for a script whose whole job is to
-report a violation with a real exit code.
+Per `graph_agents/CLAUDE.md` ("copy, don't couple"), the path derivation below is COPIED
+from `record-activity.py`, not imported -- a checker importing a hook would inherit the
+hook's own failure modes (silent-on-stdin-error, exit 0 always) as its own, which are the
+wrong defaults for a script whose whole job is to report a violation with a real exit code.
+
+**What "the return" actually is (attempt-1 defect, fixed here).** A node's return is not
+"whatever text it said last" -- it is specifically the `message` argument of its own
+`SubagentHandback` tool_use call, the one mechanism that actually delivers text to the
+orchestrator's tab (see the node files' own Return sections: "call `SubagentHandback`
+... and then stop"). The transcript is a full agent turn log, and a `text` block can
+appear before that call (working narration on the way to the handback) or, harness-
+permitting, after it (post-handback chatter the orchestrator never received and rule 3
+never governed). Attempt 1 took the newest `text` block anywhere in the transcript and
+was wrong on live data because of exactly that: it reported 4 and 10 lines for two nodes
+whose real, delivered returns were 3 and 2. `last_return_text` below reads the
+`SubagentHandback` tool_use's own `message` input and nothing else.
 
 **A found-and-over-cap return is the only failure this reports.** Every other outcome --
-no activity.jsonl, an agent_id with no transcript on disk, a transcript with no text
-block at all, a torn line mid-transcript -- is `unverifiable`, counted and printed, never
-a reason to fail: absence of evidence is not evidence of a violation, the same
+no activity.jsonl, an agent_id with no transcript on disk, a transcript with no
+`SubagentHandback` call at all (an in-flight lane that has not returned yet, same as
+attempt 1's second defect: it must never be certified compliant off an early `text`
+block), a torn line mid-transcript -- is `unverifiable`, counted and printed, never a
+reason to fail: absence of evidence is not evidence of a violation, the same
 silent-on-failure rule `last_said_by` follows. Exit 1 is reserved for a return actually
 found on disk and over cap.
 
@@ -122,21 +135,32 @@ def find_transcript(agent_id, projects_root):
 
 
 def last_return_text(path):
-    """The newest `text` block in one agent's own transcript, or None.
+    """The `message` argument of the newest `SubagentHandback` tool_use call in one
+    agent's own transcript, or None.
 
-    Copied from `record-activity.py`'s `last_said_by`, deliberately UNCAPPED: no
-    `SAY_MAX_CHARS` truncation, no collapse to one line. That function exists to build a
-    220-char heartbeat caption; this one exists to count the real return's own lines, and
-    truncating or collapsing the text first would make the count meaningless. Returns
-    None when the file can't be read, is empty, or never once contains a text block --
-    never a fabricated placeholder. A torn final line (the transcript mid-append) is
-    skipped, not raised.
+    This is deliberately NOT "the newest `text` block" -- a `text` block can precede the
+    handback (narration on the way to the call) or, harness-permitting, follow it (the
+    agent kept talking after the tool call that already delivered its return; observed
+    live, 2026-09-20, on this run's own scout transcript). Only a `SubagentHandback`
+    call's own `message` field is the text rule 3 actually caps -- the node files agree:
+    "call `SubagentHandback` ... and then stop." No such call anywhere in the transcript
+    means the node has not returned (yet, or ever) -- None, correctly read by `check()`
+    below as unverifiable, never a fabricated placeholder and never a compliant-by-
+    default short answer lifted from an in-flight lane's opening sentence.
+
+    Uncapped and uncollapsed, unlike `record-activity.py`'s `last_said_by`: that function
+    exists to build a 220-char heartbeat caption; this one exists to count the real
+    return's own lines, and truncating or collapsing the text first would make the count
+    meaningless. If more than one `SubagentHandback` call appears (should not happen --
+    every node file says "and then stop" -- but nothing stops it in the harness) the
+    LATEST one wins, same "newest wins" rule as everywhere else in this file. A torn
+    final line (the transcript mid-append) is skipped, not raised.
     """
     try:
         fh = open(path, encoding="utf-8")
     except OSError:
         return None
-    said = None
+    returned = None
     with fh:
         for line in fh:
             line = line.strip()
@@ -151,11 +175,14 @@ def last_return_text(path):
             if not isinstance(content, list):
                 continue
             for block in content:
-                if isinstance(block, dict) and block.get("type") == "text":
-                    text = block.get("text")
-                    if isinstance(text, str) and text.strip():
-                        said = text
-    return said
+                if not isinstance(block, dict):
+                    continue
+                if block.get("type") != "tool_use" or block.get("name") != "SubagentHandback":
+                    continue
+                message = (block.get("input") or {}).get("message")
+                if isinstance(message, str) and message.strip():
+                    returned = message
+    return returned
 
 
 def line_count(text):

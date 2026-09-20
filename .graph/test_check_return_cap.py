@@ -10,6 +10,15 @@ Two layers, mirroring the two precedents this slice was told to follow:
   - `main()`'s own CLI wiring is exercised via subprocess against a COPIED fleet in a
     temp dir and a temp HOME, the `test_show_board.py` precedent -- never the live tree,
     never the live `.graph/CURRENT`, and never this run's own real transcripts.
+
+**Attempt-1 defect, fixed in the fixtures here too.** Every fixture used to write a bare
+`{"type": "text"}` block and call that "the return" -- which is attempt-1's own bug,
+restated as a test, not a test of the rule. A node's real return is the `message`
+argument of its `SubagentHandback` tool_use call, so every transcript fixture below
+builds that shape. `write_handback()` is the one helper that matters; the leading-prose
+and trailing-chatter cases exist specifically because they are what attempt 1 got wrong
+on live data (scout and one builder's real returns were 3 and 2 lines; attempt 1 reported
+4 and 10 by counting a later, post-handback `text` block instead).
 """
 import importlib.util
 import json
@@ -37,6 +46,19 @@ def check(name, cond):
         print("FAIL:", name)
 
 
+def handback_turn(message):
+    """One transcript line: an assistant turn whose content is a `SubagentHandback`
+    tool_use carrying `message` -- the real shape a node's return takes on disk."""
+    return json.dumps({"message": {"content": [
+        {"type": "tool_use", "name": "SubagentHandback", "input": {"message": message}}]}})
+
+
+def text_turn(text):
+    """One transcript line: an assistant turn whose content is plain prose, no tool
+    call -- narration, NOT a return."""
+    return json.dumps({"message": {"content": [{"type": "text", "text": text}]}})
+
+
 # ---------------------------------------------------------------------- encode_cwd
 
 check("encode_cwd matches Claude Code's observed project-dir naming",
@@ -62,32 +84,50 @@ check("line_count: a single line with no newline is 1",
 # -------------------------------------------------------------------- last_return_text
 
 with tempfile.TemporaryDirectory() as tmp:
+    # The exact defect that got attempt 1 rejected: narration BEFORE the handback, and
+    # more (longer) prose AFTER it. Only the handback's own `message` may win.
     good = os.path.join(tmp, "agent-x.jsonl")
     with open(good, "w", encoding="utf-8") as fh:
-        fh.write(json.dumps({"message": {"content": [
-            {"type": "text", "text": "First turn.\nStill first turn."}]}}) + "\n")
+        fh.write(text_turn("Working through this now, reading the target file first.") + "\n")
         fh.write(json.dumps({"message": {"content": [
             {"type": "tool_use", "name": "Read", "input": {}}]}}) + "\n")
         fh.write("not json at all, a torn final line\n")   # RULING: skipped, no raise
-        fh.write(json.dumps({"message": {"content": [
-            {"type": "text", "text": "line one\nline two\nline three\nline four"},
-            {"type": "tool_use", "name": "Edit", "input": {}}]}}) + "\n")
+        fh.write(handback_turn("line one\nline two\nline three") + "\n")
+        # Post-handback chatter: longer than the real return, must NOT be picked up.
+        fh.write(text_turn("Actually let me also mention this extra detail that runs "
+                            "on for several more lines\nof text\nnobody\nasked\nfor.") + "\n")
     got = crc.last_return_text(good)
-    check("last_return_text keeps only the NEWEST text block across turns",
-          got == "line one\nline two\nline three\nline four")
+    check("last_return_text reads the SubagentHandback message, not the narration "
+          "before it",
+          got == "line one\nline two\nline three")
+    check("last_return_text ignores a text block written AFTER the handback -- "
+          "attempt 1's exact defect on live data (scout: reported 4, real return was 3)",
+          got == "line one\nline two\nline three" and "extra detail" not in (got or ""))
+    check("a torn line mid-transcript is skipped, not raised -- the handback further "
+          "down the file is still found",
+          got == "line one\nline two\nline three")
     check("last_return_text is UNCAPPED and NOT collapsed to one line -- unlike "
           "record-activity.py's last_said_by, which this deliberately does not copy "
           "that behaviour from",
           got is not None and "\n" in got)
-    check("a torn line mid-transcript is skipped, not raised -- the later valid turn "
-          "still wins",
-          got == "line one\nline two\nline three\nline four")
+
+    # An in-flight lane: it HAS said something (an opening sentence), but has not
+    # called SubagentHandback yet. Attempt 1's second defect certified this as a
+    # compliant 1-line return; it must be None (unverifiable) instead.
+    inflight = os.path.join(tmp, "agent-inflight.jsonl")
+    with open(inflight, "w", encoding="utf-8") as fh:
+        fh.write(text_turn("I'll start by reading the brief.") + "\n")
+        fh.write(json.dumps({"message": {"content": [
+            {"type": "tool_use", "name": "Read", "input": {}}]}}) + "\n")
+    check("last_return_text is None for an in-flight lane that has an opening "
+          "sentence but no SubagentHandback yet -- must not be certified compliant",
+          crc.last_return_text(inflight) is None)
 
     toolonly = os.path.join(tmp, "agent-tool-only.jsonl")
     with open(toolonly, "w", encoding="utf-8") as fh:
         fh.write(json.dumps({"message": {"content": [
             {"type": "tool_use", "name": "Read", "input": {}}]}}) + "\n")
-    check("last_return_text is None when a transcript has tool_use but no text block",
+    check("last_return_text is None when a transcript has tool_use but no handback",
           crc.last_return_text(toolonly) is None)
 
     empty = os.path.join(tmp, "agent-empty.jsonl")
@@ -97,6 +137,13 @@ with tempfile.TemporaryDirectory() as tmp:
 
     check("last_return_text on a missing file returns None, never raises",
           crc.last_return_text(os.path.join(tmp, "does-not-exist.jsonl")) is None)
+
+    twice = os.path.join(tmp, "agent-twice.jsonl")
+    with open(twice, "w", encoding="utf-8") as fh:
+        fh.write(handback_turn("first call\nold text") + "\n")
+        fh.write(handback_turn("second call\nnew text") + "\n")
+    check("last_return_text takes the LATEST SubagentHandback if more than one appears",
+          crc.last_return_text(twice) == "second call\nnew text")
 
 # ---------------------------------------------------------------------- find_transcript
 
@@ -159,11 +206,19 @@ with tempfile.TemporaryDirectory() as tmp:
 # ------------------------------------------------------------------------------ check()
 
 
-def write_transcript(root, session, agent_id, text):
+def write_transcript(root, session, agent_id, message, prose_before=None, chatter_after=None):
+    """A transcript for `agent_id` whose real return is a SubagentHandback carrying
+    `message`. Optional `prose_before`/`chatter_after` inject exactly the surrounding
+    narration attempt 1 got fooled by, so a case that leaves them unset is still an
+    honest fixture and not a simplification of the real shape."""
     d = os.path.join(root, session, "subagents")
     os.makedirs(d, exist_ok=True)
     with open(os.path.join(d, "agent-%s.jsonl" % agent_id), "w", encoding="utf-8") as fh:
-        fh.write(json.dumps({"message": {"content": [{"type": "text", "text": text}]}}) + "\n")
+        if prose_before is not None:
+            fh.write(text_turn(prose_before) + "\n")
+        fh.write(handback_turn(message) + "\n")
+        if chatter_after is not None:
+            fh.write(text_turn(chatter_after) + "\n")
 
 
 LAUNCH_CWD = r"C:\fake\launch\cwd"
@@ -173,7 +228,8 @@ with tempfile.TemporaryDirectory() as tmp:
     os.makedirs(run_dir)
     lanes = [
         ("b_ok", "builder"), ("b_blank", "builder"), ("b_bad", "builder"),
-        ("a_ok", "architect"), ("o_ok", "ops"), ("r_missing", "reviewer"),
+        ("b_chatter", "builder"), ("a_ok", "architect"), ("o_ok", "ops"),
+        ("r_missing", "reviewer"), ("r_inflight", "reviewer"),
     ]
     with open(os.path.join(run_dir, "activity.jsonl"), "w", encoding="utf-8") as fh:
         for agent_id, agent_type in lanes:
@@ -187,11 +243,22 @@ with tempfile.TemporaryDirectory() as tmp:
                       "line one\nline two\nline three\n\n\n")
     write_transcript(projects_root, "sess1", "b_bad",
                       "line one\nline two\nline three\nline four")
+    # The case the last review named directly: a COMPLIANT handback followed by a
+    # LONGER text block. Must NOT be a violation -- the extra prose was never the return.
+    write_transcript(projects_root, "sess1", "b_chatter", "line one\nline two\nline three",
+                      chatter_after="Well now that that's done let me also note several "
+                                    "more\nthings\nthat\nrun\nlong\nafter the handback "
+                                    "already fired.")
     write_transcript(projects_root, "sess1", "a_ok",
                       "l1\nl2\nl3\nl4\nl5\nl6 -- architect's plan is gate material")
     write_transcript(projects_root, "sess1", "o_ok",
                       "l1\nl2\nl3\nl4\nl5\nl6 -- ops's deploy is gate material")
-    # r_missing intentionally gets no transcript file at all.
+    # r_missing gets no transcript file at all. r_inflight gets a transcript that has
+    # started talking but never called SubagentHandback -- both must end up unverifiable.
+    d = os.path.join(projects_root, "sess1", "subagents")
+    os.makedirs(d, exist_ok=True)
+    with open(os.path.join(d, "agent-r_inflight.jsonl"), "w", encoding="utf-8") as fh:
+        fh.write(text_turn("Reading the diff now.") + "\n")
 
     old_expanduser = os.path.expanduser
     os.path.expanduser = lambda p: home if p == "~" else old_expanduser(p)
@@ -206,6 +273,9 @@ with tempfile.TemporaryDirectory() as tmp:
           not any("b_ok" in v for v in violations))
     check("check(): a 3-line return with trailing blank lines is not a violation",
           not any("b_blank" in v for v in violations))
+    check("check(): a compliant handback followed by longer post-handback chatter is "
+          "NOT a violation -- the chatter was never the return",
+          not any("b_chatter" in v for v in violations))
     check("check(): a 6-line architect return is exempt, not a violation",
           not any("a_ok" in v for v in violations))
     check("check(): a 6-line ops return is exempt, not a violation",
@@ -213,15 +283,19 @@ with tempfile.TemporaryDirectory() as tmp:
     check("check(): exactly one violation total (only b_bad)", len(violations) == 1)
     check("check(): an agent id with no transcript on disk is reported unverifiable",
           any("unverifiable" in u and "r_missing" in u for u in unverifiable))
-    check("check(): exactly one unverifiable node (only r_missing)",
-          len(unverifiable) == 1)
+    check("check(): an in-flight lane with no handback yet is unverifiable, NOT "
+          "certified compliant off its opening sentence",
+          any("unverifiable" in u and "r_inflight" in u for u in unverifiable))
+    check("check(): exactly two unverifiable nodes (r_missing, r_inflight)",
+          len(unverifiable) == 2)
     check("check(): compliant/exempt returns are all in the checked list",
-          len(checked) == 5)   # b_ok, b_blank, b_bad, a_ok, o_ok -- not r_missing
+          len(checked) == 6)   # b_ok, b_blank, b_bad, b_chatter, a_ok, o_ok
 
     joined = "\n".join(violations + unverifiable + checked)
     check("check() never echoes the checked transcript text verbatim into its report",
           "architect's plan is gate material" not in joined
-          and "ops's deploy is gate material" not in joined)
+          and "ops's deploy is gate material" not in joined
+          and "run long after the handback" not in joined)
 
     empty_run = os.path.join(tmp, "empty-run")
     os.makedirs(empty_run)
@@ -328,14 +402,18 @@ with tempfile.TemporaryDirectory() as tmp:
     check("main(): the CLI never echoes the checked transcript text",
           "l1\nl2\nl3\nl4" not in out)
 
-    # -- an all-compliant run
+    # -- an all-compliant run, including a compliant handback plus post-handback chatter
     fleet4 = os.path.join(tmp, "fleet4")
     os.makedirs(fleet4)
-    events2 = [{"t": 1, "ev": "start", "agent": "builder", "id": "ok2"}]
+    events2 = [{"t": 1, "ev": "start", "agent": "builder", "id": "ok2"},
+               {"t": 2, "ev": "start", "agent": "scout", "id": "ok3"}]
     script = build_fleet(fleet4, "r-clean", STATE, activity_events=events2)
     write_transcript(projects_root, "sessC", "ok2", "l1\nl2\nl3")
+    write_transcript(projects_root, "sessC", "ok3", "l1\nl2\nl3",
+                      chatter_after="l1\nl2\nl3\nl4\nl5\nl6\nl7")
     out, err, code = run_cli(script, "r-clean", launch_cwd, home)
-    check("main(): an all-compliant run exits 0", code == 0)
+    check("main(): an all-compliant run (incl. one with post-handback chatter) exits 0",
+          code == 0)
     check("main(): an all-compliant run reports no traceback", "Traceback" not in err)
 
 
