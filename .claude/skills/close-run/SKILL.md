@@ -61,7 +61,12 @@ own `status` and `log`, and a script closing the run on your behalf would be the
 `written_by` exists to catch, one key over.
 
 On green, set `status` to `"done"` and append **one** `log` entry naming what closed, the
-merge commit if there was one, and anything you dropped. Then print the final board:
+merge commit if there was one, and anything you dropped. Then **clear `.graph/CURRENT`** —
+nothing else does, so it goes on naming a finished run until the next one opens. The three
+hooks that read it check the status behind it and go quiet on a closed run, so a stale
+pointer is not a live hazard; it is a fact about the fleet that is no longer true, and
+leaving it means all three have to keep being right about it forever. Then print the final
+board:
 
 ```bash
 python graph_agents/.graph/brief.py <run-id>

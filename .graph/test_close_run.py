@@ -109,7 +109,7 @@ def state_for(branch, verdict="PASS", built=True, reviewed=True, approved=True,
     return state
 
 
-def build_fleet(tmp, state, make_target=True, **repo_kwargs):
+def build_fleet(tmp, state, make_target=True, pointer=None, **repo_kwargs):
     """A minimal umbrella: graph_agents/{.graph,portfolio} plus the target app repo."""
     fleet = os.path.join(tmp, "graph_agents")
     graph = os.path.join(fleet, ".graph")
@@ -123,6 +123,9 @@ def build_fleet(tmp, state, make_target=True, **repo_kwargs):
         json.dump({"apps": [{"id": "targetapp", "path": "targetapp"}]}, fh)
     with open(os.path.join(runs, "a-run", "state.json"), "w", encoding="utf-8") as fh:
         json.dump(state, fh)
+    if pointer is not None:
+        with open(os.path.join(graph, "CURRENT"), "w", encoding="utf-8") as fh:
+            fh.write(pointer)
     target = os.path.join(tmp, "targetapp")
     result = (None, None)
     if make_target:
@@ -185,6 +188,23 @@ case("BLOCKS before the human gate", state_for("feature-x", approved=False), Fal
      "approved_by_human is not true")
 case("BLOCKS on an off-plan slice with no reviewer",
      state_for("feature-x", extra_slice="closing_fix"), False, "(off-plan)")
+
+# -- the pointer. Nothing in the fleet clears `.graph/CURRENT`, so it goes on naming a
+#    finished run after the close. Three hooks check the status behind it and go quiet, so
+#    it is hygiene rather than a hazard -- but only the close knows the run is over, so the
+#    close is where it gets said. This script still never writes it: same contract as
+#    `status` and `log`.
+case("says to clear the pointer when it names the run just closed",
+     state_for("feature-x"), True, "clear `.graph/CURRENT`", args=(), pointer="a-run")
+case("stays quiet about the pointer when it names a different run",
+     state_for("feature-x"), True, args=("a-run",), pointer="some-other-run",
+     absent_text="clear `.graph/CURRENT`")
+case("stays quiet about the pointer when there is none",
+     state_for("feature-x"), True, args=("a-run",),
+     absent_text="clear `.graph/CURRENT`")
+case("a blocked run is told its blockers, not its pointer",
+     state_for("feature-x", verdict="REJECT"), False, args=(), pointer="a-run",
+     absent_text="clear `.graph/CURRENT`")
 
 # -- re-reviews. Attempt 1 stays at the top of `reviews.<slice>` and each re-review nests
 #    under `attempt_N`, so the verdict that counts is the LAST attempt, not the first.

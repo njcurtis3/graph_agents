@@ -209,16 +209,19 @@ def check(run_id, recheck=False):
     return blockers, warnings, notes
 
 
+def pointer():
+    """The run id `.graph/CURRENT` names, or None. Never raises."""
+    try:
+        with open(CURRENT, encoding="utf-8") as fh:
+            return fh.read().strip() or None
+    except OSError:
+        return None
+
+
 def main(argv):
     recheck = "--recheck" in argv
     argv = [a for a in argv if a != "--recheck"]
-    run_id = argv[0] if argv else None
-    if not run_id:
-        try:
-            with open(CURRENT, encoding="utf-8") as fh:
-                run_id = fh.read().strip()
-        except OSError:
-            run_id = None
+    run_id = argv[0] if argv else pointer()
     if not run_id:
         sys.stderr.write("close-run: no run given, and .graph/CURRENT names none\n")
         return 1
@@ -247,6 +250,16 @@ def main(argv):
         run_id, " (%d warning(s) above)" % len(warnings) if warnings else ""))
     print("  write it yourself, as the orchestrator: set `status` to \"done\" and append "
           "one `log` entry saying what closed and when.")
+    if pointer() == run_id:
+        # Not a blocker, and not something this script does for you -- it never writes,
+        # and `.graph/CURRENT` is no exception. But nothing else in the fleet clears the
+        # pointer, so it survives the close and names a finished run until the next run
+        # opens. Three readers already check the status behind it and go quiet
+        # (`guard-builder-scope.py`, `record-activity.py`, `show-board.py`), which is why
+        # this is hygiene rather than a defect: the cost of leaving it is that every one
+        # of them has to keep being right about it.
+        print("  then clear `.graph/CURRENT` -- it still names this run, and the close "
+              "does not empty it.")
     return 0
 
 
