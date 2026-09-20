@@ -67,6 +67,20 @@ def main():
     # Only the fleet's own files.
     if "/graph_agents/" not in norm and not norm.endswith("/graph_agents"):
         return
+
+    # ...but a builder's worktree is an APP's files, wearing a fleet path. Worktrees live
+    # under `.graph/worktrees/` for one incidental reason -- `repos/` is not a git repo,
+    # so there is nowhere else inside the umbrella to put them -- and every file in one
+    # belongs to the app being built, not to the fleet's definition. Without this,
+    # `2026-08-26-archive-adapters` had a builder told its fixture edits had made
+    # CURRENT-STATE.md stale, repeatedly (gap #15). Nothing about the fleet had changed.
+    # The damage is not the noise: it teaches a node to ignore a hook that exists to be
+    # heeded, so the one real staleness warning later gets dismissed with the rest.
+    # Deliberate cost, so it is not rediscovered as a bug: a builder working on the FLEET
+    # from inside a worktree is now silent too. That is the right trade -- what is true of
+    # the fleet is what is on the main tree, and the merge back to it fires this hook then.
+    if "/.graph/worktrees/" in norm:
+        return
     if base == "CURRENT-STATE.md":          # never self-trigger
         return
 
