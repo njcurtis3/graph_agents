@@ -197,6 +197,69 @@ with tempfile.TemporaryDirectory() as tmp:
           "say" not in lines[-1])
 
 
+    # A pointer left on a PARKED run must collect nothing, the same as a done or blocked
+    # one. `2026-08-25-refuge-freshness` has been parked since it opened; before
+    # 2026-09-19 this hook's CLOSED tuple omitted "parked", so a stale pointer at it kept
+    # appending later sessions' events into a run that had stopped.
+    with open(os.path.join(run_dir, "state.json"), "w") as fh:
+        json.dump({"status": "parked"}, fh)
+    with open(os.path.join(run_dir, "activity.jsonl"), encoding="utf-8") as fh:
+        before = len([l for l in fh if l.strip()])
+    run_main_with({
+        "hook_event_name": "PostToolUse", "tool_name": "Edit",
+        "agent_type": "builder", "agent_id": "b1",
+        "cwd": r"C:\Users\test\repos", "session_id": "sessA",
+    }, home, fleet)
+    with open(os.path.join(run_dir, "activity.jsonl"), encoding="utf-8") as fh:
+        after = len([l for l in fh if l.strip()])
+    check("a parked run collects no events, like done and blocked", after == before)
+
+# ---------- append_line under real concurrent writers ----------
+#
+# The failure this replaces is on disk, not imagined: line 1225 of
+# `2026-09-06-bash-write-guard`'s activity.jsonl is the bare fragment `"Bash"}` -- an
+# event whose head another process's append overwrote. A diamond has six nodes firing
+# this hook at once, from six processes, so the writer has to be atomic at the OS level.
+# Separate PROCESSES, not threads: threads would pass this even with the old buffered
+# `open(path, "a")`, which is exactly why the bug survived to production.
+
+import subprocess
+
+with tempfile.TemporaryDirectory() as tmp:
+    target = os.path.join(tmp, "activity.jsonl")
+    writers, per_writer = 4, 150
+    prog = (
+        "import importlib.util,json,sys\n"
+        "spec=importlib.util.spec_from_file_location('ra', sys.argv[1])\n"
+        "m=importlib.util.module_from_spec(spec); spec.loader.exec_module(m)\n"
+        # Padded well past any pipe/stdio buffer boundary, so an unsafe writer tears.
+        "for i in range(int(sys.argv[3])):\n"
+        "    m.append_line(sys.argv[2], json.dumps({'w':sys.argv[4],'i':i,'pad':'x'*2000}))\n"
+    )
+    procs = [subprocess.Popen([sys.executable, "-c", prog, MODULE_PATH, target,
+                               str(per_writer), "w%d" % n])
+             for n in range(writers)]
+    for proc in procs:
+        proc.wait()
+
+    with open(target, encoding="utf-8") as fh:
+        raw = [l for l in fh if l.strip()]
+    parsed, torn = [], 0
+    for line in raw:
+        try:
+            parsed.append(json.loads(line))
+        except ValueError:
+            torn += 1
+
+    check("concurrent appends leave no torn line", torn == 0)
+    check("concurrent appends lose no event",
+          len(parsed) == writers * per_writer)
+    check("every writer's events all survive",
+          all(sum(1 for e in parsed if e["w"] == "w%d" % n) == per_writer
+              for n in range(writers)))
+    check("append_line creates the file when it does not exist yet", len(raw) > 0)
+
+
 passed = sum(1 for _, ok in checks if ok)
 print("%d/%d checks passed" % (passed, len(checks)))
 if passed != len(checks):

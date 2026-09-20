@@ -28,6 +28,11 @@ portfolio/registry.json
 # Live session state written by the harness, not by the fleet. Holds a pid.
 .claude/scheduled_tasks.lock
 
+# The heartbeat's append lock: an empty sidecar beside each run's activity.jsonl, held
+# only for the length of one write so six concurrent nodes cannot overwrite each other's
+# events. Machine-local, zero bytes, and carrying nothing worth keeping.
+.graph/runs/*/activity.jsonl.lock
+
 # A pointer to the run currently open, written by `feature-graph` step 1 so that
 # hooks — which get a file path and an agent_type, never a run id — can find the
 # run's state. Machine-local and disposable: a pointer to a closed run is ignored,

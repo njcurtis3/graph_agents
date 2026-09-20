@@ -179,10 +179,113 @@ def last_said_by(path):
         said = said[:SAY_MAX_CHARS - 1].rstrip() + "…"
     return said
 
+# ~1s of total patience: 50 tries, 20ms apart. A node event is worth waiting a moment
+# for and worth nothing at all if the hook blocks the tool call that produced it.
+LOCK_TRIES = 50
+LOCK_WAIT = 0.02
+
+
+def _lock(fd):
+    """Take an exclusive advisory lock on a sidecar fd. True if held, False if not."""
+    try:
+        import fcntl
+        fcntl.flock(fd, fcntl.LOCK_EX)
+        return True
+    except ImportError:
+        pass
+    try:
+        import msvcrt
+        for _ in range(LOCK_TRIES):
+            try:
+                msvcrt.locking(fd, msvcrt.LK_NBLCK, 1)
+                return True
+            except OSError:
+                time.sleep(LOCK_WAIT)
+    except Exception:
+        return False
+    return False
+
+
+def _unlock(fd):
+    try:
+        import fcntl
+        fcntl.flock(fd, fcntl.LOCK_UN)
+        return
+    except ImportError:
+        pass
+    try:
+        import msvcrt
+        os.lseek(fd, 0, os.SEEK_SET)
+        msvcrt.locking(fd, msvcrt.LK_UNLCK, 1)
+    except Exception:
+        pass
+
+
+def append_line(path, text):
+    """Append ONE line, serialised against every other process writing this log.
+
+    Every node in a run appends to the same `activity.jsonl`, concurrently and from
+    separate processes -- a diamond has three builders and three reviewers live at once,
+    each firing this hook on every tool call. Buffered text-mode `open(path, "a")` does
+    NOT make that safe: the handle carries its own file position and its own buffer, so
+    two interleaved appends can land on top of each other.
+
+    That is not hypothetical here. `2026-09-06-bash-write-guard`'s log line 1225 reads
+    `"Bash"}` -- the tail of an event whose head was overwritten by another process's
+    append. The event it recorded is gone, not merely mangled. Readers (`brief.py`,
+    `postmortem.py`) skip unparseable lines, so it cost no crash and left no report; it
+    silently subtracted one event from the evidence base those two are built on.
+
+    **`O_APPEND` alone does not fix this on Windows, and believing it did was the first
+    attempt.** On POSIX the seek-to-end and the write are one atomic operation; the
+    Windows CRT emulates `_O_APPEND` as a seek followed by a write, and the gap between
+    them is the whole bug. Measured on this machine, 2026-09-19, four processes appending
+    150 lines each to one file: **471 of 600 events survived** -- and with zero torn
+    lines, so the loss is invisible to any check that only asks whether each line parses.
+    Under the old buffered `open(path, "a")` the same run produced the torn-tail shape
+    seen in the real log. Two different symptoms, one cause.
+
+    So the write is serialised by an advisory lock on a sidecar `.lock` file: `flock`
+    where there is one, `msvcrt.locking` where there is not. The lock is on a sidecar
+    rather than on the log itself because a Windows lock is mandatory, not advisory --
+    locking the log would make `brief.py` and `postmortem.py` fail to READ it mid-run,
+    turning a write-safety fix into a read outage.
+
+    Failure to take the lock is not a reason to drop the event: after ~1s of contention
+    it writes anyway. A log line that might collide is worth more than a node event that
+    certainly never existed, and this hook must never be the reason a run stalls.
+    """
+    flags = os.O_WRONLY | os.O_CREAT | os.O_APPEND | getattr(os, "O_BINARY", 0)
+    payload = (text + "\n").encode("utf-8")
+    try:
+        lock_fd = os.open(path + ".lock", os.O_RDWR | os.O_CREAT, 0o644)
+    except OSError:
+        lock_fd = None
+
+    held = _lock(lock_fd) if lock_fd is not None else False
+    try:
+        fd = os.open(path, flags, 0o644)
+        try:
+            os.lseek(fd, 0, os.SEEK_END)   # explicit: do not trust O_APPEND to have done it
+            os.write(fd, payload)
+        finally:
+            os.close(fd)
+    finally:
+        if lock_fd is not None:
+            if held:
+                _unlock(lock_fd)
+            os.close(lock_fd)
+
+
 HERE = os.path.dirname(os.path.realpath(__file__))
 FLEET = os.path.normpath(os.path.join(HERE, "..", ".."))
 CURRENT = os.path.join(FLEET, ".graph", "CURRENT")
-CLOSED = ("done", "blocked")
+# Aligned with `guard-builder-scope.py` and `show-board.py`, which have always carried
+# all three. `parked` was missing here until 2026-09-19, so a pointer left on a parked
+# run -- `2026-08-25-refuge-freshness` has sat parked since the day it opened -- kept
+# collecting events from unrelated later sessions into a run that had stopped, while the
+# board stayed correctly silent about it.
+CLOSED = ("done", "blocked", "parked")
 MAX_LINES = 20000        # a runaway loop must not fill a disk
 
 
@@ -247,8 +350,7 @@ def main():
             with open(path, encoding="utf-8") as fh:
                 if sum(1 for _ in fh) >= MAX_LINES:
                     return
-        with open(path, "a", encoding="utf-8") as fh:
-            fh.write(json.dumps(line, separators=(",", ":")) + "\n")
+        append_line(path, json.dumps(line, separators=(",", ":")))
     except OSError:
         return
 
