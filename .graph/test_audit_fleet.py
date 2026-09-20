@@ -88,6 +88,12 @@ DOC = """# CURRENT-STATE - testfleet
 | 2026-01-01 | a decision | because |
 """
 
+# The owner's permanent ruling (2026-09-20), mirrored from audit-fleet.py's own
+# DEREGISTERED tuple -- kept literal here too, same as it is already literal in
+# close-run.py, scout-facts.py and CURRENT-STATE.md.
+DEREGISTERED = ("koenrane.xyz", "njcurtis3", "personal-archive", "thrml",
+                "whoop-med-tracker")
+
 AGENT = """---
 name: %s
 description: a node.
@@ -171,6 +177,11 @@ def build(tmp, **over):
         if opts.get("app_is_repo", True):
             git(app, "init", "-q")
 
+    # -- unregistered sibling directories, planted directly in the umbrella (`tmp`), to
+    # exercise the DEREGISTERED partition without touching the registered app.
+    for name in opts.get("extra_siblings", ()):
+        write(os.path.join(tmp, name, ".keep"), "x\n")
+
     # -- runs. A written `scout` key is what makes the node count as executed.
     for run_id, (status, executed) in opts["run_states"].items():
         state = {"run_id": run_id, "app": "appone", "status": status,
@@ -207,7 +218,7 @@ def run(script, *args):
     return proc.returncode, proc.stdout + proc.stderr
 
 
-def case(label, expect_clean, expect_text=None, args=(), **over):
+def case(label, expect_clean, expect_text=None, args=(), forbid_text=None, **over):
     tmp = tempfile.mkdtemp(prefix="auditfleet-")
     try:
         script = build(tmp, **over)
@@ -219,6 +230,12 @@ def case(label, expect_clean, expect_text=None, args=(), **over):
                 FAILURES.append(label + " (text)")
             else:
                 print("  ok   %s :: %s" % (label, expect_text))
+        if forbid_text is not None:
+            if forbid_text in out:
+                print("  FAIL %s -- unwanted %r in:\n%s" % (label, forbid_text, out))
+                FAILURES.append(label + " (forbid_text)")
+            else:
+                print("  ok   %s :: no %r" % (label, forbid_text))
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 
@@ -266,6 +283,36 @@ case("BLOCKS when a registered app is not its own git repo", False,
      "the constitution says every app has one", app_is_repo=False)
 case("BLOCKS when the registry becomes tracked by git", False,
      "it is now tracked by git", track_registry=True)
+
+# -- the owner's permanent DEREGISTERED ruling (2026-09-20)
+case("a sibling set of only DEREGISTERED names produces no unregistered-sibling line",
+     True, forbid_text="unregistered sibling dirs", extra_siblings=DEREGISTERED)
+case("one unknown sibling produces the note naming only that one", True,
+     "unregistered sibling dirs: mystery-dir",
+     extra_siblings=DEREGISTERED + ("mystery-dir",))
+case("a DEREGISTERED name absent from disk raises nothing", True,
+     forbid_text="thrml")
+
+tmp = tempfile.mkdtemp(prefix="auditfleet-")
+try:
+    thrml = os.path.join(tmp, "thrml")
+    write(os.path.join(thrml, "CLAUDE.md"), "app\n")
+    git(thrml, "init", "-q")
+    script = build(tmp, registry_apps=[
+        {"id": "appone", "path": "appone", "entry_docs": ["appone/CLAUDE.md"]},
+        {"id": "thrml", "path": "thrml", "entry_docs": []},
+    ])
+    code, out = run(script)
+    check("a DEREGISTERED name present in registry.json raises DRIFT", code == 0, False)
+    if "stays out of the portfolio" in out:
+        print("  ok   %s :: %s" % ("a DEREGISTERED name present in registry.json"
+                                    " raises DRIFT", "stays out of the portfolio"))
+    else:
+        print("  FAIL a DEREGISTERED name present in registry.json raises DRIFT"
+              " -- missing 'stays out of the portfolio' in:\n%s" % out)
+        FAILURES.append("a DEREGISTERED name present in registry.json raises DRIFT (text)")
+finally:
+    shutil.rmtree(tmp, ignore_errors=True)
 
 # -- runs
 case("BLOCKS when the table lists a run that does not exist", False,

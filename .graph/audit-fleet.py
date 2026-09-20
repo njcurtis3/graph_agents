@@ -51,6 +51,18 @@ SETTINGS = os.path.join(FLEET, ".claude", "settings.json")
 REGISTRY = os.path.join(FLEET, "portfolio", "registry.json")
 VERIFY = os.path.join(HERE, "verify-state.py")
 
+# The owner's permanent ruling (2026-09-20): these five are NEVER to be added to the
+# portfolio. Four of them were deregistered on 2026-08-31; `personal-archive` makes five
+# and this tuple is the fifth entry, not a recount left for a comment to go stale on.
+# A name here silences the "unregistered sibling dirs" note for that directory -- the
+# owner has already ruled on it, so repeating it every run would be noise a reader learns
+# to skip. It does NOT mean the directory must exist: deleting a personal repo is the
+# owner's business and must not turn this auditor red. It DOES mean the name must never
+# appear in registry.json -- that direction can't false-positive, so it is checked as
+# drift below.
+DEREGISTERED = ("koenrane.xyz", "njcurtis3", "personal-archive", "thrml",
+                "whoop-med-tracker")
+
 CLOSED = ("done", "parked", "blocked")
 WORDS = {"zero": 0, "one": 1, "two": 2, "three": 3, "four": 4, "five": 5, "six": 6,
          "seven": 7, "eight": 8, "nine": 9, "ten": 10, "eleven": 11, "twelve": 12,
@@ -369,10 +381,12 @@ def check_registry(report):
         return
     apps = registry["apps"]
     registered = set()
+    registered_ids = set()
     for entry in apps:
         if not isinstance(entry, dict):
             continue
         app_id = str(entry.get("id") or "?")
+        registered_ids.add(app_id)
         rel = str(entry.get("path") or app_id)
         registered.add(rel.strip("/"))
         path = os.path.join(UMBRELLA, rel)
@@ -395,16 +409,28 @@ def check_registry(report):
     report.claim(code != 0, "registry.json is untracked",
                  "it is now tracked by git: %s" % (out or "staged"))
 
+    # The one direction that can't false-positive: the owner ruled these five out, so any
+    # of them showing up registered is a defect no matter what disk looks like. The
+    # inverse -- a DEREGISTERED name missing from disk -- is deliberately not checked;
+    # that is the owner deleting their own repo, not drift.
+    for name in DEREGISTERED:
+        report.claim(name not in registered_ids and name not in registered,
+                      "`%s` stays out of the portfolio" % name,
+                      "registry.json registers it -- the owner's 2026-09-20 ruling says never")
+
     siblings = []
     for name in sorted(os.listdir(UMBRELLA)):
         path = os.path.join(UMBRELLA, name)
         if (os.path.isdir(path) and not name.startswith(".")
-                and name != "graph_agents" and name not in registered):
+                and name != "graph_agents" and name not in registered
+                and name not in DEREGISTERED):
             siblings.append(name)
     if siblings:
-        # A note, never drift: four of these were deregistered on purpose 2026-08-31.
-        # An unregistered directory is only a defect if it was MEANT to be routed to,
-        # and no file on disk records that intent.
+        # A note, never drift: an unregistered directory is only a defect if it was MEANT
+        # to be routed to, and no file on disk records that intent. DEREGISTERED names are
+        # excluded above -- the owner has already ruled on them, so repeating that verdict
+        # every run would be noise a reader learns to skip, which is exactly how a
+        # genuinely unregistered directory would slip past.
         report.note("unregistered sibling dirs: %s" % ", ".join(siblings))
 
 
