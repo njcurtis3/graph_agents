@@ -16,20 +16,34 @@ memory -- tool counts, spawn order, which agent_id ran which slice's work -- so 
 review should not need a human rereading transcripts each time.
 
 **What this deliberately does NOT compute, and why.** Gap #20 (`CURRENT-STATE.md`) is
-still open as of this file's writing: `activity.jsonl` carries `stop` events with no
-matching `start` -- 1,411 of 1,496 on the last count -- each stamped `orchestrator` for
-lack of an `agent_type`, interleaved with real work rather than clustering at a run's
-end. Anything computed from a `start`/`stop` PAIR is unsound until that is fixed: no
-per-node wall-clock duration, no "how long did this run take" number, anywhere below.
+still open: `activity.jsonl` carries `stop` events with no matching `start`, interleaved
+with real work rather than clustering at a run's end. Reproduced live on this run,
+2026-09-20-fleet-gaps: one scout spawn produced 1 `start` and 6 `stop` events. Exactly one
+stop MATCHED the start and carried both `say` and `tokens` -- a real subagent whose
+transcript the hook read. The other five carried neither `say` nor `tokens`: no transcript
+existed at `~/.claude/projects/<encoded cwd>/<session_id>/subagents/agent-<id>.jsonl` for
+the hook to read, so those five are PHANTOM, not merely unstarted.
+
+That MATCHED / ORPHAN-WITH-EVIDENCE / PHANTOM split -- not `parent` -- is the real
+discriminator this file uses. `parent` looked like the obvious field (record-activity.py
+sets it from a payload's `parent_tool_use_id`) but is dead on arrival: 0 of the events
+this fleet has ever collected carry it, because that field is never populated on the
+payloads the hook receives. **This file does not read `parent`, on purpose** -- do not
+re-add that read; there is nothing in the field to diagnose gap #20 with.
+
+Anything computed from a `start`/`stop` PAIR is still unsound: no per-node wall-clock
+duration, no "how long did this run take" number, anywhere below. An orphan-with-evidence
+stop is real work, but it is still unattributable to any lane -- it has no `start` to pair
+with, so a duration built from it would be no sounder than one built from a phantom.
 
 What survives that pollution, and is all this file uses:
   - **Tool counts.** Every `tool` event carries the spawning node's real `agent_id`
     (record-activity.py tags it on every event, not just start/stop), so counting them
     per lane is unaffected by a phantom lane that contributes no tool events at all.
-  - **Lane identity.** A phantom stop is a lone `stop` with a fresh `id` never seen on a
-    `start` or a `tool` event. Filtering lanes down to ones that have at least one such
-    event removes every phantom without needing to know which real lane a stray stop
-    belonged to.
+  - **Lane identity.** A stop is folded into a lane only once it is MATCHED -- its `id`
+    also seen on a `start` or `tool` event. Orphan-with-evidence and phantom stops alike
+    are excluded from every lane; that removes both without needing to know which real
+    lane a stray stop belonged to.
   - **Tool-bounded windows.** A lane's first and last timestamp, taken only from its own
     `start`/`tool` events (never its `stop`), is a real, if slightly early, bound on when
     it was working. Two lanes' windows overlapping is evidence they ran concurrently;
@@ -60,18 +74,31 @@ def load_module(path, name):
 # ------------------------------------------------------------------- activity
 
 def read_lanes(run_dir):
-    """(real_lanes, phantom_count). real_lanes: id -> {agent, first, last, tools, tool_counts}.
+    """(real_lanes, stop_classification). real_lanes: id -> {agent, first, last, tools,
+    tool_counts}. stop_classification: {"total", "matched", "orphan", "phantom"} counts
+    of every `stop` event in the run -- gap #20's real discriminator (see the top of this
+    module for the field this replaced, and why it is not read):
 
-    A lane is real once it has a `start` or a `tool` event; a lone `stop` with a fresh id
-    is exactly gap #20's phantom and is counted, not attributed to any lane.
+      - **matched**: the stop's `id` also appears on a `start` or `tool` event -- it is
+        folded into that lane, exactly as before.
+      - **orphan** (orphan-with-evidence): no `start`, but the stop carries `say` or
+        `tokens` -- a real subagent whose transcript the hook DID read; it just never got
+        a `start` logged under this id. Real work, mis-attributed, not manufactured.
+      - **phantom**: no `start` AND neither `say` nor `tokens` -- no subagent transcript
+        existed for the hook to read at all.
+
+    Orphan and phantom stops are both excluded from every lane -- unattributable to a
+    lane either way, since without a `start` there is no tool-bounded window to hang them
+    on.
     """
     path = os.path.join(run_dir, "activity.jsonl")
-    lanes, phantom_ids, real_ids = {}, set(), set()
+    lanes, real_ids = {}, set()
+    classification = {"total": 0, "matched": 0, "orphan": 0, "phantom": 0}
     try:
         with open(path, encoding="utf-8") as fh:
             events = [json.loads(line) for line in fh if line.strip()]
     except (OSError, ValueError):
-        return {}, 0
+        return {}, classification
 
     for event in events:
         if not isinstance(event, dict):
@@ -87,8 +114,14 @@ def read_lanes(run_dir):
         if not isinstance(stamp, (int, float)):
             continue
         key = str(event.get("id") or event.get("agent") or "?")
-        if event.get("ev") == "stop" and key not in real_ids:
-            phantom_ids.add(key)
+        if event.get("ev") == "stop":
+            classification["total"] += 1
+            if key in real_ids:
+                classification["matched"] += 1
+            elif event.get("say") or event.get("tokens"):
+                classification["orphan"] += 1
+            else:
+                classification["phantom"] += 1
             continue
         if event.get("ev") not in ("start", "tool"):
             continue
@@ -104,7 +137,7 @@ def read_lanes(run_dir):
             tool = str(event.get("tool") or "?")
             lane["tool_counts"][tool] = lane["tool_counts"].get(tool, 0) + 1
 
-    return lanes, len(phantom_ids)
+    return lanes, classification
 
 
 def overlap(a, b):
@@ -141,20 +174,32 @@ def report(verify, state, run_id, run_dir):
     lines.append("never a start/stop pair.")
     lines.append("")
 
-    lanes, phantoms = read_lanes(run_dir)
-    if not lanes and not phantoms:
+    lanes, stops = read_lanes(run_dir)
+    if not lanes and not stops["total"]:
         lines.append("No activity.jsonl (or it's empty) -- nothing to measure.")
         return "\n".join(lines)
 
     lines.append("## Tool activity")
-    if phantoms:
-        lines.append("  (%d phantom stop event(s) excluded -- gap #20)" % phantoms)
+    if stops["phantom"]:
+        lines.append("  (%d phantom stop event(s) excluded -- gap #20)" % stops["phantom"])
     agents = by_agent(lanes)
     for agent in sorted(agents):
         b = agents[agent]
         top = " -- top: %s x%d" % b["top_tool"] if b["top_tool"] else ""
         lines.append("  %-12s %d lane(s), %d tool call(s)%s"
                      % (agent, b["lanes"], b["tools"], top))
+    lines.append("")
+
+    # ------------------------------------------------------ stop integrity
+    lines.append("## Stop-event integrity")
+    lines.append("  %d stop event(s): %d matched, %d orphan-with-evidence, %d phantom"
+                 % (stops["total"], stops["matched"], stops["orphan"], stops["phantom"]))
+    if stops["total"]:
+        lines.append("  phantom ratio: %d/%d (%.0f%%)"
+                     % (stops["phantom"], stops["total"],
+                        100.0 * stops["phantom"] / stops["total"]))
+    else:
+        lines.append("  phantom ratio: n/a (no stop events)")
     lines.append("")
 
     # ---------------------------------------------------------- concurrency

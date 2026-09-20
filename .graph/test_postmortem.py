@@ -82,12 +82,16 @@ def fresh_fleet():
     return tmp
 
 
-def ev(t, agent, id_=None, kind="tool", tool=None):
+def ev(t, agent, id_=None, kind="tool", tool=None, say=None, tokens=None):
     e = {"t": t, "ev": kind, "agent": agent}
     if id_ is not None:
         e["id"] = id_
     if tool is not None:
         e["tool"] = tool
+    if say is not None:
+        e["say"] = say
+    if tokens is not None:
+        e["tokens"] = tokens
     return e
 
 
@@ -175,6 +179,42 @@ def main():
     code, out = run(root, "r5")
     check("case5 exit code", code, 0)
     check("case5 no activity message", "nothing to measure" in out, True)
+    check("case5 no stop-event integrity section",
+          "## Stop-event integrity" in out, False)
+
+    # -- case 8: gap #20's real discriminator -- MATCHED / ORPHAN-WITH-EVIDENCE / PHANTOM.
+    #    A matched stop (id also on a `start`), an orphan carrying `say`, an orphan
+    #    carrying `tokens`, and a true phantom carrying neither.
+    SAY_MARKER = "TOPSECRETSUBAGENTSAYTEXT"
+    events8 = [
+        ev(1.0, "scout", "m-1", "start"),
+        ev(2.0, "scout", "m-1", "stop", say=SAY_MARKER, tokens=100),
+        ev(3.0, "orchestrator", "orphan-say-1", "stop", say=SAY_MARKER),
+        ev(4.0, "orchestrator", "orphan-tok-1", "stop", tokens=42),
+        ev(5.0, "orchestrator", "true-phantom-1", "stop"),
+    ]
+    write_run(root, "r8", state_for(plan, builders, reviews), events8)
+    code, out = run(root, "r8")
+    check("case8 exit code", code, 0)
+    check("case8 stop-event integrity heading", "## Stop-event integrity" in out, True)
+    check("case8 counts line",
+          "4 stop event(s): 1 matched, 2 orphan-with-evidence, 1 phantom" in out, True)
+    check("case8 phantom ratio", "phantom ratio: 1/4 (25%)" in out, True)
+    check("case8 tool-activity excludes only the true phantom",
+          "1 phantom stop event(s) excluded" in out, True)
+    check("case8 never prints say text", SAY_MARKER in out, False)
+
+    # -- case 9: a run with activity but zero stop events -- must not divide by zero.
+    events9 = [
+        ev(1.0, "scout", "z-1", "start"),
+        ev(2.0, "scout", "z-1", "tool", tool="Read"),
+    ]
+    write_run(root, "r9", state_for(plan, builders, reviews), events9)
+    code, out = run(root, "r9")
+    check("case9 exit code", code, 0)
+    check("case9 zero stops reported",
+          "0 stop event(s): 0 matched, 0 orphan-with-evidence, 0 phantom" in out, True)
+    check("case9 phantom ratio n/a", "phantom ratio: n/a" in out, True)
 
     # -- case 6: no run id, no .graph/CURRENT -- clean failure, not a traceback.
     proc = subprocess.run([sys.executable, script], cwd=root, capture_output=True, text=True)
