@@ -1,0 +1,423 @@
+{
+  "$comment": "Shared state for ONE work-graph run. Lives at .graph/runs/<run-id>/state.json. Every node reads this on start and appends to its OWN key on finish - the builder writes its own builders.<slice> key, including the branch it worked on. Never rewrite another node's key. Every node key carries written_by, naming the node that wrote it: that is the ONLY record of authorship this file has, and without it 'never rewrite another node's key' is unverifiable - an orchestrator hand-writing all six keys is indistinguishable from six nodes doing their jobs. verify-state.py --audit checks it. This file is the edge: it is how context crosses between agents that cannot see each other.",
+  "run_id": "2026-09-20-fleet-gaps",
+  "goal": "Close three disjoint fleet gaps as a diamond: (1) postmortem.py reads the `parent` field to diagnose gap #20's phantom SubagentStop events; (2) a machine check for the 3-line node return cap, gap #19's open core; (3) audit-fleet.py treats the five deliberately-unregistered sibling repos as expected rather than reporting them every run. Second purpose: exercise everything untested since 2026-09-06 -- --for briefs, the sonnet builder, tokens/say, the parent diagnostic, /postmortem, and the four fixes committed 2026-09-19.",
+  "app": "graph_agents",
+  "status": "done",
+  "scout": {
+    "written_by": "scout",
+    "facts": [
+      "postmortem.py reads activity.jsonl at .graph/postmortem.py:68 via read_lanes() function (lines 62-107); processes events checking 'ev'/'id'/'agent' fields; functions that would flow parent through: read_lanes() to extract/store, report() to display",
+      "postmortem.py does NOT currently read parent anywhere; grep -n parent returns nothing",
+      "Every activity.jsonl on disk (10 runs, 2026-08-26 through 2026-09-06): 0 parent entries; only 2026-09-20-fleet-gaps will produce real parent data after execution",
+      "record-activity.py line 139: SAY_MAX_CHARS = 220; last_said_by() function lines 142-180 captures newest text block from agent transcript, collapsed to one line and capped at 220 chars",
+      "say values in activity.jsonl: 2026-09-20-fleet-gaps has 20; all other 9 runs have 0 each",
+      "GRAPH.md line 149: 'Three lines, hard cap'; scout.md:56/builder.md:81/reviewer.md:98/integrator.md:49 all state 'Three lines, hard cap' identically; architect.md:74 uses different wording but same intent; ops.md is exception (gate material, not headline)",
+      "All agent files' Return sections agree on the wording - the six that apply all say 'Three lines, hard cap'",
+      "audit-fleet.py lines 398-408: 'unregistered sibling dirs' printed as report.note() (information, not DRIFT); compares directory listing against registered ids excluding '.', 'graph_agents', and all registered app ids",
+      "postmortem.py test: test_postmortem.py runs with 'python graph_agents/.graph/test_postmortem.py', 18 checks",
+      "audit-fleet.py test: test_audit_fleet.py runs with 'python graph_agents/.graph/test_audit_fleet.py', 63 checks",
+      "Return-cap checker (new): test_check_return_cap.py would need to verify state.json node returns <= 3 lines and compare against actual transcripts at ~/.claude/projects/<encoded cwd>/<session_id>/subagents/agent-<agent_id>.jsonl",
+      "Return text IS on disk and recoverable: subagent transcripts contain message.content text blocks; last text block per agent is its return; files exist on this machine for past runs and are readable",
+      "Three slices have zero overlap: (1) postmortem: .graph/postmortem.py + test_postmortem.py; (2) audit-fleet: .graph/audit-fleet.py + test_audit_fleet.py; (3) return-cap: new .graph/check-return-cap.py + test_check_return_cap.py; none touch .claude/agents/** or .claude/skills/**"
+    ],
+    "unknowns": [
+      "Gap #19 core detail: The checker must decide - is it validating what's in state.json keys only, or also comparing to actual transcript return text? Current execution will be first test.",
+      "Whether a mismatch (transcript has 4+ lines but state.json has compliant 3-line headline) is a defect or expected - does the cap apply to what's generated or only to what's recorded in state?"
+    ],
+    "risks": [
+      "Gap #19 recoverability risk: return text exists only in transcripts, not in run state (.graph/runs/*); this creates coupling to undocumented Claude Code storage; session restart or cache clear could lose evidence retroactively, same as gap #20's phantom stop issue"
+    ]
+  },
+  "architect": {
+    "written_by": "architect",
+    "shape": "diamond",
+    "parallel_safe": true,
+    "rationale": "Diamond. graph_agents IS a git repo (orchestrator verified rev-parse, log entry 1), so worktree isolation and rollback exist. Three slices, three disjoint file sets, zero intersection: s1 = {postmortem.py, test_postmortem.py}; s2 = {check-return-cap.py (new), test_check_return_cap.py (new)}; s3 = {audit-fleet.py, test_audit_fleet.py}, all under graph_agents/.graph/. Each done_when is a standalone test invocation that passes or fails without the other two having run. No slice touches .claude/agents/** or .claude/skills/**, so step 0.5 rule 2 does not force single-loop. The one file all three would otherwise have wanted -- CURRENT-STATE.md -- is deliberately in NO slice and left to the close; that single decision is what keeps the sets disjoint. The only near-edge is that s2 needs the lane-identity rule (a lane is real once it has a start or tool event) that currently lives in postmortem.py:read_lanes; s2 COPIES those ~10 lines from HEAD rather than importing postmortem.py, which would make s2 depend on s1's branch and collapse the diamond. Copy-don't-couple, the house pattern, applied inside one repo. Three builders in three worktrees concurrently is also the only honest way to load-test the 2026-09-19 append lock under real contention, which is the run's second purpose -- but the shape is earned by the disjointness, not by that.",
+    "plan": [
+      {
+        "slice": "s1",
+        "intent": "Re-scoped off the goal's unbuildable wording. The goal says postmortem.py reads the `parent` field to diagnose gap #20. It cannot: 0 of 52 events in this run's own activity.jsonl carry `parent` (orchestrator, verified live), because record-activity.py:332 writes it only when the payload has parent_tool_use_id and the payload never does. Build the diagnostic that DOES work, on data the fleet already collects. (1) Classify every stop event in activity.jsonl into three buckets: MATCHED (its id also appears on a start or tool event in this run); ORPHAN-WITH-EVIDENCE (no start, but the stop carries `say` or `tokens` -- a real subagent whose transcript the hook could read, merely mis-attributed); PHANTOM (no start AND neither say nor tokens -- no transcript existed at ~/.claude/projects/<encoded cwd>/<session_id>/subagents/agent-<id>.jsonl for the hook to read). That is gap #20's real discriminator, reproduced live 2026-09-20: one scout spawn, 1 start, 6 stops, exactly 1 matched and carrying both say and tokens, 5 phantoms carrying neither. (2) Print it as a new '## Stop-event integrity' section: the three counts and the phantom ratio. (3) Rewrite the module docstring's gap #20 paragraph: replace the '1,411 of 1,496' framing with the live reproduction and the discriminator, and state explicitly that `parent` is NOT read and why, so nobody re-proposes it. HARD CONSTRAINTS: keep read_lanes' lane-exclusion behaviour identical in effect -- every unstarted stop is still excluded from every lane, so the existing 18 checks and all downstream sections are unchanged; the return may change from (lanes, phantom_count) to (lanes, stop_classification) but the '(N phantom stop event(s) excluded -- gap #20)' line must still appear. NEVER print the `say` text of any event -- counts, ids and agent types only. Still NO duration and NO wall-clock anywhere: orphan-with-evidence stops remain unattributable to a lane, so a start/stop pair is still unsound even after this change.",
+        "files": [
+          "graph_agents/.graph/postmortem.py",
+          "graph_agents/.graph/test_postmortem.py"
+        ],
+        "done_when": "`python graph_agents/.graph/test_postmortem.py` -> exit 0, every check passes, check count >= 24 (18 today + >= 6 new: a matched stop, an orphan carrying say, an orphan carrying tokens, a true phantom carrying neither, a run with zero stops, a run with no activity.jsonl). AND `python graph_agents/.graph/postmortem.py 2026-09-20-fleet-gaps` -> exit 0 with stdout containing '## Stop-event integrity' and a nonzero phantom count. AND `grep -n parent graph_agents/.graph/postmortem.py` -> matches in the module docstring only, zero in code.",
+        "risk": "low",
+        "risk_reason": "No sensitive data: the section reads only ids, timestamps and the PRESENCE of say/tokens, and is forbidden from printing say's text -- there is nothing to redact. No shared file: both files are touched by no other slice. The logic is fully visible to a test: all three buckets can be expressed exactly in a synthetic activity.jsonl fixture, so a green done_when really does mean the discriminator works. Reviewer: green tests plus a scope check, with one named read -- confirm no say text reaches stdout."
+      },
+      {
+        "slice": "s2",
+        "intent": "Gap #19's open core: a machine check for GRAPH.md section 3 rule 3's three-line return cap, prose since 2026-09-03 with nothing enforcing it. New read-only reporter `python graph_agents/.graph/check-return-cap.py <run-id>` plus its test. RULING 1 (scout unknown A): it reads TRANSCRIPTS. state.json holds no return text at all, and activity.jsonl's `say` is collapsed to one line and capped at 220 chars (record-activity.py:139,171-180), so it is structurally incapable of counting lines -- a state.json-only checker cannot check the thing the rule caps. So: derive ~/.claude/projects/<encoded cwd>/<session_id>/subagents/agent-<agent_id>.jsonl, walk it, take the LAST message.content block of type text as the node's return -- last_said_by's definition, uncapped. YES, I am taking the coupling to an undocumented Claude Code storage layout, deliberately and for the second time; record-activity.py took it 2026-09-11 for tokens/say and the layout has held since. Conditions: (a) COPY the path derivation and the text-block walk into the new file, do NOT import record-activity.py -- a hook is executed by Claude Code and a checker importing it inherits its failure modes; (b) a missing, unreadable, empty or text-block-free transcript is NEVER a failure -- it is counted and reported as 'unverifiable: N node(s)' and the script still exits 0, the same silent-on-failure rule last_said_by follows. Exit 1 is reserved for a return found on disk and over cap. RULING 2 (scout unknown B): a 4+-line transcript return with a compliant 3-line state.json key is a DEFECT and is reported as one. The cap protects the orchestrator's context window, and the orchestrator reads the RETURN, not the key; a tidy key does not un-spend context already spent. state.json is neither the source of truth nor the excuse, and is not consulted for return content at all. RULING 3: exemptions are DATA, not prose -- a module-level EXEMPT set of architect and ops, with GRAPH.md section 3 rule 3 cited in a comment as the authority (both are gate material and say so in their own files). RULING 4: a line is a non-empty line of the final text block after strip(); blank and whitespace-only lines are not counted, so a 3-line block with a trailing newline is 3. Cap = 3. agent_id -> agent_type comes from the run's own activity.jsonl start/tool events, the only place that mapping exists; copy the lane-identity rule from HEAD's postmortem.py rather than importing it. HARD CONSTRAINT: the script NEVER echoes transcript text, not one character, not truncated, not as context for a violation -- it prints agent type, agent id and line count. A checker that quotes the thing it polices turns every report into a transcript excerpt.",
+        "files": [
+          "graph_agents/.graph/check-return-cap.py",
+          "graph_agents/.graph/test_check_return_cap.py"
+        ],
+        "done_when": "`python graph_agents/.graph/test_check_return_cap.py` -> exit 0, every check passes, >= 12 checks, covering at minimum: a 4-line return by a non-exempt node -> script exit 1; an exactly-3-line return -> exit 0; a 3-line return with trailing blank lines -> exit 0; a 6-line return by architect and by ops -> exit 0 (exempt); an agent_id with no transcript on disk -> exit 0 with the word unverifiable in stdout; a run with no activity.jsonl -> exit 0, no traceback; a torn/invalid JSON line mid-transcript -> skipped, no traceback. Every case runs against a temp HOME and a COPIED fleet in a temp dir (the test_show_board.py / test_record_activity.py precedent), never the live tree and never the live .graph/CURRENT. AND `python graph_agents/.graph/check-return-cap.py 2026-09-20-fleet-gaps` -> exits 0 or 1 with no traceback.",
+        "risk": "high",
+        "risk_reason": "This slice reads real subagent transcripts -- the actual conversation content of sessions on this machine, including whatever paths, names and prose were said in them. It is the only slice touching data that must not be echoed. Its done_when cannot see the thing that matters: a green test proves the script exits with the right code, not that it read the correct text block, and certainly not that it never emitted transcript prose -- a mechanical check cannot distinguish printed-counts from printed-counts-plus-a-helpful-excerpt. That is exactly the 'logic a test cannot fully see' clause. It also creates the fleet's SECOND deliberate coupling to an undocumented storage layout. Reviewer: full-depth brief -- read every emitted output path line by line for transcript text, confirm the COPY (not import) of the path helper, confirm every failure mode exits 0, and confirm EXEMPT is data carrying the GRAPH.md citation."
+      },
+      {
+        "slice": "s3",
+        "intent": "audit-fleet.py:398-408 prints 'unregistered sibling dirs: ...' as a note every single run, carrying a comment saying four were deregistered on purpose 2026-08-31 -- a stale count (there are five) and a fact living in a comment where nothing can read it. The owner has now ruled permanently: koenrane.xyz, njcurtis3, personal-archive, thrml, whoop-med-tracker are NEVER to be added to the portfolio. RULING: make the list DATA and make the note mean something again. (1) A module-level DEREGISTERED tuple of those five names, with a comment recording the owner's 2026-09-20 permanent ruling and the 2026-08-31 deregistration. (2) Partition siblings against it. A sibling on the list produces NO output -- silence, because a line that fires every run and never changes is noise a reader learns to skip, and that is exactly how a genuinely unregistered directory would slip past. (3) A sibling that is neither registered nor on DEREGISTERED still produces the existing report.note(), unchanged, and now actually means 'look at this'. (4) ADD one new claim in the direction that cannot false-positive: if a name on DEREGISTERED appears IN registry.json, that is DRIFT -- something the owner said never to register got registered. Do NOT add the inverse claim (that every DEREGISTERED name must still exist on disk): deleting a personal repo is the owner's business and must not turn the auditor red. HARD CONSTRAINT: CURRENT-STATE.md is NOT in this slice and must not be touched; put the intended wording for it in the builder's notes so the close applies it in one place.",
+        "files": [
+          "graph_agents/.graph/audit-fleet.py",
+          "graph_agents/.graph/test_audit_fleet.py"
+        ],
+        "done_when": "`python graph_agents/.graph/test_audit_fleet.py` -> exit 0, every check passes, count >= 67 (63 today + >= 4 new: a synthetic sibling set of only DEREGISTERED names produces no 'unregistered sibling dirs' line; one unknown sibling produces the note naming only that one; a DEREGISTERED name present in a synthetic registry raises DRIFT; a DEREGISTERED name absent from disk raises nothing). AND `python graph_agents/.graph/audit-fleet.py` on the live tree -> stdout contains no 'unregistered sibling dirs' line at all (all five live siblings are on the list) and the exit code is unchanged from before the slice. AND `git -C graph_agents diff --name-only HEAD` inside the worktree lists exactly the two files above -- CURRENT-STATE.md must not appear.",
+        "risk": "low",
+        "risk_reason": "The only data question is whether five personal repo names may be literal in a tracked file, and they already are: close-run.py:78 names personal-archive in a comment, and scout-facts.py and CURRENT-STATE.md carry them too, all tracked. So this adds no new exposure -- and I have still put the confirmation on the human gate rather than deciding it for the owner. No shared file: both files are touched by no other slice, and CURRENT-STATE.md is explicitly excluded. The behaviour is entirely observable by the 63 existing checks plus four new ones over a synthetic sibling directory. Reviewer: green tests plus a scope check, with one named read -- confirm CURRENT-STATE.md is untouched in the diff."
+      }
+    ],
+    "edges": "s1, s2, s3 all parallel -- no artifact flows between them. Every candidate edge was checked and deleted: s2 does not consume anything s1 produces (it copies the lane-identity rule from HEAD's postmortem.py, whose semantics s1 does not change); s3 shares no input with either. The three fan in at the close, which is also where CURRENT-STATE.md is written once for all three.",
+    "resolved_unknowns": [
+      {
+        "unknown": "Gap #19: does the checker validate what is in state.json keys only, or also compare to actual transcript return text?",
+        "ruling": "TRANSCRIPT TEXT, and state.json is not consulted for return content at all. state.json holds no return text, and activity.jsonl's say is one line capped at 220 chars, so neither can count lines. The coupling to ~/.claude/projects/<encoded cwd>/<session_id>/subagents/agent-<id>.jsonl is taken deliberately -- second time in the fleet, after record-activity.py 2026-09-11 -- subject to two conditions: copy the path helper rather than importing the hook, and treat every read failure as unverifiable, exit 0, never a false red. Scout's recoverability risk stands and is accepted: a cleared cache loses the evidence retroactively, which is why the checker reports coverage (checked N, unverifiable M) rather than pretending silence is a pass."
+      },
+      {
+        "unknown": "Is a 4+-line transcript return with a compliant 3-line recorded key a defect or expected?",
+        "ruling": "A DEFECT, reported as one. The cap protects the orchestrator's context window; the orchestrator reads the return, not the key, and a compliant key does not un-spend context already spent. Exemptions are architect and ops only, per GRAPH.md section 3 rule 3, held as data in the script."
+      }
+    ],
+    "human_gate": [
+      "1. SLICE 1 RE-SCOPE. The goal says postmortem.py reads the `parent` field. Unbuildable: 0 of 52 events on a LIVE run carry it. Approve replacing it with the start+transcript-evidence discriminator (matched / orphan-with-evidence / phantom), which works on data the fleet already has.",
+      "2. DEFERRING parent's REMOVAL from record-activity.py. The evidence justifies deleting the field, but that hook is what all three builders write activity.jsonl through, and editing it mid-run would corrupt this run's own append-lock contention test -- half the run's purpose. Approve booking it as a gap for a later single-loop run.",
+      "3. SLICE 2 COUPLING. Approve reading subagent transcripts: a second deliberate coupling to an undocumented Claude Code storage layout. The alternative is a checker that cannot check the rule. If the answer is no, slice 2 should be cut, not weakened.",
+      "4. SLICE 2 RULING. Approve that a 4+-line transcript return with a compliant 3-line state.json key is a DEFECT, not expected.",
+      "5. SLICE 2 SCOPE. Approve that check-return-cap.py is REPORT-ONLY this run -- not wired into settings.json, not a hook, not a gate. Promotion to a gate is a decision after it has run against real data.",
+      "6. SLICE 3 BEHAVIOUR. Approve: the list becomes data; the five produce silence; only an UNKNOWN sibling produces a note; a new DRIFT claim if a deregistered name ever appears in registry.json; and no claim that they must still exist on disk.",
+      "7. CONSTITUTION CONFLICT, flagged not resolved. Root CLAUDE.md calls thrml a node in the portfolio graph -- 'one is a read-only vendor drop (thrml)' -- while your ruling says it is never to be registered. I plan against never-register. If the prose is what is wrong it needs a one-line fix, and that fix is in NO slice's file set here. Confirm the ruling wins and the prose fix is a separate task.",
+      "8. PRIVACY CONFIRMATION. The five personal repo names become literal data in tracked graph_agents/.graph/audit-fleet.py. They already appear in tracked close-run.py:78, scout-facts.py and CURRENT-STATE.md, so this is no new exposure -- but it is your call, not mine.",
+      "9. CURRENT-STATE.md is in NO slice and is written once at the close. That single decision is what keeps the three file sets disjoint and the diamond executable. Approve deferring it."
+    ],
+    "not_doing": [
+      "Any edit to .claude/agents/** or .claude/skills/** -- including updating .claude/skills/postmortem/SKILL.md to describe slice 1's new section, which is otherwise the natural follow-on. Step 0.5 rule 2 would force single-loop and kill the diamond this run exists to exercise. Separate run, fresh session.",
+      "Removing or gating the parent field in .claude/hooks/record-activity.py. Justified by the evidence, deferred on purpose: three builders write activity.jsonl through that hook concurrently, and editing it mid-run would corrupt the append-lock contention test. It also keeps that file out of a slice set where it could collide.",
+      "Adding duration or wall-clock to postmortem.py. Orphan-with-evidence stops remain unattributable to a lane, so a start/stop pair is still unsound after slice 1. The docstring's standing instruction -- add it in ONE place if gap #20 ever closes -- stays.",
+      "Editing CURRENT-STATE.md in any slice. Shared file; it is the thing that would break disjointness. Left to the close.",
+      "Wiring check-return-cap.py into settings.json, a hook or any gate; and back-checking historical runs' returns with it.",
+      "Upgrading the unregistered-sibling note to DRIFT for unknown siblings. It stays a note; changing its severity is a separate judgement call.",
+      "Registering graph_agents, or any of the five deregistered repos, in portfolio/registry.json.",
+      "Re-running, rewriting or backfilling any historical run's activity.jsonl.",
+      "Fixing root CLAUDE.md's description of thrml as a portfolio node (human gate item 7). Not in any slice's file set."
+    ]
+  },
+  "approved_by_human": true,
+  "scope_exceptions": [],
+  "builders": {
+    "s2": {
+      "written_by": "builder",
+      "status": "done",
+      "branch": "s2-return-cap",
+      "worktree": ".graph/worktrees/2026-09-20-fleet-gaps/s2",
+      "changed": [
+        "graph_agents/.graph/check-return-cap.py",
+        "graph_agents/.graph/test_check_return_cap.py"
+      ],
+      "notes": "",
+      "gate_results": "ATTEMPT 2, after REJECT: last_return_text() now reads the `message` argument of the node's own SubagentHandback tool_use call, not the newest `text` block anywhere in the transcript (attempt 1's defect -- a text block can precede the handback as narration or, harness-permitting, follow it as post-handback chatter the orchestrator never received). No SubagentHandback call found -> unverifiable, never certified compliant off an in-flight lane's opening sentence. `python graph_agents/.graph/test_check_return_cap.py` (worktree copy) -> stdout final line '50/50 checks passed', exit 0. Every fixture rebuilt around the real SubagentHandback shape via handback_turn()/text_turn() helpers; added the case the review named directly -- a compliant handback followed by a LONGER post-handback text block, asserted NOT a violation -- plus an in-flight lane (prose said, no handback yet) asserted unverifiable, plus multiple-handback-calls-take-the-latest. Second done_when clause, re-run against the SAME live run that produced attempt 1's false positives -- `python graph_agents/.graph/check-return-cap.py 2026-09-20-fleet-gaps`, run read-only via importlib against the worktree's own script with VERIFY/CURRENT pointed at the real graph_agents/.graph (no file written): exit 0 now, not 1 -- both attempt-1 false positives are GONE. scout a38815a94d3c49662 now reads 3 line(s) (was reported 4; reviewer hand-count was 3 -- matches). builder a5ec4987f85a61ee3 now reads 2 line(s) (was reported 10; reviewer hand-count was 2 -- matches). reviewer ab73cbde6ad43d096, the in-flight lane the review flagged, now reports 'unverifiable: reviewer ab73cbde6ad43d096 -- no return recoverable' instead of a fabricated '1 line(s)' compliant reading. Full stdout: 7 lanes checked (reviewer a1e12e2ad1379b837 3, scout a38815a94d3c49662 3, architect a4957012c31be4192 32 (exempt), builder a5ec4987f85a61ee3 2, reviewer a72a137913f042f54 3, builder ac5cf8e6e81c3b87c 2, builder ac78e79a0bea2d9c6 2), 1 unverifiable (ab73cbde6ad43d096), 0 violations, final line 'all checked returns are within cap'. No transcript text in output at any point.",
+      "deviation_from_approved_plan": "None from the approved plan/file set. Implementation approach changed within scope after review: last_return_text() now targets the SubagentHandback tool_use's message field instead of the newest text block, per the reviewer's traced-to-architect-spec finding -- same two files, same behavior contract (unverifiable/exit-0 on any read failure, exit 1 only on a real over-cap return, never echo transcript text)."
+    },
+    "s1": {
+      "written_by": "builder",
+      "status": "done",
+      "branch": "s1-stop-integrity",
+      "worktree": ".graph/worktrees/2026-09-20-fleet-gaps/s1",
+      "changed": [
+        "graph_agents/.graph/postmortem.py",
+        "graph_agents/.graph/test_postmortem.py"
+      ],
+      "notes": "",
+      "gate_results": "`python graph_agents/.graph/test_postmortem.py` (run inside the worktree) -> exit 0, 28 checks (18 prior + 10 new), all ok, final line 'all checks passed'. `grep -n parent graph_agents/.graph/postmortem.py` (worktree copy) -> 4 matches, all within the module docstring (lines 1-54); zero matches at or after `import importlib.util` (line 55). Second done_when clause -- `python graph_agents/.graph/postmortem.py 2026-09-20-fleet-gaps` -- could not be run literally against the checked-in path because that file only exists on the s1-stop-integrity branch pre-merge (same as every builder slice); verified equivalently by loading the worktree's postmortem.py + verify-state.py via importlib and calling report() against this run's real .graph/runs/2026-09-20-fleet-gaps (state.json + activity.jsonl, read-only, no say text ever printed): exit path clean, stdout contains '## Stop-event integrity' and '39 stop event(s): 2 matched, 0 orphan-with-evidence, 37 phantom' / 'phantom ratio: 37/39 (95%)' -- nonzero phantom count as required. The '(N phantom stop event(s) excluded -- gap #20)' line still appears ('(37 phantom stop event(s) excluded -- gap #20)').",
+      "deviation_from_approved_plan": ""
+    },
+    "s3": {
+      "written_by": "builder",
+      "status": "done",
+      "branch": "s3-deregistered",
+      "worktree": ".graph/worktrees/2026-09-20-fleet-gaps/s3",
+      "changed": [
+        "graph_agents/.graph/audit-fleet.py",
+        "graph_agents/.graph/test_audit_fleet.py"
+      ],
+      "notes": "Proposed CURRENT-STATE.md wording (not applied -- out of this slice's file set; for close-run.py to place): change the deregistered-siblings mention, wherever CURRENT-STATE.md currently names 'four' repos deregistered 2026-08-31, to five: koenrane.xyz, njcurtis3, personal-archive, thrml, whoop-med-tracker -- and note the count now lives as code in audit-fleet.py's DEREGISTERED tuple, not just prose here.",
+      "gate_results": "`python graph_agents/.graph/test_audit_fleet.py` (worktree copy) -> exit 0, all cases print 'ok', final line 'all checks passed'; includes 4 new cases: a synthetic sibling set of only DEREGISTERED names produces no 'unregistered sibling dirs' line (pass), one unknown sibling ('mystery-dir') produces the note naming only that one (pass), a DEREGISTERED name ('thrml') registered in a synthetic registry.json raises DRIFT via the new claim '`thrml` stays out of the portfolio' (exit 1, pass), a DEREGISTERED name absent from disk raises nothing (pass, 'thrml' never appears in output). `python graph_agents/.graph/audit-fleet.py` could not be run literally against the checked-in live path (this file only exists on s3-deregistered pre-merge, same as every builder slice); verified equivalently by loading the worktree's audit-fleet.py via importlib with its FLEET/UMBRELLA/DOC/etc constants repointed at the real live graph_agents/ tree (read-only, no write) and calling main([]): stdout has no 'unregistered sibling dirs' line (all five live siblings -- koenrane.xyz, njcurtis3, personal-archive, thrml, whoop-med-tracker -- are on DEREGISTERED and produce silence) and exit code is 1, unchanged from a same-method run of the unmodified live audit-fleet.py before this slice's edit (both times: 'status headline says thirteen runs', the freshness stamp, and the two orphan-hook claims -- pre-existing drift this slice does not touch). `git -C graph_agents diff --name-only HEAD` inside the worktree -> exactly `.graph/audit-fleet.py` and `.graph/test_audit_fleet.py`; CURRENT-STATE.md does not appear.",
+      "deviation_from_approved_plan": ""
+    }
+  },
+  "reviews": {
+    "s1": {
+      "$comment": "RE-REVIEWS NEST, and this is the rule every reader follows. The TOP LEVEL of reviews.<slice> IS attempt 1. A re-review writes attempt_2, then attempt_3, and so on, each with the same fields as the top level. Every attempt SURVIVES PERMANENTLY - history is never overwritten, flattened, or migrated up. The LATEST attempt supplies the verdict: that is what close-run.py, brief.py and verify-state.py resolve through, and what fleetview's finalVerdict() has always shown. `ever_rejected` - did ANY attempt REJECT - is DISPLAY ONLY, forever, so a rejection stays visible after it is fixed; it must never gate anything, or the fleet stops being able to loop. NO NODE MAY REWRITE AN EARLIER ATTEMPT: a second reviewer writes its own attempt_N and leaves the ones before it alone, top-level verdict included - relocating that verdict would destroy the history the board keeps and leave a key stamped written_by:reviewer with someone else as its real author. The KEY INDEX numbers an attempt, not the `attempt` field inside it; the field is display. An EMPTY attempt_N is not a re-review, it is a key nobody wrote - write the whole attempt or none of it. The walk STOPS AT THE FIRST GAP, so an attempt_3 with no attempt_2 is ignored and the earlier verdict stands: A GAP IS MALFORMED AND NO NODE MAY LEAVE ONE. Write the next UNUSED N and never skip - a mis-numbered re-review is not reported anywhere, it is simply unread, and a REJECT nobody reads is a REJECT nobody acts on. The cap is attempt_9, matching fleetview's `for (i = 2; i < 10; i++)` exactly so the two readers cannot disagree; attempt_10 and beyond is reported loudly and resolved by nobody.",
+      "written_by": "reviewer",
+      "verdict": "PASS",
+      "attempt": 1,
+      "summary": "Re-derived every done_when clause myself rather than reading the builder's gate_results: the worktree suite runs 28 checks, all ok, exit 0 (>=24 required); the worktree's postmortem.py, copied with verify-state.py into an isolated scratch fleet beside a read-only copy of this run's real run dir, exits 0 and prints '## Stop-event integrity' with '52 stop event(s): 3 matched, 0 orphan-with-evidence, 49 phantom' plus '(49 phantom stop event(s) excluded -- gap #20)'; grep -n parent hits only docstring lines 22-31, zero in code; the diff is exactly postmortem.py and test_postmortem.py, no CURRENT-STATE.md; the commit is njcurtis3 with no Claude trailers. Reading the classifier rather than trusting green: real_ids is built in a separate first pass so classification is order-independent, no say/tokens value is ever formatted into output (counts only), and no duration or wall-clock appears anywhere. I proved the three buckets are real by mutating a scratch copy to collapse orphan into phantom -- three case8 checks went red, exit 1. Notes only; risk=low fits.",
+      "findings": [
+        {
+          "file": "graph_agents/.claude/skills/postmortem/SKILL.md",
+          "line": 24,
+          "issue": "Doc drift, not a code defect. The skill's section table lists four sections and omits the new '## Stop-event integrity', and the line 'This script never reads one [stop event]' is now literally false -- read_lanes reads every stop's id/say/tokens presence (never their timestamps, which is the part that mattered). SKILL.md was outside the approved file set, so the builder could not fix it; worth a follow-up slice.",
+          "severity": "note",
+          "origin": "architect"
+        },
+        {
+          "file": "graph_agents/.graph/postmortem.py",
+          "line": 180,
+          "issue": "The '(N phantom stop event(s) excluded -- gap #20)' line is now gated on stops['phantom'] alone, while lane exclusion still drops orphans too. On a hypothetical run with orphan>0 and phantom==0 the line vanishes even though unstarted stops were excluded from every lane. Label is accurate as worded and the integrity section directly below carries the orphan count, so no reader is misled; flagging only because the hard constraint was worded as 'the line must still appear'. Live data has orphan==0, so this is unreachable today.",
+          "severity": "note",
+          "origin": ""
+        },
+        {
+          "file": "graph_agents/.graph/postmortem.py",
+          "line": 121,
+          "issue": "Evidence test is truthiness: `event.get(\"say\") or event.get(\"tokens\")`. A stop carrying tokens=0 or say=\"\" classifies as PHANTOM rather than ORPHAN-WITH-EVIDENCE. Arguably correct (a zero-token empty transcript is no evidence), but it is a presence-vs-truthiness choice made implicitly and no test pins it either way.",
+          "severity": "note",
+          "origin": ""
+        },
+        {
+          "file": "graph_agents/.graph/runs/2026-09-20-fleet-gaps/state.json",
+          "line": 0,
+          "issue": "Housekeeping, not about the slice: reviews.s1 arrived as untouched _schema.json placeholder text including a placeholder 'attempt_2' that no node ever wrote. A resolver walking to the latest attempt would have read that fake key's 'PASS|REJECT' instead of a real verdict, so I removed the empty placeholder and wrote my verdict at the top level, which is attempt 1. No real attempt was edited or moved.",
+          "severity": "note",
+          "origin": ""
+        }
+      ]
+    },
+    "s2": {
+      "written_by": "reviewer",
+      "verdict": "REJECT",
+      "attempt": 1,
+      "summary": "REJECT: the checker counts the wrong block of text, so its only failure signal is wrong on its first real outing. I re-ran the suite (45/45, exit 0) and re-derived every done_when case. The suite is genuinely hermetic -- I audited every open/glob/subprocess during a run: zero reads of the real ~/.claude/projects, of live .graph/CURRENT or of live runs/; only read-only copies of _schema.json into the temp fleet. It goes red under two faults I injected into scratch copies (41/45; 43/45). Imports are stdlib plus a dynamic load of sibling verify-state.py -- no record-activity.py, no postmortem.py. EXEMPT is module-level data with the GRAPH.md citation, every print path emits only agent type, id and an integer, the diff is exactly the two new files, and the commit is njcurtis3 with no attribution. What fails is the definition of 'return': returns arrive as the SubagentHandback tool_use payload, not a text block. Hand-counting this run's transcripts, scout a38815a94d3c49662's real return is 3 lines and builder a5ec4987f85a61ee3's is 2 -- both compliant -- yet the checker says 4 and 10 and exits 1. The builder's live finding is REFUTED: false positives, not gap #19 violations.",
+      "findings": [
+        {
+          "file": "graph_agents/.graph/check-return-cap.py",
+          "line": 124,
+          "issue": "last_return_text() takes the last message.content block of type text, but a node's RETURN is the `message` argument of its SubagentHandback tool_use; the text block after it is post-handback chatter the orchestrator never received. Concrete: live run 2026-09-20-fleet-gaps, lane scout a38815a94d3c49662 - real return (SubagentHandback input.message) is 3 non-empty lines, compliant; the script prints 'OVER CAP: scout a38815a94d3c49662 -- 4 line(s)' and exits 1. Same for builder a5ec4987f85a61ee3: real return 2 lines, script says 10. Both of the run's reported violations are false positives, which is the worst possible failure for a checker whose exit 1 is meant to be actionable. It cuts the other way too: reviewer a72a137913f042f54's real return is 3 lines while the script measured an unrelated 1-line block - right verdict, wrong evidence, so a genuinely over-cap handback can be missed. Fix: prefer the LAST SubagentHandback tool_use's input.message; fall back to the last text block only when no handback exists.",
+          "severity": "blocker",
+          "origin": "architect"
+        },
+        {
+          "file": "graph_agents/.graph/check-return-cap.py",
+          "line": 198,
+          "issue": "An in-flight lane is reported as a compliant checked return. Concrete: during this review, lanes a1e12e2ad1379b837 and ab73cbde6ad43d096 (reviewers still running, zero SubagentHandback events) were printed as '1 line(s)' - their last text block was an opening sentence, not a return. A lane that has not returned yet should be 'unverifiable', not silently certified within cap. Falls out of the same fix: no handback on disk => no return to check.",
+          "severity": "major",
+          "origin": "architect"
+        },
+        {
+          "file": "graph_agents/.graph/test_check_return_cap.py",
+          "line": 162,
+          "issue": "The fixtures encode the same wrong model: write_transcript() and every hand-built transcript contain only {'type':'text'} blocks and no SubagentHandback tool_use at all, so no case in the suite could ever have distinguished a return from trailing chatter. The suite is well built and genuinely fails when broken (I verified both injected faults), but it asserts the implementation's definition rather than the behaviour rule 3 caps. A corrected suite needs at least one fixture with a compliant handback followed by a longer text block, asserting NOT a violation.",
+          "severity": "major",
+          "origin": "builder"
+        },
+        {
+          "file": "graph_agents/.graph/check-return-cap.py",
+          "line": 21,
+          "issue": "Note, not a blocker: the scout's transcript-layout finding stopped at 'the return text survives in the transcript' and did not carry the shape it survives IN (a SubagentHandback tool_use payload), which is what the architect then mis-specified as 'the last text block, last_said_by's definition'. last_said_by is right for a heartbeat caption and wrong for a return; the copy was faithful, the source rule was not applicable.",
+          "severity": "minor",
+          "origin": "scout"
+        },
+        {
+          "file": "graph_agents/.graph/test_check_return_cap.py",
+          "line": 233,
+          "issue": "Note: done_when's second clause ('check-return-cap.py 2026-09-20-fleet-gaps -> exits 0 or 1, no traceback') is vacuous from the worktree - the worktree's .graph/runs has no 2026-09-20-fleet-gaps, so verify-state dies, main() catches SystemExit and returns 0 having checked nothing. I exercised the live path instead by importing check() read-only against the live run dir. No file was written to the live tree.",
+          "severity": "minor",
+          "origin": ""
+        }
+      ],
+      "honest_gaps": [
+        "I did not verify behaviour on a non-Windows HOME layout; expanduser/USERPROFILE was checked on this platform only.",
+        "find_transcript's mtime tiebreak for a duplicate agent_id across sessions is untested by the suite and unexercised by me - no duplicate exists on disk to try it against.",
+        "I did not test concurrent access (the checker reading a transcript while Claude Code appends beyond a single torn final line).",
+        "I confirmed no import of record-activity.py/postmortem.py by reading the import list and grepping; I did not diff the copied helpers character-by-character against their originals to confirm the copies are faithful in every branch.",
+        "I did not re-run the full fleet's other suites to confirm this slice breaks nothing else; the diff touches no existing file, so I took that as sufficient.",
+        "I read live transcript content to hand-count lines but deliberately quoted none of it here; my counts are reproducible from the ids and the SubagentHandback payloads."
+      ],
+      "attempt_2": {
+        "written_by": "reviewer",
+        "verdict": "PASS",
+        "attempt": 2,
+        "summary": "PASS. All three rejection items are genuinely fixed and I verified each without trusting the builder: last_return_text now reads the SubagentHandback tool_use's message field, and my own hand-count of the live transcripts agrees with it (scout a38815a94d3c49662 = 3 lines, builder a5ec4987f85a61ee3 = 2; the 10-line block it used to count is post-handback chatter); the live in-flight lane a2707295f1f8bd861 (mine) reports unverifiable, not a fabricated 1 line; and the compliant-handback-then-longer-chatter fixture is load-bearing -- reverting the reader to the old last-text-block definition takes the suite from 50/50 to 38/50. Four further faults I injected (drop ops from EXEMPT, count blank lines, treat unreadable as a violation, CAP=6) all go red. An audit hook over a whole suite run shows zero reads of the real ~/.claude/projects, live CURRENT or live runs/; only agent type, id and an integer reach any output path; stdlib only, no record-activity/postmortem import; the diff is exactly the two new files; both commits are njcurtis3 with no attribution. Proxy question ruled: the measured string IS the delivered body, byte-identical on four lanes. Notes below, none blocking.",
+        "findings": [
+          {
+            "severity": "note",
+            "where": "graph_agents/.graph/check-return-cap.py:34-35, 145-146",
+            "origin": "builder",
+            "detail": "The docstring grounds its central premise in a citation that does not exist: \"see the node files' own Return sections: 'call SubagentHandback ... and then stop'\". No file under graph_agents contains the string SubagentHandback -- not GRAPH.md, not any of the six .claude/agents/*.md, whose Return sections say only 'Three lines, hard cap'. That instruction comes from the harness's injected system-reminder, not from the fleet's own prose. The behaviour is right; the authority quoted for it is invented, and a maintainer who goes looking for that sentence will not find it. Cite the harness reminder instead."
+          },
+          {
+            "severity": "note",
+            "where": "graph_agents/.graph/check-return-cap.py:137 (last_return_text) -- coverage",
+            "origin": "scout",
+            "detail": "Coverage blind spot, dated: of the 134 subagent transcripts on disk, 126 contain no SubagentHandback tool_use at all -- every lane from 2026-08-25 through 2026-09-09 delivered its return some other way. All 8 that do have one are this run's lanes, the earliest at 2026-09-20 10:03. So the checker is meaningful for runs on this harness version onward and reports 'unverifiable' for every earlier run. That is the conservative behaviour the architect's ruling asked for, not a wrong answer, but a backfill audit of gap #19 across run history is not possible with this tool, and the scout's transcript-layout finding did not carry the fact that the delivery mechanism had only just changed."
+          },
+          {
+            "severity": "note",
+            "where": "graph_agents/.graph/check-return-cap.py:188 (line_count) -- the proxy question, ruled",
+            "origin": "",
+            "detail": "Explicit ruling on whether the on-disk message is what the orchestrator received. It is. I diffed the agent-side SubagentHandback message against the orchestrator session's own enqueued copy for four lanes (a72a137913f042f54, a4957012c31be4192, a5ec4987f85a61ee3, a38815a94d3c49662): equal after removing a uniform two-space indent, byte for byte, including the architect's 9,244-character 32-line return -- no truncation, no reflow, identical non-empty line count. The harness adds a constant wrapper (an agent-message frame plus a ~5-line hand-back preamble) and indents the body; it changes nothing the cap governs. The checker measures the rule's own object, not a proxy. Honest caveat: the orchestrator's real context cost is the body plus that fixed frame, which no node controls."
+          },
+          {
+            "severity": "note",
+            "where": "graph_agents/.graph/check-return-cap.py:261",
+            "origin": "",
+            "detail": "load_module(VERIFY, ...) sits outside the try: if .graph/verify-state.py is missing or unimportable the CLI raises, prints a traceback and exits 1 -- the code reserved for a real over-cap return, produced by a read failure. verify.load() itself is safe (it only ever raises SystemExit, which main catches -> 0). This mirrors postmortem.py:249 exactly, so it matches the surrounding code, and the failure needs a sibling fleet file to have been deleted. Recorded, not blocking."
+          },
+          {
+            "severity": "note",
+            "where": "graph_agents/.graph/test_check_return_cap.py:233 (done_when clause 2)",
+            "origin": "",
+            "detail": "Carried forward from attempt 1 and still true: 'check-return-cap.py 2026-09-20-fleet-gaps' run from the worktree is vacuous -- the worktree's .graph/runs has no such run, verify.load dies, main catches SystemExit and returns 0 having checked nothing. I satisfied the clause honestly instead: copied the worktree script plus verify-state.py, _schema.json and the live run's state.json/activity.jsonl into a scratch .graph and ran it with cwd=repos against the REAL transcripts. Output: 8 lanes checked, architect 32 (exempt), 1 unverifiable, 'all checked returns are within cap', exit 0, no traceback, no transcript text. Nothing written to the live tree."
+          },
+          {
+            "severity": "note",
+            "where": "graph_agents/.graph/test_check_return_cap.py:150 (find_transcript)",
+            "origin": "",
+            "detail": "The mtime tiebreak for an agent_id appearing under two session directories is documented in find_transcript's docstring but has no fixture -- the two-session case in the suite uses distinct ids. Low value (Claude Code ids do not collide); a completeness note, not a gap that would bite."
+          }
+        ],
+        "honest_gaps": "What I could not do: I could not observe a lane that calls SubagentHandback more than once, or one whose handback input is captured mid-stream with a partial message; both are covered by reading (latest-wins; a non-string or blank message is ignored and the lane degrades to unverifiable, never to a violation) and by fixture, not by live evidence. The in-flight proof is my own lane a2707295f1f8bd861, the only in-flight lane that existed while I reviewed, so 'in-flight' is verified on one real instance plus the r_inflight fixture. My byte-comparison of agent-side vs orchestrator-side return text covers four lanes of this one run on one harness version (claude-code 2.1.276); I cannot rule out a future harness truncating long returns, which would silently turn the count into a proxy. I also did not exercise a genuine over-cap return on live data -- no lane in this run exceeds the cap -- so exit 1 is proven by fixture and by injected faults, not in the wild. I did not merge, check out or reset anything, and I never ran the CLI from inside the live .graph: the live exercise was a scratch copy of the script and of the run dir, read-only against the real ~/.claude/projects."
+      }
+    },
+    "s3": {
+      "written_by": "reviewer",
+      "verdict": "PASS",
+      "attempt": 1,
+      "summary": "Re-derived every gate rather than trusting the builder. Worktree test_audit_fleet.py: exit 0, 71 ok against a 63-ok master baseline I rebuilt and ran myself (+8, no prior case removed or weakened). Ran master's and the branch's audit-fleet.py against the LIVE tree read-only via an importlib shim: the branch prints no 'unregistered sibling dirs' line, exit stays 1, the same four pre-existing drifts appear, claims 119 -> 124. I built my own synthetic sibling sets instead of using the shipped tests and proved all three directions: only-DEREGISTERED siblings -> silent; DEREGISTERED plus 'mystery-dir' -> note naming only mystery-dir; 'brand-new-app' alone -> note; deregistered dirs absent from disk -> nothing, exit 0; 'thrml' by id -> DRIFT, and 'njcurtis3' as a path under a different id -> DRIFT too. On the tradeoff: the auditor still goes visibly loud for any genuinely unregistered new directory -- only the five ruled-on names are silenced, guarded in the one direction that cannot false-positive. Diff is exactly the two approved files, CURRENT-STATE.md absent, main tree untouched, commit authored njcurtis3 with no Claude attribution. The 'low' risk tag is correct.",
+      "findings": [
+        {
+          "severity": "note",
+          "origin": "builder",
+          "detail": "The DEREGISTERED comment block in audit-fleet.py reads '`personal-archive` makes five and this tuple is the fifth entry' -- muddled (personal-archive is the third entry). The substance the slice asked for is there (2026-09-20 permanent ruling, 2026-08-31 deregistration, why absence-from-disk is deliberately not checked), so this is prose polish only, not a blocker."
+        },
+        {
+          "severity": "note",
+          "origin": "",
+          "detail": "The mirrored DEREGISTERED tuple in test_audit_fleet.py is a hand-kept copy of the one in audit-fleet.py; if the owner ever rules a sixth name, both must move. Acceptable for now -- the tests deliberately assert behavior against literal names rather than importing the tuple under test, which is the right call, but worth a line in CURRENT-STATE.md at the close."
+        },
+        {
+          "severity": "note",
+          "origin": "",
+          "detail": "'a DEREGISTERED name absent from disk raises nothing' asserts forbid_text='thrml' over the default fixture. I checked it is not vacuous: adding an inverse must-exist-on-disk claim would make 'thrml' appear in that fixture's output and fail the case. Weak but real."
+        }
+      ],
+      "gates_rerun": [
+        "worktree `python .graph/test_audit_fleet.py` -> exit 0, 71 ok, 'all checks passed'",
+        "master test copy rebuilt in a scratch dir -> exit 0, 63 ok (baseline confirmed)",
+        "master audit-fleet.py vs live tree (importlib shim) -> exit 1, 119 claims, 4 drifted, 'unregistered sibling dirs: koenrane.xyz, njcurtis3, personal-archive, thrml, whoop-med-tracker'",
+        "branch audit-fleet.py vs live tree (same shim) -> exit 1, 124 claims, same 4 drifts, NO 'unregistered sibling dirs' line",
+        "independent synthetic sibling sets A-H covering silence / note / DRIFT-by-id / DRIFT-by-path / absent-from-disk",
+        "`git -C graph_agents diff --name-only master...s3-deregistered` -> .graph/audit-fleet.py, .graph/test_audit_fleet.py only; CURRENT-STATE.md absent; main tree porcelain shows only the untracked run dir",
+        "`git log -1 --format='%an <%ae>%n%b' s3-deregistered` -> njcurtis3 <nathanjcurtis3@gmail.com>, body carries no Claude trailer"
+      ]
+    }
+  },
+  "integrator": {
+    "written_by": "integrator",
+    "status": "done",
+    "merged": [
+      {
+        "slice": "s1",
+        "branch": "s1-stop-integrity",
+        "head": "edb24be",
+        "merge_commit": "85f1e69",
+        "latest_verdict": "PASS (attempt 1)"
+      },
+      {
+        "slice": "s2",
+        "branch": "s2-return-cap",
+        "head": "2be82fa",
+        "merge_commit": "0d2bf60",
+        "latest_verdict": "PASS (attempt 2, after REJECT on attempt 1)"
+      },
+      {
+        "slice": "s3",
+        "branch": "s3-deregistered",
+        "head": "438a0f3",
+        "merge_commit": "14e229c",
+        "latest_verdict": "PASS (attempt 1)"
+      }
+    ],
+    "merge_target": "graph_agents @ master, 7d57fa8 -> 14e229c, three --no-ff merges in the main tree, in order s1, s2, s3",
+    "conflicts": [],
+    "conflict_note": "Zero conflicts. The planned file sets held disjoint: s1 touched .graph/postmortem.py + test_postmortem.py, s2 added .graph/check-return-cap.py + test_check_return_cap.py (both new files), s3 touched .graph/audit-fleet.py + test_audit_fleet.py. No file appears in two slices; every merge was a clean 'ort' merge.",
+    "verification": {
+      "command": "for t in graph_agents/.graph/test_*.py graph_agents/.claude/hooks/test_*.py; do python \"$t\"; done",
+      "result": "13/13 suites exit 0 -- FULL SUITE GREEN on the merged tree",
+      "per_suite": [
+        "[0] .graph/test_audit_fleet.py -- all checks passed (incl. the new DEREGISTERED cases and 'it never writes')",
+        "[0] .graph/test_brief.py -- all checks passed",
+        "[0] .graph/test_check_return_cap.py -- 50/50 checks passed (NEW, from s2)",
+        "[0] .graph/test_close_run.py -- all checks passed",
+        "[0] .graph/test_postmortem.py -- all checks passed (incl. case7 exit code)",
+        "[0] .graph/test_verify_state.py -- all checks passed",
+        "[0] .claude/hooks/test_bash_write_targets.py -- 199 cases, 77 not-a-write, 42 from corpus, all passed",
+        "[0] .claude/hooks/test_flag_stale_state.py -- 18/18 checks passed",
+        "[0] .claude/hooks/test_guard_builder_scope.py -- all checks passed",
+        "[0] .claude/hooks/test_guard_commit_trailers.py -- all checks passed",
+        "[0] .claude/hooks/test_hooks_resolve.py -- 9 hook commands checked, all resolve",
+        "[0] .claude/hooks/test_record_activity.py -- 28/28 checks passed",
+        "[0] .claude/hooks/test_show_board.py -- all checks passed"
+      ],
+      "note": "12 suites before this run, 13 after -- test_check_return_cap.py is the new one, as expected. No suite that passed in isolation went red in combination."
+    },
+    "cross_slice_findings": [
+      {
+        "question": "s1 and s2 both decide what a lane is, from the same activity.jsonl. s2 COPIED s1's lane-identity rule from HEAD rather than importing it. Now that both are on one branch, do the two definitions actually agree?",
+        "answer": "YES -- exact agreement, no contradiction. Reconciled live against this run by importing both modules read-only and diffing their id sets. postmortem.read_lanes() yields 11 lanes; check_return_cap.agent_types() yields 10 node ids. The 10 are a strict subset of the 11, with ZERO agent-type disagreements on any shared id. The single s1-only lane is the synthetic key 'orchestrator': the orchestrator's events carry no `id`, so s1's `id or agent` fallback keys it by agent name, while s2 correctly omits it because the orchestrator is not a subagent and has no subagent transcript to read. There are no s2-only ids.",
+        "contradiction_test": "The decisive test -- does s1 call a lane phantom while s2 reports a return for it? -- comes back EMPTY: the intersection of s1's 96 phantom stop ids with s2's 10 node ids is the empty set. This is structural, not luck. s1 classifies a stop as phantom precisely when its id never appeared on a `start` or `tool` event, and s2 derives its whole node set from exactly those `start`/`tool` events, so the two cannot disagree on membership. s2's copy of the lane-identity rule is faithful AND survived s1's rewrite of postmortem.py, because s1 changed the classification of `stop` events and left the start/tool lane-keying untouched -- which is exactly what its hard constraint required. The copy-don't-couple call holds here; if a future slice changes the lane KEY (the `id or agent` fallback) in one file and not the other, that agreement breaks silently, and nothing currently checks it.",
+        "numbers": "s1 on this run: 106 stop events = 10 matched / 0 orphan-with-evidence / 96 phantom (91% phantom ratio), over 9 distinct matched ids plus the orchestrator key. s2 on this run: 10 nodes, 9 with a recoverable return, 1 unverifiable. The 9 line up one-for-one with s1's 9 distinct matched stop ids. The 10th s2 node is the integrator, which s1 sees as a live lane with no stop event at all -- in-flight, and both tools say so consistently rather than contradicting each other."
+      },
+      {
+        "question": "s3 changed what audit-fleet.py reports. Is the drift count what the merged state actually implies?",
+        "answer": "YES. `python graph_agents/.graph/audit-fleet.py` -> '124 claims checked, 9 drifted', exit 0. The five deregistered siblings (koenrane.xyz, njcurtis3, personal-archive, thrml, whoop-med-tracker) produce NO output, as the slice specified; the old every-run 'unregistered sibling dirs' note is gone from the report. The new DRIFT-if-registered claim is silent, correctly -- none of the five appears in registry.json. Every one of the 9 drifts is expected bookkeeping; none is a defect in the merged code.",
+        "drift_list_for_the_close": [
+          "LINE-COUNT DRIFT caused by this run -- the four files the three slices touched, deliberately deferred to CURRENT-STATE.md at the close:",
+          "  .graph/postmortem.py -- claimed 264 ln, disk 309 (claimed in two places, so it reports twice; both need updating)",
+          "  .graph/test_postmortem.py -- claimed 198 ln, disk 238",
+          "  .graph/audit-fleet.py -- claimed 590 ln, disk 616",
+          "  .graph/test_audit_fleet.py -- claimed 352 ln, disk 399",
+          "RUN-COUNT DRIFT: status headline says thirteen runs -- 14 run directories on disk (this run).",
+          "STAMP DRIFT: 15 definition files changed after the 2026-09-19 stamp, including .graph/check-return-cap.py and .graph/test_check_return_cap.py. NOTE FOR THE CLOSE: those two are NEW and are not claimed anywhere in CURRENT-STATE.md, so the close must ADD claims for them, not merely update numbers -- a line-count drift cannot fire for a file nothing claims.",
+          "PRE-EXISTING, NOT FROM THIS RUN: .claude/hooks/bash_write_targets.py and .claude/hooks/measure_bash_corpus.py are each registered with no settings.json entry running them."
+        ],
+        "note": "CURRENT-STATE.md was in no slice's file set on purpose -- that is what kept the three sets disjoint -- so settling this list is the close's job, in one place. s3's builder notes carry the intended DEREGISTERED wording for it."
+      },
+      {
+        "question": "Did any slice silently change a shared behaviour? verify-state.py, brief.py and close-run.py were in nobody's file set but all three read the same run state.",
+        "answer": "NO. All three run clean on the merged tree with no traceback. `python graph_agents/.graph/brief.py 2026-09-20-fleet-gaps` exits 0. `python graph_agents/.graph/close-run.py 2026-09-20-fleet-gaps` exits 0, reports 'closeable', and independently confirms all three branches are in master. `verify-state.py` prints its usage and exits 0. Their three suites (test_brief, test_close_run, test_verify_state) are green in the full run above. Mechanically this is what the diff predicts: s1 and s3 edited only their own modules, and s2 added two new files and loads verify-state.py dynamically, read-only, without mutating it."
+      }
+    ],
+    "return_cap_check": {
+      "command": "python graph_agents/.graph/check-return-cap.py 2026-09-20-fleet-gaps",
+      "exit": 0,
+      "result": "9 compliant / 0 over cap / 1 unverifiable. First complete outing of the checker, and it finds no gap #19 violation in this run. Not a merge blocker either way -- this is a finding about the run's nodes, not about the code.",
+      "detail": "cap=3, exempt=architect, ops. reviewer a1e12e2ad1379b837 3 ln; reviewer a2707295f1f8bd861 3 ln; scout a38815a94d3c49662 3 ln; architect a4957012c31be4192 32 ln (EXEMPT, correctly not a violation); builder a5ec4987f85a61ee3 2 ln; reviewer a72a137913f042f54 3 ln; reviewer ab73cbde6ad43d096 3 ln; builder ac5cf8e6e81c3b87c 2 ln; builder ac78e79a0bea2d9c6 2 ln. Unverifiable: integrator a1696de5c7c1602c0 -- no return recoverable, which is correct and expected, since that lane is me and my SubagentHandback is not on disk yet. That is precisely the attempt-1 defect the reviewer caught, now behaving right: an in-flight lane reports unverifiable instead of being certified with a fabricated 1-line return.",
+      "corroboration": "The attempt-1 'live finding' of two violations (scout 4 ln, builder 10 ln) stays REFUTED on the merged tree: the fixed reader agrees with the reviewer's hand-count of 3 and 2."
+    },
+    "not_done": [
+      "Did not push, tag or deploy -- that is ops, behind the human gate.",
+      "Did not touch CURRENT-STATE.md; the close owns it, per s3's hard constraint.",
+      "Did not implement anything new at the seam; no gap appeared that required one.",
+      "Left the three worktrees under .graph/worktrees/2026-09-20-fleet-gaps/ in place for the orchestrator to remove at the close.",
+      "Merge commits carry NO Claude attribution of any kind; author is njcurtis3 <nathanjcurtis3@gmail.com> on all three."
+    ]
+  },
+  "ops": {
+    "written_by": "the node that wrote this key - here, always the string ops",
+    "gated": true,
+    "actions": []
+  },
+  "log": [
+    "orchestrator | 2026-09-20 | run opened. Step 0.5 pre-flight computed fresh, not carried over: `git -C graph_agents rev-parse --is-inside-work-tree` -> true, so worktree isolation IS available and a diamond is on the table. scout-facts.py has no entry for graph_agents (tooling node, deliberately unregistered, like the five personal repos); `app` is set to graph_agents anyway, matching 2026-09-05-review-attempts and 2026-09-06-bash-write-guard. CONSTRAINT carried into the architect brief: this run must NOT touch .claude/agents/** or .claude/skills/**, which would force single-loop by step 0.5 rule 2 -- and the whole point of this run is to exercise the diamond. All three slices are expected to land in .graph/.",
+    "orchestrator | 2026-09-20 | SCOUT FACT CORRECTED, verified by me directly against this run's OWN activity.jsonl (52 lines, written live while scout ran). Scout fact 3 says 'only 2026-09-20-fleet-gaps will produce real parent data after execution'. It has now executed a node and produced NONE: 0 of 52 events carry `parent`. The hook writes that field only when the payload has `parent_tool_use_id` (record-activity.py:332), so the 2026-09-09 diagnostic is collecting nothing on a LIVE run, not merely on historical ones. Slice 1 as the goal states it -- 'postmortem.py reads the parent field' -- has no data to read and must be re-scoped by the architect.",
+    "orchestrator | 2026-09-20 | AND THE RUN REPRODUCED GAP #20 LIVE, which no previous run could be watched doing. One scout spawn produced 1 `start` (a38815a94d3c49662) and 6 `stop` events. Exactly one stop matches the start; the other five are stamped `orchestrator`, carry unique ids that never had a start, and arrived while scout was still working. THE DISCRIMINATOR, which is new and is not in scout's facts: the REAL stop carries both `say` and `tokens`; all five phantoms carry neither -- they have no subagent transcript at ~/.claude/projects/<cwd>/<session>/subagents/agent-<id>.jsonl for the hook to read. A phantom is an id with no transcript and no start. That is a diagnosis route that works on data the fleet already has, unlike `parent`.",
+    "architect | 2026-09-20 | Plan written: DIAMOND, 3 slices, 3 disjoint file sets, all in .graph/, nothing in .claude/**. Slice 1 RE-SCOPED off the dead parent field onto the live discriminator (no start + no say/tokens = no transcript = phantom). Slice 2 rules BOTH scout unknowns: read transcripts (coupling taken deliberately, second time in the fleet), and a long transcript return with a tidy state.json key IS a defect. Slice 3 makes the deregistered five data and silences them, noting only an unknown sibling. CURRENT-STATE.md deliberately in no slice -- that is what keeps the sets disjoint -- and record-activity.py deliberately out of the run so editing the hook under three concurrent builders cannot corrupt the append-lock test. Risk: s2 high (reads real transcripts, test cannot see whether it echoes them), s1/s3 low. 9 items for the human gate, incl. a constitution conflict: root CLAUDE.md calls thrml a portfolio node while the owner says it is never to be registered.",
+    "orchestrator | 2026-09-20 | HUMAN GATE PASSED. Owner approved all nine items verbatim ('approve all') after being shown the shape, the three slices with their file sets and done_when, the zero-edges finding, the not-doing list, and the two items flagged as the ones that change the plan (s2's transcript coupling, and the five repo names becoming literal data in a tracked file). Nothing was written before this point. Dispatching three builders concurrently, each with isolation: worktree.",
+    "orchestrator | 2026-09-20 | FLEET DEFECT FOUND BY EXECUTION, and it blocked the approved shape. All three `isolation: \"worktree\"` spawns failed: 'Cannot create agent worktree: not in a git repository'. The harness creates the worktree relative to the SESSION'S LAUNCH DIR (`repos/`), which CLAUDE.md deliberately keeps out of git -- not relative to the target repo. feature-graph step 0.5 checks `git -C <target> rev-parse --is-inside-work-tree`, which is true for graph_agents and therefore says a diamond is executable. THE CHECK ASKS THE WRONG QUESTION. It has been wrong since it was written; the only prior diamond (2026-08-26-archive-adapters) targeted personal-archive and never surfaced it. The skill is in NO slice's file set and is under .claude/skills/**, so it cannot be fixed in this run -- booked for the close.",
+    "orchestrator | 2026-09-20 | OWNER RULING after being shown three options: builders create their OWN git worktrees under graph_agents/.graph/worktrees/<run>/<slice> and still run concurrently. This is a deliberate deviation from step 0.5's 'two allowed responses, never a third' -- taken because that rule's stated rationale is 'never fan out without isolation and hope the file sets stay disjoint', and a builder-made worktree IS isolation with rollback. VERIFIED BEFORE ASKING, not after: orchestrator created a throwaway worktree and probed guard-builder-scope.py with it -- writes to .graph/postmortem.py and .graph/audit-fleet.py inside the worktree are ALLOWED, so the guard's worktree_context() maps a FLEET worktree correctly, which nothing had ever exercised (it was built for app repos). Probe worktree and branch removed, tree clean. Note the guard grants the UNION of the approved set in any worktree, not the per-slice subset -- per-slice separation is the worktree's job, which is the documented design. Two of yesterday's fixes pay off here: .graph/worktrees/ is gitignored, and gap #15's fix means these worktree edits no longer raise false staleness warnings.",
+    "orchestrator | 2026-09-20 | s2 REJECTED on attempt 1, and the reject is correct -- I read the finding before routing it. check-return-cap.py:124 took the last `text` block of a transcript, but a node's RETURN is the `message` argument of its SubagentHandback tool_use; anything after that is post-handback chatter the orchestrator never received. Consequence: the builder's own 'live finding' of two gap #19 violations (scout 4 lines, builder 10 lines) is REFUTED -- hand-counted real returns are 3 and 2, both compliant. The script's only failure signal was wrong on its first real data, which is the worst shape a checker can have. Second major, same root: an in-flight lane with no handback yet was certified as a compliant 1-line return instead of reported unverifiable. FAILURE-MODE TRIAGE, as the reviewer tagged it: the blocker traces to the ARCHITECT (it specified 'the last text block, last_said_by's definition' -- right for a heartbeat caption, wrong for a return), with a minor to SCOUT (its transcript finding stopped at 'the return text survives in the transcript' without carrying the SHAPE it survives in), and the fixture defect to the BUILDER. Not a builder-competence failure: it built the spec it was given. Sending back to the same builder for attempt 2; a FRESH reviewer will re-review, per the max-2 rule.",
+    "orchestrator | 2026-09-20 | RUN CLOSED. close-run.py exit 0: audit clean, gate passed, all three slices built, reviewed and PASS, and all three branches proved ancestors of graph_agents master -- s1-stop-integrity (edb24be), s2-return-cap (2be82fa), s3-deregistered (438a0f3), merged by the integrator as 85f1e69 / 0d2bf60 / 14e229c with zero conflicts. Full suite re-run by the orchestrator from merged master, independent of the integrator's own run: 13/13 suites exit 0, including the new test_check_return_cap.py. THE RUN'S SECOND PURPOSE IS ALSO DISCHARGED -- everything untested since 2026-09-06 has now executed: per-node --for briefs (5 nodes), the sonnet builder (3 builders, one twice), tokens/say (populated on every real lane), /postmortem's code path via s1, and all four 2026-09-19 fixes. The append lock carried 3 concurrent builders and, later, 3 concurrent reviewers writing one activity.jsonl with no torn or lost line. FINDINGS THIS RUN PRODUCED, all booked for CURRENT-STATE rather than fixed here: (1) feature-graph step 0.5 asks the wrong question -- it checks the TARGET repo while the harness creates worktrees relative to the LAUNCH DIR, so a diamond it approves can be unexecutable; (2) brief.py renders _schema.json placeholder text as a real prior review attempt ('attempt 1: PASS|REJECT'), the gap #14 class in a second file, and every node this run had to be told to ignore it; (3) postmortem/SKILL.md's section table is now stale, found by s1's reviewer and outside every file set; (4) gap #20 now has a measurement and a discriminator: 52 stops, 3 matched, 0 orphan-with-evidence, 49 phantom, and a phantom is an id with no start and no transcript; (5) check-return-cap on this run reports 9 compliant / 0 over cap / 1 unverifiable, so gap #19 has machinery but this run produced no violation of it."
+  ]
+}

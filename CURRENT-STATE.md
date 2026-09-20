@@ -1,11 +1,28 @@
 # CURRENT-STATE — graph_agents
 
-> **Last verified: 2026-09-19**
+> **Last verified: 2026-09-20**
 >
 > A point-in-time snapshot **verified against disk**, not a living spec. `GRAPH.md` and
 > `CLAUDE.md` describe how the fleet is *supposed* to work; this file records what is
 > *actually true right now*. **Stale entries here are worse than missing ones** — if you
 > change the fleet, update this file in the same session, and bump the date above.
+>
+> **What the 2026-09-20 pass covers** — a graph run, not a direct edit:
+> `2026-09-20-fleet-gaps`, the fleet's **second diamond**, three slices, three builders in
+> three worktrees, three independent reviewers, one integrator, 10 nodes and 472 events.
+> **Gap #19's open core is CLOSED** (`check-return-cap.py`, report-only by decision).
+> **Gap #20 is measured for the first time** — 52 stops, 3 matched, 0 orphan-with-evidence,
+> 49 phantom — and its `parent` diagnostic is confirmed dead, collecting nothing across a
+> full live run. **Gap #22's append lock passed its contention test**: three concurrent
+> builders, later three concurrent reviewers, one `activity.jsonl`, no torn or lost line.
+> `audit-fleet.py` no longer reports the five deregistered siblings. **Three new gaps
+> booked — #23, #24, #25** — all found by executing rather than by reading: step 0.5 checks
+> the target repo when the harness builds worktrees relative to the launch dir; `brief.py`
+> renders schema placeholder text as a real prior review attempt; `postmortem/SKILL.md`'s
+> section table is stale. All three need `.claude/**` edits, which force single-loop and a
+> fresh session. Full suite 13/13 green from merged master, re-run by the orchestrator
+> independently of the integrator. `audit-fleet.py` afterwards: **125 claims checked, 2
+> drifted**, both the long-standing `bash_write_targets.py` / `measure_bash_corpus.py` rows.
 >
 > **What the 2026-09-19 pass covers** (direct edit, no graph run — four independent one-file
 > fixes, each below the stop-rule threshold, chosen off a gap review the owner ranked).
@@ -28,8 +45,9 @@
 >
 > **What the 2026-09-11 pass covers** (direct edit, no graph run — a `.claude/skills/**`
 > addition is single-loop by rule anyway). Added `/postmortem`:
-> `graph_agents/.graph/postmortem.py` (264 ln), `graph_agents/.graph/test_postmortem.py`
-> (198 ln, 17 checks, all against fixture `state.json`/`activity.jsonl` pairs built to carry
+> `graph_agents/.graph/postmortem.py` (309 ln today, 264 when this
+> pass added it), `graph_agents/.graph/test_postmortem.py`
+> (238 ln, 28 checks today; 198 ln and 17 checks then, all against fixture `state.json`/`activity.jsonl` pairs built to carry
 > gap #20's exact phantom-stop shape), `.claude/skills/postmortem/SKILL.md`
 > (65 ln). This is the third of the three routers a 2026-09-03 brainstorm named worth
 > building — `/close-run` and `/audit-fleet` were the other two, built the same day; this one
@@ -205,7 +223,7 @@
 
 ---
 
-## Status: thirteen runs, twelve of them executed; the first diamond has run
+## Status: fourteen runs, thirteen of them executed; the second diamond has run
 
 Built 2026-08-25 in a single session. Eleven run directories on disk. The first five are
 narrated in full below; three more ran 2026-08-31 → 2026-09-03 and were **missing from
@@ -278,9 +296,10 @@ this fleet has written a line of product code yet**", eleven hours after one had
 | `.claude` junction | live, verified same-dir | `repos/.claude` → `graph_agents/.claude` |
 | 6 agent nodes | live; **5 of 6** have executed as registered agents — `integrator` first ran 2026-08-26 (`archive-adapters`). **`ops` is the only node never executed** | `.claude/agents/` |
 | 6 skills | `feature-graph` exercised 3× (374 ln); `new-app` **exercised three times** — `personal-archive` 2026-08-26, `roamex` 2026-08-28, `telosrg-site` 2026-08-31 (100 ln); `fleetview` exercised (56 ln); `close-run` **added 2026-09-03, first real closes 2026-09-05 — the payload-split and review-attempts runs** (89 ln); `audit-fleet` **added 2026-09-03, exercised on this file the same day** (86 ln); `postmortem` **added 2026-09-11, not yet exercised on a real request** — deliberately scoped around gap #20, no duration/wall-clock anywhere in it (65 ln) | `.claude/skills/` |
-| Fleet auditor | live, **added 2026-09-03**, and the first checker whose first run found live drift in this file. Diffs the *checkable* claims here against disk: every `(N ln)`, the roster's model/tool/line/has-executed cells against frontmatter and run state, app + node + skill counts, each registered app's directory and repo and entry docs, the Runs table against the run directories and their own `status`, branch and remote against git, `settings.json` hooks against the hook files **both ways**, and `Last verified:` against the commit dates of fleet definition files. Reports only drift. **It never writes, and in particular never stamps the date** — that decision is marked do-not-revisit. Prose is out of scope by construction | `graph_agents/.graph/audit-fleet.py` (590 ln), `graph_agents/.graph/test_audit_fleet.py` (352 ln), `.claude/skills/audit-fleet/SKILL.md` |
+| Fleet auditor | live, **added 2026-09-03**, and the first checker whose first run found live drift in this file. Diffs the *checkable* claims here against disk: every `(N ln)`, the roster's model/tool/line/has-executed cells against frontmatter and run state, app + node + skill counts, each registered app's directory and repo and entry docs, the Runs table against the run directories and their own `status`, branch and remote against git, `settings.json` hooks against the hook files **both ways**, and `Last verified:` against the commit dates of fleet definition files. Reports only drift. ****2026-09-20, s3:** the five deregistered siblings became a module-level `DEREGISTERED` tuple carrying the owner's permanent ruling; they now produce NO output, an unknown sibling still produces the note, and a deregistered name appearing IN `registry.json` is DRIFT -- no inverse claim, so deleting one of those repos never turns the auditor red. It never writes, and in particular never stamps the date** — that decision is marked do-not-revisit. Prose is out of scope by construction | `graph_agents/.graph/audit-fleet.py` (616 ln), `graph_agents/.graph/test_audit_fleet.py` (399 ln), `.claude/skills/audit-fleet/SKILL.md` |
 | Close checker | live, **added 2026-09-03**, and **first used for real 2026-09-05** — it REFUSED `2026-09-04-payload-split`, which is why `2026-09-05-review-attempts` exists. Answers whether a run may be closed: `--audit` clean, gate passed, every slice — off-plan included — built and `PASS`, and **the work proved present in git** rather than in `state.json`. That fourth check is the one nothing else in the fleet makes. Read-only like `verify-state.py`; on green it prints the close for the orchestrator to write. Re-run against all 8 historical runs: `archive-adapters` reports closeable under `--recheck`, `fleet-hardening` reported **8 blockers**; since 2026-09-05 it reports **3** — the four verdict-based ones were a tooling blind spot, not findings, and the survivors (`closing_fix` unreviewed, no authorship stamps) are the real answer about it. `--recheck` exists to audit an already-closed run. **2026-09-19:** on green, and only when `.graph/CURRENT` names the run just closed, it also says to clear that pointer — nothing else in the fleet does, and it still writes nothing itself | `graph_agents/.graph/close-run.py` (267 ln), `graph_agents/.graph/test_close_run.py` (309 ln), `.claude/skills/close-run/SKILL.md` |
-| Postmortem | live, **added 2026-09-11**, not yet run against a real request — verified by hand across all runs carrying a heartbeat (no crash, no traceback on a run with no `activity.jsonl`) plus 17 synthetic cases. Reports tool counts per node, diamond concurrency (builder lanes' tool-bounded windows overlapping), slice round-trip counts, and risk-tag fit (do `risk: high` slices carry the loops, or does `risk: low` loop just as much) — the 2026-08-28 `archive-adapters` review done again, data-backed. **Deliberately prints no duration or wall-clock anywhere**: gap #20 is still open, so nothing here reads a `start`/`stop` pair — only `tool` events (always correctly attributed) and lanes filtered to exclude a phantom `stop`'s fresh, never-started `agent_id`. Read-only, never gates, exit 0 unless the run cannot be read at all | `graph_agents/.graph/postmortem.py` (264 ln), `graph_agents/.graph/test_postmortem.py` (198 ln), `.claude/skills/postmortem/SKILL.md` (65 ln) |
+| Postmortem | live, **added 2026-09-11**, not yet run against a real request — verified by hand across all runs carrying a heartbeat (no crash, no traceback on a run with no `activity.jsonl`) plus 17 synthetic cases. Reports tool counts per node, diamond concurrency (builder lanes' tool-bounded windows overlapping), slice round-trip counts, and risk-tag fit (do `risk: high` slices carry the loops, or does `risk: low` loop just as much) — the 2026-08-28 `archive-adapters` review done again, data-backed. **Deliberately prints no duration or wall-clock anywhere**: **2026-09-20, run `2026-09-20-fleet-gaps` s1:** gained `## Stop-event integrity` -- every `stop` classified MATCHED / ORPHAN-WITH-EVIDENCE / PHANTOM with the ratio printed, the first thing in the fleet that MEASURES gap #20 rather than describing it. Its SKILL.md section table is now stale, found by s1's reviewer, outside that run's file set and needing a fresh session to fix. Even so, gap #20 is still open, so nothing here reads a `start`/`stop` pair — only `tool` events (always correctly attributed) and lanes filtered to exclude a phantom `stop`'s fresh, never-started `agent_id`. Read-only, never gates, exit 0 unless the run cannot be read at all | `graph_agents/.graph/postmortem.py` (309 ln), `graph_agents/.graph/test_postmortem.py` (238 ln), `.claude/skills/postmortem/SKILL.md` (65 ln) |
+| Return-cap checker | live, **added 2026-09-20** by run `2026-09-20-fleet-gaps` s2, and **report-only by decision** -- not a hook, not a gate, not wired into `settings.json`; promotion is a decision to take after it has run against more real data. Machine check for `GRAPH.md` section 3 rule 3's three-line return cap, prose since 2026-09-03 with nothing enforcing it. Reads the **`message` argument of a node's `SubagentHandback` tool_use** in its own transcript -- NOT the last text block, which is what attempt 1 did and was REJECTed for: post-handback chatter the orchestrator never received made two compliant returns (3 and 2 lines) read as 4 and 10, so its only failure signal was wrong on its first real data. A lane with no handback on disk is `unverifiable`, never certified compliant. Exit 1 only for a real over-cap return; every read failure is exit 0. **Never echoes transcript text** -- type, id and line count only. Second deliberate coupling to Claude Code's undocumented transcript layout, after `record-activity.py` 2026-09-11, approved at the gate. Its reviewer confirmed the on-disk handback message is byte-identical to what the orchestrator received, so the cap is measured where it is enforced, not on a proxy. First full outing, on the run that built it: **9 compliant, 0 over cap, 1 unverifiable** (the in-flight integrator) | `graph_agents/.graph/check-return-cap.py` (293 ln), `graph_agents/.graph/test_check_return_cap.py` (423 ln, 50 checks) |
 | Scout fact collector | live, **added 2026-08-28**, not yet exercised by a real scout run. Verified by hand across all 8 apps: correct git/HEAD/dirty/identity, `--all` and `--json` modes, and the registry-vs-disk contradiction lines. Computes, never caches — a per-app fact *store* was designed and **rejected on evidence** the same day (see Decisions log) | `graph_agents/.graph/scout-facts.py` (250 ln), `scout.md` step 0 |
 | Staleness hook | live, **observed firing** 2026-08-25; rewritten 2026-08-26 (junction paths, run-close, `.py`) — 20 synthetic payloads pass. **Stopped firing inside builder worktrees 2026-09-19** (gap #15), and **gained its first tests the same day** after 25 days and a rewrite with none: `test_flag_stale_state.py` (125 ln, 18 checks), run as a subprocess the way the harness runs it, so exit 0 and parseable JSON are asserted too | `.claude/settings.json`, `.claude/hooks/flag-stale-state.py` (128 ln) |
 | State verifier | live, **two modes**. Named-key mode: advisory, a check the orchestrator runs. `--audit` mode: fires from a hook, checks edge ordering. **Fixed 2026-08-26 (`4cbe78c`)** — it counted `_schema.json`'s example slice as real, so the fan-in check fired on *every* run reaching an integrator and no diamond could close green. 5 new fixtures + byte-identical output on all four prior runs | `graph_agents/.graph/verify-state.py` (560 ln), `graph_agents/.graph/test_verify_state.py` (238 ln) |
@@ -832,8 +851,20 @@ still read by a human or by an agent that says which parts it actually re-read.
     do not print it again"); that rule was written on the wrong premise and is now inverted. This
     is the second time in three days a claim about what a hook event *means* survived review and
     was only settled by measurement — gap #20 was the first.
-    Still open, and the core of it: **the headline cap is prose and nothing checks it**, and
-    **no run has yet executed under any of this**.
+    ~~Still open, and the core of it: the headline cap is prose and nothing checks it.~~
+    **CLOSED 2026-09-20** by run `2026-09-20-fleet-gaps` s2. `check-return-cap.py` reads the `message`
+    argument of a node's own `SubagentHandback` tool_use and counts non-empty lines against the cap of 3.
+    It is **report-only by decision** -- not a hook, not a gate -- so the rule is now *measurable*, not yet
+    *enforced*; promoting it is a separate decision, deliberately left until it has run against more data.
+    **What the first attempt got wrong is the durable lesson**: it read the last `text` block, which is
+    post-handback chatter the orchestrator never received, and so reported two compliant returns (3 and 2
+    lines) as 4 and 10. A checker whose only failure signal is wrong on its first real data is worse than
+    no checker. Its reviewer refuted it by hand-counting the transcripts, and the failure traced to the
+    ARCHITECT's spec (`last_said_by`'s definition -- right for a heartbeat caption, wrong for a return),
+    with a minor to SCOUT for reporting that the text survives without reporting the SHAPE it survives in.
+    **And the run no longer has 'no run has executed under any of this' as an excuse**: 10 nodes ran under
+    the board, the briefs and the cap, and the checker's first full outing scored the run that built it at
+    **9 compliant, 0 over cap, 1 unverifiable**.
 
 20. **`activity.jsonl` is polluted with `SubagentStop` events that are not node stops.**
     Booked 2026-09-03. Across the four runs carrying a heartbeat, **471 of 503 `stop` events
@@ -849,6 +880,18 @@ still read by a human or by an agent that says which parts it actually re-read.
     carry a single event and the `orchestrator` name) but it would mislead anyone measuring from
     the raw file. Not yet diagnosed: whether Claude Code is delivering a different event under
     this name, or the fleet is misreading the payload.
+    **MEASURED 2026-09-20, and it now has a discriminator -- still open, but no longer undiagnosed.**
+    Run `2026-09-20-fleet-gaps` reproduced it live and `postmortem.py` s1 now classifies it: of **52 stop
+    events, 3 matched, 0 orphan-with-evidence, 49 phantom**. A phantom is an id with **no `start` and no
+    subagent transcript** -- the hook finds nothing at
+    `~/.claude/projects/<encoded cwd>/<session_id>/subagents/agent-<id>.jsonl` to read, which is why it
+    carries neither `say` nor `tokens`, while every real node stop carries both. That test runs on data the
+    fleet already collects. **The `parent` diagnostic added 2026-09-09 is dead and should be removed**:
+    `record-activity.py:332` writes it only when the payload has `parent_tool_use_id`, and across a full
+    live run of 10 nodes **not one event carried one**. Removing it was deliberately deferred -- that hook
+    is what every builder writes through, and editing it mid-run would have corrupted the same run's
+    append-lock contention test. What remains unknown is unchanged: whether Claude Code delivers some other
+    event under this name, or the fleet misreads the payload.
     `postmortem.py` (added 2026-09-11) is scoped around this rather than blocked on it: it prints
     tool counts and tool-bounded (never stop-bounded) concurrency windows, and no duration
     anywhere. If this gap closes, add duration to `postmortem.py` once, rather than letting a
@@ -883,6 +926,30 @@ still read by a human or by an agent that says which parts it actually re-read.
     because `activity.jsonl` is the evidence base for `GRAPH.md` § the heartbeat's four claims and
     for everything `postmortem.py` reports: **a tool count read off a pre-2026-09-19 run is a
     floor, not a number.** Gap #20's phantom-stop ratios were measured on those same files.
+23. **`feature-graph` step 0.5 asks the wrong question, and a diamond it approves can be unexecutable.**
+    Booked 2026-09-20, found by execution rather than by reading. The pre-flight checks
+    `git -C <target> rev-parse --is-inside-work-tree` -- true for `graph_agents` -- and on that basis
+    approved a diamond. All three `isolation: "worktree"` spawns then failed: **the harness creates the
+    worktree relative to the session's LAUNCH DIR (`repos/`), which `CLAUDE.md` deliberately keeps out of
+    git**, not relative to the target repo. The check has been wrong since it was written; the only prior
+    diamond targeted `personal-archive` and never surfaced it. **Worked around, not fixed**: the owner
+    approved builders creating their own worktrees under `.graph/worktrees/<run>/<slice>`, which worked --
+    and proved, for the first time, that `guard-builder-scope.py`'s `worktree_context()` maps a FLEET
+    worktree correctly (it was built for app repos). The fix belongs in `.claude/skills/feature-graph/`,
+    which forces single-loop by step 0.5's own rule 2 and needs a fresh session.
+24. **`brief.py` renders `_schema.json` placeholder text as a real prior review attempt.**
+    Booked 2026-09-20. `--for builder:<slice>` on a slice with no prior review prints a
+    "prior review attempts on this slice (fix what these flagged)" block containing
+    `attempt 1: PASS|REJECT` and `[?] ?` -- the untouched schema template, rendered as data. **Every one of
+    the six nodes in this run had to be told in its prompt to ignore it**, which is the cost: a brief that
+    lies about a slice's history is a brief a node must be briefed about. Same class as gap #14, closed
+    2026-09-19 in `guard-builder-scope.py`, and the fix is the same shape -- compare against the schema by
+    identity. `brief.py` was in no slice's file set this run.
+25. **`postmortem/SKILL.md`'s section table no longer matches `postmortem.py`'s output.**
+    Booked 2026-09-20, found by s1's reviewer, who correctly traced it to the architect's file set rather
+    than reporting it against the builder. s1 added `## Stop-event integrity`; the skill's table still lists
+    the old sections. Not fixable in that run: `.claude/skills/**` forces single-loop and needs a fresh
+    session. Small, and exactly the kind of drift that is invisible until someone trusts the table.
 
 ---
 
@@ -902,9 +969,61 @@ still read by a human or by an agent that says which parts it actually re-read.
 | `2026-09-04-payload-split` | fleetview | single-loop, 3 slices | **executed**, approved at the gate, 3/3 PASS — **s2 on attempt 2 after a REJECT** | The split the previous run's architect refused, authorized by the human after that refusal. `/api/graph` now splits by **depth, not count**: `?runs=light` returns flat rows for every run, `?run=<id>` returns one run's depth, and **no parameters returns the byte-identical full payload**, so an old client sees exactly what it saw before. Measured on master on the live 10-run fleet: 863507 B → 12304 B idle (**98.6%**), **76.3%** with a run selected. 125 → 193 assertions. The client invariant was **amended, not abandoned** — selecting a *node* still never fetches, ever — and s1 landed that amendment as prose *before* any code, then could not be merged alone because it describes the split in the present tense. Merged as one `--no-ff` at the tip, `b261a7f`. Three reviewers were lost to infrastructure (a 429, a second 429, a power loss) before one delivered s3's verdict; none consumed an attempt |
 | `2026-09-05-review-attempts` | umbrella (the fleet itself) | single-loop, 5 slices | **executed**, approved at the gate, 5/5 PASS on attempt 1 | Opened because a **close was refused**, not because anyone went looking. A re-reviewed slice keeps attempt 1's `REJECT` at the top of `reviews.<slice>` and nests the fresh verdict as `attempt_2` — a shape two reviewers invented independently, that FleetView already read, and that the fleet **never wrote down**. So `_schema.json` did not define it and `close-run.py`, `brief.py` and *both* of `verify-state.py`'s verdict reads saw only the top level: a slice rejected and then fixed was recorded, and reported, as failed. The scout found the plan-killer — `verify.resolve()` is a dumb dotted walker and `brief.py` did not even use it — so the deliverable became **one shared rule with every caller routed through it**, not four independent edits with four chances to disagree. Cap matches FleetView exactly (`attempt_9`, loud at 10). A rejection stays **visible** after it is fixed: `ever_rejected` is display-only, forever, and the board draws the loop. Fan-in narrowed at the gate from *ever REJECTed* to *latest attempt is REJECT*. Merged `ea53381`. Retired 4 of `fleet-hardening`'s 7 stale blockers and left its 3 real ones standing |
 | `2026-09-06-fleetview-followups` | fleetview | single-loop, 2 slices | **executed**, approved at the gate, 2/2 PASS — **`s1` on attempt 2 after a PASS, a correction pass, and a second PASS** | The two follow-ups `2026-09-04-payload-split` carried forward and did not fix. `s2` is the fix: `scopeExceptionsMalformed` now tests the field's **members** as well as its type, returning `""`/`"type"`/`"member"` instead of a boolean, and the panel renders banner-**then**-block instead of banner-**or**-block, so a junk entry no longer suppresses the real grants beside it. The boundary is the whole slice: a list of strings that all fail `isRealPath` is the schema-docstring case and stays **not** malformed — flagging it would have turned healthy runs red on the default screen. Proved twice by mutation (the type-only revert **and** a deliberately broken `isRealPath` boundary, each red on distinct assertions) and once against the real fleet: **0 of 12 runs change their banner decision**. 193 → 212 assertions. `s1` is prose: item A — `collect_activity` reading every `activity.jsonl` in full on every request — is recorded as measured, **accepted and not fixed**, with all four rejected designs and why each is out. Deferred at the gate on the argument that *no design both wins big and keeps an invariant this app already paid for*, not on the size of the win: `os.stat` is 48× cheaper but mtime is not the displayed clock (918s drift on a real run would render a wedged run *fresher* than it is), and a cross-request cache is the server state `CLAUDE.md:32`/`:59` forbid. Revisit at **~40 runs**, reusing the trigger `2026-09-04-fleetview-payload` booked, **archiving first**. `serve.py` byte-identical to baseline, which is what makes that paragraph true. Merged `4787640` and `ed38d7e`, no conflict, no integrator |
+| `2026-09-20-fleet-gaps` | umbrella (the fleet itself) | **diamond, 3 slices** | **executed**, approved at the gate; s1/s3 PASS on attempt 1, **s2 REJECTed on attempt 1 and PASSed on attempt 2** | The fleet's **second diamond**, and the first run since 2026-09-06. Closed gap #19's open core (`check-return-cap.py`) and gave gap #20 its first measurement (52 stops: 3 matched, 0 orphan-with-evidence, 49 phantom). `audit-fleet.py` stopped reporting the five deregistered siblings. Three builders in three worktrees wrote one `activity.jsonl` concurrently with no torn or lost line -- the 2026-09-19 append lock's first contention test. Also the first run to exercise `--for` briefs, the sonnet builder, `tokens`/`say`, and all four 2026-09-19 fixes. Produced three new findings of its own (step 0.5's wrong question, `brief.py`'s placeholder rendering, `postmortem/SKILL.md` stale) |
 | `2026-09-06-bash-write-guard` | umbrella (the fleet itself) | single-loop, 3 slices | **executed**, approved at the gate, 3/3 PASS — **`s1` on attempt 3 after a REJECT, `s2` on attempt 2** | Closed gap #13 to **mostly guarded**, by explicit human condition it is not fully closed. `s1`: `bash_write_targets.py`, a standalone classifier resolving a Bash command string to write targets (redirects, heredocs, `tee`, `sed -i`, `rm`, `cp`, `mv`, `install`, `dd`, `truncate`, `ln`, `git checkout/restore/apply`, `curl -o`, inspected `python -c`/`node -e` bodies) plus an unresolved-write-shape flag, opinion-free — it returns paths, the guard judges them. `s2`: wired into `guard-builder-scope.py` as a `Bash` branch sharing the existing `_match()`/`approved_paths()`, so the guard fails closed on a broken classifier and warns rather than denies on an unresolvable target (2.63% of the corpus). `s3`: made `builder.md`, `GRAPH.md` §5 and `feature-graph` step 5 honest about what the Bash half does and does not catch. Merged `--no-ff` to `graph_agents` `master` as `3751ddf`, 10 files, 3539 insertions; pushed to origin 2026-09-09. Booked, not fixed: `audit-fleet.py` false-positives `bash_write_targets.py`/`measure_bash_corpus.py` as unregistered hooks (they are a module and a measurement tool, not hooks) |
 
 Run state lives at `graph_agents/.graph/runs/<run-id>/state.json` for each of the thirteen.
+
+### `2026-09-20-fleet-gaps` — what happened
+
+The fleet's **second diamond**, run against itself, and the first run of any kind since
+2026-09-06. Three slices, three disjoint file sets, all under `.graph/`: `postmortem.py`
+gained stop-event classification (s1), `check-return-cap.py` was created (s2), and
+`audit-fleet.py` stopped reporting the five deregistered siblings (s3). All three merged
+clean; the full 13-suite run is green from merged `master`.
+
+**The goal's own wording was unbuildable, and the scout's fact was wrong in the same
+place.** The run was opened to make `postmortem.py` read the `parent` field. Before the
+architect planned anything, the orchestrator checked this run's own `activity.jsonl`:
+**0 of 52 events carried `parent`**, on a live run, because `record-activity.py:332`
+writes it only when the payload has `parent_tool_use_id` and the payload never does. The
+scout had reported that only this run would produce such data; it had already executed a
+node and produced none. The architect re-scoped s1 onto what the fleet actually collects.
+
+**Gap #20 stopped being a mystery and became a number.** One `scout` spawn produced 1
+`start` and 6 `stop` events; across the run, 52 stops — **3 matched, 0
+orphan-with-evidence, 49 phantom**. The discriminator is that a real node stop carries
+`say` and `tokens` because its transcript exists, and a phantom carries neither because
+none does.
+
+**The one REJECT was correct, and traced two nodes upstream of where it appeared.** s2's
+first attempt counted the last `text` block of a transcript and reported two compliant
+returns (3 and 2 lines) as 4 and 10 — then its builder reported those false positives as
+real gap #19 violations. The reviewer hand-counted the transcripts and refuted it. The
+failure traced to the **architect's spec** (`last_said_by`'s definition, right for a
+heartbeat caption and wrong for a return), with a minor to the **scout** for reporting
+that return text survives in the transcript without reporting the shape it survives in.
+Attempt 2 read the `SubagentHandback` payload; a fresh reviewer confirmed the fix by hand,
+proved the new fixture load-bearing (reverting the reader drops the suite 50/50 → 38/50),
+and ruled that the on-disk handback message is byte-identical to what the orchestrator
+received — so the cap is measured where it is enforced.
+
+**The approved shape was blocked by the harness, not by the plan** — see gap #23. Three
+`isolation: "worktree"` spawns failed because the harness builds worktrees relative to the
+launch dir, `repos/`, which is not a repo. The owner approved builders making their own
+worktrees, which worked and incidentally proved `guard-builder-scope.py` maps a *fleet*
+worktree correctly, something no run had exercised.
+
+**What the run was also for.** Everything untested since 2026-09-06 executed: per-node
+`--for` briefs (every node), the sonnet builder, `tokens`/`say` on every real lane,
+`/postmortem`'s code path, and the four 2026-09-19 fixes. **The append lock carried three
+concurrent builders and later three concurrent reviewers writing one `activity.jsonl`,
+472 events, with no torn or lost line** — the contention that produced the corrupt line in
+the 2026-09-06 log. `close-run.py`'s new pointer reminder fired on its first real close.
+
+**It produced three findings of its own** (gaps #23, #24, #25), and the cost of #24 is
+worth stating: every node in the run had to be told in its prompt to ignore a "prior
+review attempt" that was schema placeholder text.
 
 ### `2026-08-26-archive-adapters` — what happened
 
@@ -1225,3 +1344,7 @@ What `2026-08-25-refuge-freshness` found in huntstack, independent of the featur
 | 2026-09-19 | **Gap #15 closed: the staleness hook goes quiet inside builder worktrees**, and got its first tests ever (`test_flag_stale_state.py`, 125 ln, 18 checks). Proved non-vacuous by firing the pre-fix hook at the exact payload that reported the gap. Deliberate cost: fleet edits made inside a worktree are silent too, and the merge to the main tree is what flags them |
 | 2026-09-19 | **Gap #22 booked: the heartbeat's append was losing events, and the old logs cannot be repaired.** Measured 471/600 events surviving four concurrent writers, with zero torn lines — invisible to every reader in the fleet. Fixed forward with a sidecar-file lock; `O_APPEND` alone was the first attempt and does not hold on Windows |
 | 2026-09-19 | **The open-run pointer stops meaning anything once a run is parked or closed.** `parked` added to `record-activity.py`'s and `guard-builder-scope.py`'s closed-status lists, matching `show-board.py`; `close-run.py` now tells you to clear `.graph/CURRENT` on a green close, and still never writes it |
+| 2026-09-20 | **Gap #19's open core CLOSED: `check-return-cap.py`, the first machine check for the three-line return cap.** Reads the `SubagentHandback` message, not the last text block — attempt 1 did the latter, turned two compliant returns into false positives, and was REJECTed for it. Report-only by decision; enforcement is a later call |
+| 2026-09-20 | **Gap #20 measured, not merely described.** `postmortem.py` classifies every stop MATCHED / ORPHAN-WITH-EVIDENCE / PHANTOM: 52 stops, 3 matched, 49 phantom. A phantom is an id with no start and no transcript. The 2026-09-09 `parent` diagnostic is confirmed dead — 0 events carried it across a full live run — and its removal is deferred, not forgotten |
+| 2026-09-20 | **`audit-fleet.py` stops reporting the five deregistered siblings.** The list is data carrying the owner's permanent ruling; the five are silent, an unknown sibling still raises a note, and a deregistered name appearing in `registry.json` is DRIFT — with no inverse claim |
+| 2026-09-20 | **The second diamond, and the append lock's first contention test**: three builders then three reviewers writing one `activity.jsonl`, 472 events, nothing torn or lost. Also the first run to exercise `--for` briefs, the sonnet builder, `tokens`/`say` and the four 2026-09-19 fixes. Booked gaps #23–#25, all found by executing rather than reading |
