@@ -953,6 +953,19 @@ still read by a human or by an agent that says which parts it actually re-read.
     the old sections. Not fixable in that run: `.claude/skills/**` forces single-loop and needs a fresh
     session. Small, and exactly the kind of drift that is invisible until someone trusts the table.
 
+26. **`GRAPH.md` § Model tiering asserts a cost ranking the data contradicts.**
+    Booked 2026-09-22. §198 of that file already listed tiering as something that "argues cost hard and
+    has never measured it" -- that is now measured, from the `tokens` field over `2026-09-20-fleet-gaps`
+    (10 spawns, 34.3M tokens, max-per-agent because the field is cumulative): builder **51.4%**, reviewer
+    22.1%, scout **17.4%**, architect 5.1%, integrator 3.9%. § Model tiering says scout "is the
+    highest-token node in a typical run" and "usually the single biggest lever on a run's total spend."
+    It is third, and builders are triple it. **What survives is the reasoning, not the ranking** -- spend
+    on judgment not retrieval is still right, and the argument against ever cheapening the reviewer is
+    untouched. Only the empirical claim about scout is wrong, and it is the claim the section leans on.
+    Three caveats belong in the correction, not a footnote after it: n=1 run; a diamond fans three
+    builders against one scout, so the shape flatters builders; and `tokens` counts context *processed*,
+    mostly cache reads, not fresh billable input. Needs `.claude`-adjacent editing and a fresh session,
+    so it joins #23-#25.
 
 ---
 
