@@ -62,6 +62,16 @@ check("CURRENT-STATE.md never triggers itself",
 check("a non-definition extension in the fleet is silent",
       fire(at("notes.txt"))[0] is False)
 
+print("\nHISTORY.md is the other half of the snapshot, not a definition (2026-09-22):")
+# Split out of CURRENT-STATE.md: the closed-run narratives and the Changelog. Firing on it
+# would tell whoever just appended the required Changelog row that they now owe one.
+check("HISTORY.md never triggers, exactly like CURRENT-STATE.md",
+      fire(at("HISTORY.md"))[0] is False)
+check("a definition edit names HISTORY.md as where the Changelog row goes",
+      "HISTORY.md" in fire(at("GRAPH.md"))[1])
+check("...and no longer asks for a Changelog entry in CURRENT-STATE.md",
+      "Changelog entry to `graph_agents/HISTORY.md`" in fire(at("GRAPH.md"))[1])
+
 print("\nan app's own files are not the fleet:")
 check("an app file outside the fleet is silent",
       fire(os.path.join(UMBRELLA, "huntstack", "apps", "web", "main.tsx"))[0] is False)
@@ -99,10 +109,16 @@ check("a run that reached done makes the snapshot stale on HISTORY",
       done is not None and fire(done)[0])
 check("...and says so in the message",
       done is not None and "HISTORY" in fire(done)[1])
+check("...and sends the Runs table row to CURRENT-STATE.md",
+      done is not None and "Runs table" in fire(done)[1]
+      and "CURRENT-STATE.md" in fire(done)[1])
+check("...and the narrative and Changelog row to HISTORY.md",
+      done is not None and "graph_agents/HISTORY.md" in fire(done)[1]
+      and "what happened" in fire(done)[1])
 check("a mid-run state.json write is silent",
       fire(os.path.join(runs, "no-such-run", "state.json"))[0] is False)
 check("_schema.json is a DEFINITION file, not run state",
-      "HISTORY" not in fire(os.path.join(runs, "_schema.json"))[1])
+      "STALE on its HISTORY" not in fire(os.path.join(runs, "_schema.json"))[1])
 
 print("\nthe payload shapes the harness actually sends:")
 check("a tool_response filePath is read when tool_input has none",

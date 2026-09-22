@@ -16,6 +16,12 @@ Two kinds of drift are flagged, because the snapshot can go false either way:
                     Mid-run writes stay silent: run state churns, and only a closed run
                     changes what is true about the fleet.
 
+The snapshot is TWO files since 2026-09-22. `CURRENT-STATE.md` holds what is still true
+and everything `audit-fleet.py` checks; `HISTORY.md` holds the sediment -- closed-run
+narratives and the Changelog. Both messages below name both files, because a closed run
+owes a row to one and a narrative to the other. Neither branch fires on `HISTORY.md`
+itself: writing there is how the obligation is discharged.
+
 `repos/.claude` is a directory junction into `graph_agents/.claude`, so every fleet
 definition file has two valid absolute paths and only one of them contains the
 "/graph_agents/" segment -- and GRAPH.md tells agents to use the OTHER one. Resolve the
@@ -83,6 +89,12 @@ def main():
         return
     if base == "CURRENT-STATE.md":          # never self-trigger
         return
+    # HISTORY.md is the other half of the snapshot, split out 2026-09-22: the closed-run
+    # narratives and the Changelog. Writing to it is how the obligation below is
+    # DISCHARGED, not a new reason to be stale -- firing on it would tell whoever just
+    # appended a changelog row that they now owe a changelog row.
+    if base == "HISTORY.md":
+        return
 
     rel = norm.split("/graph_agents/", 1)[-1]
 
@@ -96,12 +108,14 @@ def main():
             f"[fleet-state] Run `{rel}` is now `status: done`. A closed run is a fact "
             "about what this fleet has actually executed, so "
             "`graph_agents/CURRENT-STATE.md` is now STALE on its HISTORY.\n"
-            "Before this turn ends: add the run to the Runs table with its app, shape and "
-            "outcome, give it its own `### <run-id> — what happened` heading (insert it "
-            "ABOVE the narrative it describes, never above another run's prose), re-check "
-            "the Status line and the 'has executed?' column of the node roster against "
-            "this run, append a one-line Changelog entry, and set `Last verified:` to "
-            "today's date."
+            "Before this turn ends, in CURRENT-STATE.md: add the run to the Runs table "
+            "with its app, shape and outcome, re-check the Status line and the "
+            "'has executed?' column of the node roster against this run, and set "
+            "`Last verified:` to today's date.\n"
+            "Then in `graph_agents/HISTORY.md`: give the run its own "
+            "`### <run-id> — what happened` heading under Run narratives (insert it ABOVE "
+            "the narrative it describes, never above another run's prose), and append a "
+            "one-line Changelog entry."
         )
     else:
         # -- definition drift. `.py` counts: verify-state.py and this hook are tracked
@@ -112,9 +126,10 @@ def main():
             f"[fleet-state] You just changed `graph_agents/{rel}`, which is part of the "
             "agent architecture's definition. `graph_agents/CURRENT-STATE.md` is now STALE.\n"
             "Before this turn ends: re-verify the affected rows against disk (do not trust "
-            "memory), update the relevant section, append a one-line Changelog entry, and set "
-            "`Last verified:` to today's date. If nothing material changed for the snapshot, "
-            "say so explicitly rather than silently skipping it."
+            "memory), update the relevant section, set `Last verified:` to today's date, and "
+            "append a one-line Changelog entry to `graph_agents/HISTORY.md`. If nothing "
+            "material changed for the snapshot, say so explicitly rather than silently "
+            "skipping it."
         )
 
     json.dump({
