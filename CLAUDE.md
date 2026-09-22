@@ -107,6 +107,20 @@ this" documents that are read and copied, never imported.
 Whether it applies to a given app is a lookup, not a debate: the `ui` field in
 `portfolio/registry.json`.
 
+## Decisions
+
+`graph_agents/decisions/` holds numbered decision records for questions that were settled
+once and should not be re-argued from scratch. A convention says *how we build*; a decision
+says *what we chose and what would reverse it*. Neither is read at runtime — nothing breaks
+if the directory is deleted, except the next reader's ability to skip an argument.
+
+| Decision | Settles |
+|---|---|
+| `decisions/0001-no-jev-in-the-fleet.md` | The fleet does not adopt TypeSafe's Jev. Its enforcement points are deterministic by design, its judgment nodes must emit prose, and no hook may depend on a network call. Names the three conditions that would reopen it. |
+
+Scoped to the fleet unless a record says otherwise — an app is free to decide differently
+inside its own repo, which is what "no edges" means.
+
 ## Scope rule
 
 Every task belongs to exactly one app, or to the umbrella. If a task claims to belong to
