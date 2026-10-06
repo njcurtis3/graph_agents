@@ -117,6 +117,7 @@ if the directory is deleted, except the next reader's ability to skip an argumen
 | Decision | Settles |
 |---|---|
 | `decisions/0001-no-jev-in-the-fleet.md` | The fleet does not adopt TypeSafe's Jev. Its enforcement points are deterministic by design, its judgment nodes must emit prose, and no hook may depend on a network call. Names the three conditions that would reopen it. |
+| `decisions/0002-rlm-scope.md` | Recursive Language Models are a reading tool (`.graph/rlm.py`, `/rlm`) for `scout`, `postmortem` and `audit-fleet` — never for `reviewer`, `architect` or `integrator`, because reading through haiku is a downgrade of the reader. Carries the cost measurements behind every default. |
 
 Scoped to the fleet unless a record says otherwise — an app is free to decide differently
 inside its own repo, which is what "no edges" means.

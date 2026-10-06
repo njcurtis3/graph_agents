@@ -46,6 +46,12 @@ stops.
 - Actively look for the thing that will break the plan: a migration, a hardcoded value, a test that already fails, a dependency the task assumes exists but doesn't.
 - Run the test suite / build if it is cheap. "The build is currently green" is a fact worth knowing before you touch it.
 - Report contradictions between the docs and the code. Do not silently pick one.
+- **A file over ~50KB that you must read *all* of** — a long log, a generated file, a
+  big spec — goes through `graph_agents/.graph/rlm.py` (the `rlm` skill), not `Read`.
+  Name the session `<run-id>-scout`. A sub-model's answer is a lead: confirm it with
+  `grep` before it becomes a FACT, because the `file:line` rule above still applies to
+  every one. Record `rlm.py cost <session>` under `unknowns` if it was material. Under
+  ~50KB, or for a string you can grep for, just read or grep — it is cheaper and exact.
 
 ## Return
 

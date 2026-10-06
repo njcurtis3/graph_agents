@@ -362,6 +362,31 @@ six-node diamond saves more than downgrading every node in the fleet would.
 
 Reference cost per MTok (in/out): haiku 4.5 $1/$5 · sonnet 5 $3/$15 · opus 5 $5/$25.
 
+### Recursive reading — the same rule, applied inside one node
+
+The same rule also applies *inside* a node. When a scout, a postmortem or an audit must read
+an input too large to hold — `CURRENT-STATE.md` at ~135KB, a diamond's `activity.jsonl`
+at 110KB — it does not read it. It loads it into `graph_agents/.graph/rlm.py`, a
+Recursive Language Model REPL (Zhang, Kraska & Khattab, arXiv:2512.24601): the input
+sits in a variable, the node writes code to peek, grep and partition it, and maps haiku
+sub-calls over the pieces. Only short output prefixes reach the node's own context. The
+skill is `/rlm`.
+
+```
+ node (root) ──code──▶ rlm.py REPL ── context = <135KB file>
+                          │  peek · grep · chunks          (free, exact)
+                          └─ llm_map ──▶ claude -p haiku ×4 concurrent
+                                          no tools, no settings, cwd outside repos/
+                          ◀── answers, combined in code, confirmed by grep
+```
+
+It is **retrieval moved to the cheap tier**, which is why its scope stops where this
+section's protected nodes start: `reviewer`, `architect` and `integrator` never read
+through it. A review done through haiku summaries is the downgrade the reviewer bullet
+above forbids, done one level down. Sub-call output is a lead to confirm, never a FACT.
+The scope, the measurements behind each default, and what would widen it are in
+`decisions/0002-rlm-scope.md`.
+
 
 ---
 

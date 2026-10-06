@@ -75,6 +75,13 @@ header warns about — Decisions log, 2026-08-25, marked *user-confirmed, do not
 - **Not a proof the file is true.** Every narrative claim — the gap list's reasoning, the
   per-run "what happened" sections, the Decisions log — is prose about judgment, and no
   script has an opinion about it. A clean run means *the checkable claims agree*.
+- **Not a reader of the prose, but there is one.** `CURRENT-STATE.md` is ~135KB, too big
+  to read whole on every pass. When the stamp check means you must re-verify *narrative*
+  claims across the whole file — "which gaps still claim to be open", "every row that
+  still says *not yet exercised*" — use `/rlm` over it rather than reading it end to end,
+  and confirm each hit with a `grep` before you edit on it. The first live RLM run over
+  this file found all 12 open gaps and one false positive; the false positive is why the
+  confirming `grep` is not optional.
 - **Not a substitute for reading what changed.** If the stamp check names three files, read
   those three files. The checker knows their line counts moved; it does not know whether
   what they now *do* matches what the doc says they do.

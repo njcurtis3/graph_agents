@@ -55,6 +55,15 @@ It flags the two outcomes worth acting on:
 A single run is one data point. Don't rewrite `architect.md`'s risk-tagging rule off one
 postmortem — look for the pattern across a few before touching the node that owns it.
 
+## When the question is not one the script answers
+
+`postmortem.py` counts. It cannot answer a *qualitative* question about what the nodes did
+— "where did the builder thrash", "what was the reviewer checking when it rejected" — and
+`activity.jsonl` runs to 110KB on a diamond (`2026-09-06-bash-write-guard`), too big to
+read whole. For those, `/rlm` over the run's `activity.jsonl` (with `state.json` read
+directly — it is small). Two rules carry over unchanged: never derive a duration from
+`stop` events (gap #20), and report what the sub-calls cost alongside what they found.
+
 ## What this skill is not
 
 - **Not `/close-run`.** That one gates whether a run may be marked done. This one runs on
