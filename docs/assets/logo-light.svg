@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="420" height="72" viewBox="0 0 420 72" role="img" aria-label="graph_agents">
+  <g stroke="#8f8c84" stroke-width="2" fill="none" stroke-linecap="round">
+    <path d="M36 10 L36 22 M36 22 L16 40 M36 22 L36 40 M36 22 L56 40 M16 40 L36 60 M36 40 L36 60 M56 40 L36 60"/>
+  </g>
+  <circle cx="36" cy="10" r="5" fill="#17181c"/>
+  <circle cx="36" cy="22" r="5" fill="#17181c"/>
+  <circle cx="16" cy="40" r="5" fill="#17181c"/>
+  <circle cx="36" cy="40" r="5" fill="#17181c"/>
+  <circle cx="56" cy="40" r="5" fill="#17181c"/>
+  <circle cx="36" cy="60" r="6" fill="#d9731a"/>
+  <text x="80" y="47" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="34" font-weight="600" fill="#17181c">graph<tspan fill="#d9731a">_</tspan>agents</text>
+</svg>
