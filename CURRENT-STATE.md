@@ -14,7 +14,10 @@
 > off gave a wrong answer; and the first live session overspent $0.237 against $0.10. Not
 > re-checked in this pass: any narrative claim outside the rows below. `audit-fleet.py`
 > afterwards: the same 2 long-standing `bash_write_targets.py` / `measure_bash_corpus.py`
-> rows and nothing else.
+> rows and nothing else. **Docs follow-up, same day:** `README.md` now covers RLM, the
+> seventh router and the full layout; `reviewer.md`, `architect.md` and `integrator.md`
+> each state their own `/rlm` exclusion. Roster line counts re-measured. **Tagged
+> `v1.0.0`**, the fleet's first release.
 >
 > A point-in-time snapshot **verified against disk**, not a living spec. `GRAPH.md` and
 > `CLAUDE.md` describe how the fleet is *supposed* to work; this file records what is
@@ -303,7 +306,7 @@ this fleet has written a line of product code yet**", eleven hours after one had
 | Thing | State | Path |
 |---|---|---|
 | Umbrella constitution | live | `graph_agents/CLAUDE.md` (128 ln) |
-| Fleet history | live, **split out of this file 2026-09-22**. Holds the sediment: the per-run `### <run-id> — what happened` narratives and the Changelog. Both are append-only and never revised, and together they were **31% of this file by weight** while answering nothing about what is currently true. The split line is the one `audit-fleet.py` already drew — it parses neither section and said so before the move — so it was verified by claim count: **126 claims before, 126 after**. `flag-stale-state.py` names both files and is silent on this one | `graph_agents/HISTORY.md` (363 ln) |
+| Fleet history | live, **split out of this file 2026-09-22**. Holds the sediment: the per-run `### <run-id> — what happened` narratives and the Changelog. Both are append-only and never revised, and together they were **31% of this file by weight** while answering nothing about what is currently true. The split line is the one `audit-fleet.py` already drew — it parses neither section and said so before the move — so it was verified by claim count: **126 claims before, 126 after**. `flag-stale-state.py` names both files and is silent on this one | `graph_agents/HISTORY.md` (365 ln) |
 | Decision records | live, **added 2026-09-22**, 2 records (0002, RLM scope, added 2026-10-06). Numbered records for questions settled once, so they are not re-argued from scratch. Distinct from `conventions/`: a convention says *how we build*, a decision says *what we chose and what would reverse it*. Nothing reads them at runtime | `graph_agents/decisions/0001-no-jev-in-the-fleet.md` (136 ln) |
 | Graph spec | live | `graph_agents/GRAPH.md` (411 ln) |
 | Portfolio index | live, **5 nodes** — 2 products, 2 tools, 1 site — ids and `kind` verified 2026-08-31. **Narrowed from 8 to 4 on 2026-08-31**: `koenrane.xyz`, `personal-archive`, `thrml`, `whoop-med-tracker` removed at the owner's direction — those repos are personal, not part of the development umbrella going forward. Not deleted from disk, just deregistered; the fleet routes to none of them. **`telosrg-site` added same day** via `/new-app` — the org's public marketing site. Also gained `org`/`org_status`/`org_domain`/`org_domain_status`/`org_github`/`org_github_status` fields (2026-08-31): "Telos Research Group", working name not yet a formed legal entity; domain `telosrg.com` **purchased** 2026-08-31 (re-verified registered via RDAP against Verisign after the owner reported buying it); GitHub org **github.com/TelosRG registered** 2026-08-31 (re-verified via `api.github.com/orgs/TelosRG` after the owner reported creating it) | `graph_agents/portfolio/registry.json` (141 ln), **untracked on purpose** — see below |
@@ -350,10 +353,10 @@ this explanation and this explanation did not exist; both ends were fixed 2026-0
 | Node | Model | Tools | Lines | Has executed? |
 |---|---|---|---|---|
 | `scout` | haiku | Read, Glob, Grep, Bash, WebSearch, WebFetch | 73 | yes, 13 runs |
-| `architect` | opus | Read, Glob, Grep, Bash | 97 | yes, 13 runs |
+| `architect` | opus | Read, Glob, Grep, Bash | 100 | yes, 13 runs |
 | `builder` | sonnet | Read, Write, Edit, Glob, Grep, Bash | 91 | yes, 37 slices |
-| `reviewer` | opus | Read, Glob, Grep, Bash | 108 | yes, 36 reviews |
-| `integrator` | opus | Read, Write, Edit, Glob, Grep, Bash | 55 | yes, 1 run |
+| `reviewer` | opus | Read, Glob, Grep, Bash | 114 | yes, 36 reviews |
+| `integrator` | opus | Read, Write, Edit, Glob, Grep, Bash | 58 | yes, 1 run |
 | `ops` | opus | Read, Write, Edit, Glob, Grep, Bash | 56 | **no** |
 
 All six line counts moved on 2026-09-03 when every node's `## Return` block was

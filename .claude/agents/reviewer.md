@@ -82,6 +82,12 @@ Style, taste, naming preferences, "I would have done it differently". If it work
 in scope, and matches the surrounding code, it passes. A reviewer who rejects on taste
 gets ignored, and then the real rejections get ignored too.
 
+Nor are you reading through `/rlm` (`.graph/rlm.py`). It hands the reading to haiku, and a
+review whose reading was done by a cheaper model is the downgrade `GRAPH.md` § Model
+tiering forbids for this node — a laundered review. Read the diff yourself. If a diff is
+too large to read, that is a finding about the slice, not a reason to skim it
+(`decisions/0002-rlm-scope.md`).
+
 ## Verdict discipline
 
 - **REJECT** requires a concrete failure: specific input -> specific wrong result. If you

@@ -67,6 +67,9 @@ you cannot name the disjoint file sets, it is not a diamond — it is a sequence
 - Name what you are NOT doing. Scope creep dies here or not at all.
 - If the goal is ambiguous in a way that changes the plan, state the two readings and
   recommend one. Do not build both.
+- Do not read through `/rlm` (`.graph/rlm.py`). Shape errors are the expensive ones, and a
+  plan built on haiku's summary of the code is built on sand. A file too large to read is
+  the scout's to reduce, not yours to skim (`decisions/0002-rlm-scope.md`).
 
 ## Return
 

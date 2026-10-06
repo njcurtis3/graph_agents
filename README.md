@@ -72,6 +72,22 @@ happened by the time it runs. `reviewer` and `architect` never get downgraded: a
 that misses the bug is worse than no verifier, and a shape error from the architect is the
 expensive kind to unwind.
 
+### Recursive reading for inputs too big to hold
+
+Some inputs are too large to read whole — a 135KB state snapshot, a diamond's 110KB
+activity log. For those, `.graph/rlm.py` implements a
+[Recursive Language Model](https://arxiv.org/abs/2512.24601): the input sits in a REPL
+variable, the node writes code to peek, grep and chunk it, and maps cheap haiku sub-calls
+over the pieces, four at a time. Only short output prefixes reach the node's own context.
+
+It is retrieval moved to the cheap tier, so it follows the same rule: `scout`,
+`postmortem` and `audit-fleet` use it; `reviewer`, `architect` and `integrator` never do,
+because reading through haiku would downgrade exactly the nodes that must not be. Sub-calls
+run bare — no tools, no fleet settings, outside the umbrella — and every session has a
+dollar budget enforced *before* each call, not after. A sub-model's answer is a lead to
+confirm with `grep`, never a fact. Scope and the measurements behind every default:
+`decisions/0002-rlm-scope.md`.
+
 ### Guardrails that actually block
 
 Two `PreToolUse` hooks enforce what the rest of this fleet only asks nicely for, and both
@@ -93,7 +109,7 @@ board appears in the main tab — goal, per-node status, a row per slice pairing
 verdict — derived, never authored, so it can't drift from what `state.json` says and costs
 no tokens to produce.
 
-### Routers — six skills, each one thing
+### Routers — seven skills, each one thing
 
 | Router | What it does |
 |---|---|
@@ -103,6 +119,7 @@ no tokens to produce.
 | `close-run` | Checks whether a run may be marked done — audit clean, gate passed, every slice built and reviewed `PASS`, and the work actually merged in **git**, not just claimed in `state.json`. |
 | `audit-fleet` | Re-verifies `CURRENT-STATE.md` against disk and reports only drift, instead of trusting whoever last hand-edited it. |
 | `postmortem` | Reviews a finished run's activity log for what its shape actually cost and caught — tool counts, diamond concurrency, slice round-trips, whether risk tags earned their keep. |
+| `rlm` | Reads an input too large to hold in context as a Recursive Language Model — code to slice it, haiku sub-calls to read the slices, a hard budget on both. |
 
 Every one of them is thin: the logic lives in a testable `.graph/` script, and the
 `SKILL.md` just routes to it.
@@ -128,6 +145,7 @@ Then:
 /close-run           # check whether the open run may be marked done
 /audit-fleet         # re-verify CURRENT-STATE.md against disk
 /postmortem          # review a finished run's shape and cost
+/rlm                 # read a file too large for context, by recursive sub-calls
 ```
 
 ## Seeing a run
@@ -162,10 +180,13 @@ graph_agents/
   CLAUDE.md               the constitution — the invariant, restated
   GRAPH.md                 the graph spec — nodes, edges, shared state, human gates
   CURRENT-STATE.md         a disk-verified snapshot: what's live, what's still a gap
+  HISTORY.md               what happened: per-run narratives and the changelog
+  conventions/             cross-app "how we build" prose, read and copied, never imported
+  decisions/               numbered decision records — settled questions, and what would reopen them
   portfolio/registry.json  the index over the app portfolio (see below — not tracked)
   .claude/
     agents/                the six node definitions
-    skills/                 the six routers listed above
+    skills/                 the seven routers listed above
     hooks/                  the guardrails: scope, commit-attribution, staleness, heartbeat, board
   .graph/
     runs/<run-id>/          one state.json per unit of work — a run's whole history
@@ -173,6 +194,7 @@ graph_agents/
     close-run.py            checks whether a run may be closed
     audit-fleet.py          checks CURRENT-STATE.md against disk
     postmortem.py           reviews a finished run's shape and cost
+    rlm.py                  the Recursive Language Model REPL behind /rlm
 ```
 
 ## `portfolio/registry.json` is intentionally not in this repo
