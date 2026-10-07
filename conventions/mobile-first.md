@@ -17,8 +17,11 @@ whatever width the operator's monitor is.
 
 The registry answers this per app, so you do not have to re-argue it every run:
 `graph_agents/portfolio/registry.json` carries a `ui` field on every entry —
-`responsive-web` (this file applies), `desktop-only` (local viewer, does not apply), or
-`none` (no UI at all). `kind` is the wrong axis and does not decide this; a `tool` can ship
+`responsive-web` (this file applies), `desktop-only` (a local viewer in a browser on
+`127.0.0.1`, no installable binary; does not apply), `native-mobile` (an Expo app;
+`native-mobile.md` applies), `native-desktop` (a Tauri app; `native-desktop.md` applies), or
+`none` (no UI at all). `ui` may be an array, e.g. `["responsive-web", "native-mobile"]`, and
+then every listed value applies to its own target. `kind` is the wrong axis and does not decide this; a `tool` can ship
 a public UI and a `product` can ship a viewer nobody but you will ever load.
 
 ## Width tiers

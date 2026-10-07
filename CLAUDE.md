@@ -103,6 +103,8 @@ this" documents that are read and copied, never imported.
 | Convention | Covers |
 |---|---|
 | `conventions/mobile-first.md` | Building a UI-bearing app mobile-first while still serving desktop well: width tiers, touch targets, viewport, and a reviewer checklist. |
+| `conventions/native-mobile.md` | Building an Expo app for the app stores: Continuous Native Generation, safe areas, 44pt/48dp targets, permissions flow, secure storage, `runtimeVersion` and OTA discipline, EAS profiles, and a reviewer checklist. |
+| `conventions/native-desktop.md` | Building a Tauri 2 desktop app: least-privilege capabilities, CSP, IPC input validation, per-OS menus, webview differences, updater and code signing, and a reviewer checklist. |
 
 Whether it applies to a given app is a lookup, not a debate: the `ui` field in
 `portfolio/registry.json`.
@@ -118,6 +120,7 @@ if the directory is deleted, except the next reader's ability to skip an argumen
 |---|---|
 | `decisions/0001-no-jev-in-the-fleet.md` | The fleet does not adopt TypeSafe's Jev. Its enforcement points are deterministic by design, its judgment nodes must emit prose, and no hook may depend on a network call. Names the three conditions that would reopen it. |
 | `decisions/0002-rlm-scope.md` | Recursive Language Models are a reading tool (`.graph/rlm.py`, `/rlm`) for `scout`, `postmortem` and `audit-fleet` — never for `reviewer`, `architect` or `integrator`, because reading through haiku is a downgrade of the reader. Carries the cost measurements behind every default. |
+| `decisions/0003-native-stack.md` | Native apps are Expo (Continuous Native Generation, EAS) for mobile and Tauri 2 for desktop; with no Mac, iOS builds on EAS and macOS Tauri builds on a GitHub Actions macOS runner. Names the conditions that would reverse it. |
 
 Scoped to the fleet unless a record says otherwise — an app is free to decide differently
 inside its own repo, which is what "no edges" means.
