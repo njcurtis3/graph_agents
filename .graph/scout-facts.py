@@ -141,7 +141,7 @@ def _read_json(path: Path):
 
 def _dir_native(d: Path) -> dict:
     """Evidence for one directory, keyed by kind. Only what is in `d` itself."""
-    found = {"expo": [], "tauri": []}
+    found = {"expo": [], "tauri": [], "unparseable": []}
 
     app_json = d / "app.json"
     if app_json.is_file():
@@ -159,8 +159,8 @@ def _dir_native(d: Path) -> dict:
     if pkg.is_file():
         data, ok = _read_json(pkg)
         if not ok:
-            found["expo"].append("package.json unparseable")
-            found["tauri"].append("package.json unparseable")
+            # a parse problem, not evidence of either stack
+            found["unparseable"].append("package.json unparseable")
         elif isinstance(data, dict):
             deps = {}
             for key in ("dependencies", "devDependencies"):
@@ -193,7 +193,7 @@ def native_facts(path: Path) -> list[dict]:
 
     def visit(d: Path, depth: int) -> None:
         found = _dir_native(d)
-        for kind in ("expo", "tauri"):
+        for kind in ("expo", "tauri", "unparseable"):
             if found[kind]:
                 hits.append({"kind": kind, "dir": d.as_posix(), "evidence": found[kind]})
         if depth >= NATIVE_MAX_DEPTH:
