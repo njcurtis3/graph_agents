@@ -38,6 +38,28 @@ inspecting logs, and dry-runs.
 - Before a destructive step, state the rollback. If you cannot state one, that is the
   finding — report it instead of proceeding.
 
+## Native apps
+
+When the app's `ui` includes `native-mobile` or `native-desktop`. Inert for any other `ui`
+value. One pipeline per app, secrets on the app's own repo under `TelosRG`
+(`graph_agents/conventions/native-mobile.md`, `graph_agents/conventions/native-desktop.md`).
+
+Without a gate (read-only or dry-run): `npx expo-doctor`, `eas config`, `eas build:list`.
+
+Behind the gate, each its own approval:
+
+- `eas credentials` — keystores, `.p8`, `.p12` and service-account JSON are never
+  committed, printed or pasted into a state file.
+- `eas build` — spends build credits.
+- `eas submit` — store submission. Rollback is a new build, or halting a phased rollout;
+  state which.
+- `eas update` — OTA, per channel and `runtimeVersion`; a production change. Rollback is
+  republishing the previous update or `eas update:rollback`.
+- Tauri release — updater key (`TAURI_SIGNING_PRIVATE_KEY`), Authenticode, and Developer ID
+  with notarization live in GitHub Actions secrets, never in the repo or a log.
+  Rollback is a new signed updater manifest pointing at the prior version, or pulling the
+  GitHub release; installed binaries are not recalled.
+
 ## Return
 
 **This node is the other exception to the headline rule** (`GRAPH.md` § 3, rule 3; with
