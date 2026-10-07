@@ -42,7 +42,8 @@ a **capability** file under `src-tauri/capabilities/` grants to its window.
   never omitted.
 - No `unsafe-eval`. `unsafe-inline` is not allowed for scripts; styles only when a
   framework requires it and Tauri's nonce/hash injection does not cover it.
-- `connect-src` lists the origins the app talks to, not `*`.
+- `connect-src` lists the origins the app talks to, not `*`. Tauri 2 IPC needs `ipc:` and
+  `http://ipc.localhost` in `connect-src` where the CSP is strict.
 
 ## IPC commands
 
@@ -74,13 +75,15 @@ may be missing in another.
 - Do not use a web API or CSS feature without checking it against all three engines.
 - Test or at minimum review against WebKit as well as Chromium; the Linux webview is the
   floor for what the app may assume.
-- The OS decides the webview version; the app cannot bundle its own.
+- macOS and Linux use the OS webview. Windows uses the evergreen WebView2 unless the app
+  ships a fixed runtime (`bundle.windows.webviewInstallMode: fixedRuntime`).
 
 ## Updater and signing
 
 - **Updater artifacts are signed.** The updater's **public key is in `tauri.conf.json`**
   (`plugins.updater.pubkey`); the **private key lives only in CI secrets** and is never in
   the repo, a log, or a developer machine's committed files. Update endpoints are `https`.
+  `bundle.createUpdaterArtifacts: true` is set, or Tauri 2 produces no signed artifacts.
 - **Windows: Authenticode** code signing. **macOS: Developer ID signing plus notarization**,
   done on the macOS runner with credentials from Actions secrets. **Linux:** signed
   updater artifacts; package signing as the distribution requires.

@@ -34,7 +34,7 @@ are `native-desktop.md`.
   or `SafeAreaView`) so content clears the notch, Dynamic Island, home indicator and Android
   system bars. No hard-coded status-bar or notch heights.
 - **Touch targets: >= 44pt on iOS, >= 48dp on Android.** An icon smaller than that gets
-  padding or `hitSlop` to reach it. Keep >= 8 between adjacent targets.
+  padding or `hitSlop` to reach it. Keep >= 8pt (iOS) / 8dp (Android) between adjacent targets.
 - **Android back.** The hardware/gesture back button must do the platform thing: pop the
   stack, close a modal, then exit. With `expo-router` this is the default; a custom
   `BackHandler` must return `true` only when it handled the event.
@@ -65,17 +65,25 @@ are `native-desktop.md`.
 - **`AsyncStorage` is for non-sensitive state only** — preferences, caches, drafts. It is
   unencrypted. Never put a token, password or key in it.
 - **No secret in the bundle.** `EXPO_PUBLIC_*` variables are inlined into the JavaScript
-  that ships; anything there is public. Real secrets stay server-side or in EAS secrets
-  used at build time for build tooling only.
+  that ships; anything there is public. Real secrets stay server-side, or live in EAS
+  environment variables with `secret` or `sensitive` visibility (not the deprecated
+  `eas secret:*` commands), used at build time for build tooling only.
 
 ## Updates and runtime versions
 
-- **`runtimeVersion` is set explicitly** in `app.config`, with a policy: `fingerprint` (a
-  hash of the native layer) or `appVersion`. Never leave it unset when `expo-updates` is
-  installed.
+- **`runtimeVersion` is set explicitly** in `app.config`. **The default policy is
+  `fingerprint`** (a hash of the native layer), so any native change yields a new runtime
+  version by itself and old binaries never receive an incompatible update. Never leave it
+  unset when `expo-updates` is installed.
+- **`appVersion` is allowed only with the bump rule.** Under `appVersion`, every native
+  change (a new native module, a config plugin change, an SDK bump, a native field in
+  `app.config`) **MUST bump `version`** in the same change, before the next `eas update`.
+  `autoIncrement` in `eas.json` raises only `buildNumber` / `versionCode`, not `version`, so
+  it does not satisfy this rule. Without the bump, the update reaches old binaries that lack
+  the native code.
 - **OTA updates carry JavaScript and assets only.** Anything that changes native code —
   a new native module, a config plugin change, a permission, an SDK upgrade — needs a **new
-  build**, and with the `fingerprint` policy the runtime version changes by itself.
+  build**.
 - **Updates are published to a channel** (`eas update --channel <name>`) matching the build
   profile, never straight to `production` without passing `preview`.
 - Store submission goes through `eas submit`; credentials are managed by EAS.
@@ -90,12 +98,18 @@ are `native-desktop.md`.
 
 ## Prohibitions — each one visible in a diff
 
+(Except the OTA rule, which is visible in a diff only when `eas update` runs from a
+committed CI workflow; a manual `eas update` leaves no diff and is an ops-gate rule.)
+
 - **No committed `ios/` or `android/` directory** in a Continuous Native Generation app.
 - **No token, password or API secret in `AsyncStorage`**, and none in an `EXPO_PUBLIC_*` variable.
 - **No hard-coded safe-area, status-bar or notch heights.**
 - **No interactive element under 44pt / 48dp** without `hitSlop` or padding that reaches it.
 - **No native module, config-plugin or permission change shipped as an OTA update.**
-- **No unset `runtimeVersion`** alongside `expo-updates`.
+  Enforce in the CI workflow that publishes; a manual `eas update` is covered by the
+  ops-gate, not a diff.
+- **No native change under `appVersion` without a `version` bump**, and no unset
+  `runtimeVersion` alongside `expo-updates`.
 - **No `allowFontScaling={false}`** on body text.
 - **No permission request without a rationale and a denied path**, and no usage string
   edited anywhere but `app.config`.
@@ -113,8 +127,9 @@ Yes/no, answerable by reading a diff. `reviewer.md` points here by name.
 5. Does a new remote-data screen have loading, error and offline states?
 6. Does every new permission have a rationale before the request, a denied path, and its
    usage string / permission entry in `app.config`?
-7. If native code, plugins or permissions changed, is the change shipped as a new build
-   (not an `eas update`), and is `runtimeVersion` set with a policy?
+7. If native code, plugins, permissions or native dependencies (`package.json`) changed, is
+   it shipped as a new build (not an `eas update`), and is `runtimeVersion` policy
+   `fingerprint`, or under `appVersion` does the same diff bump `version`?
 8. Does `eas.json` keep `development`, `preview` and `production` profiles with channels?
 9. Do new interactive elements have `accessibilityLabel` and `accessibilityRole`, with font
    scaling left on?
