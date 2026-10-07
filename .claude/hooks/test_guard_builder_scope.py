@@ -393,6 +393,84 @@ def main():
 
     with_run(state_with(["huntstack/apps/mobile/**"]), bash)
 
+    # --- MSYS / Cygwin drive spellings (Windows only). ---
+    # Git Bash reports its cwd as `/c/Users/...` and a builder types absolute targets the
+    # same way. Windows `realpath` reads that as `C:/c/Users/...`, so approved work was
+    # denied. The spelling is derived from UMBRELLA, never hard-coded, and the unrecognised
+    # shapes are pinned to be judged exactly as before.
+    if os.name == "nt":
+        print("\nMSYS/Cygwin drive spellings resolve like the Windows path:")
+
+        def msys(path, prefix="/"):
+            drive, rest = os.path.splitdrive(path)
+            return prefix + drive[0].lower() + rest.replace("\\", "/")
+
+        mobile = os.path.join(UMBRELLA, "huntstack", "apps", "mobile")
+        web = os.path.join(UMBRELLA, "huntstack", "apps", "web")
+
+        def msys_paths(_run_dir):
+            check("(1) a relative approved target under an MSYS cwd is ALLOWED",
+                  outcome("echo x > App.tsx", cwd=msys(mobile))[0], "allow")
+            check("(2) ...and under a /cygdrive cwd",
+                  outcome("echo x > App.tsx", cwd=msys(mobile, "/cygdrive/"))[0], "allow")
+            check("(3) a relative unapproved target under an MSYS cwd is DENIED",
+                  outcome("echo x > main.tsx", cwd=msys(web))[0], "deny")
+            check("(4) `..` out of an approved MSYS cwd into a sibling is DENIED",
+                  outcome("echo x > ../web/main.tsx", cwd=msys(mobile))[0], "deny")
+            check("(5) an absolute MSYS target inside the set is ALLOWED",
+                  outcome("echo x > %s" % msys(os.path.join(mobile, "App.tsx")))[0],
+                  "allow")
+            check("(5) ...and one outside it is DENIED",
+                  outcome("echo x > %s" % msys(os.path.join(web, "main.tsx")))[0], "deny")
+            check("(6) a Write with an MSYS file_path inside the set is ALLOWED",
+                  run_hook({"agent_type": "builder", "tool_name": "Write",
+                            "tool_input": {"file_path": msys(os.path.join(mobile, "App.tsx"))}}
+                           )[0], False)
+            check("(6) ...and one outside it is DENIED",
+                  run_hook({"agent_type": "builder", "tool_name": "Write",
+                            "tool_input": {"file_path": msys(os.path.join(web, "main.tsx"))}}
+                           )[0], True)
+            check("(7) an unrecognised cwd with an unapproved target is DENIED",
+                  outcome("echo x > main.tsx", cwd="/zz/nope")[0], "deny")
+            check("(8) `/cc/x` is not read as drive c: its write is DENIED",
+                  outcome("echo x > /cc/x/App.tsx")[0], "deny")
+            check("(8) ...nor as a cwd for an otherwise approved relative name",
+                  outcome("echo x > App.tsx", cwd="/cc" + msys(mobile)[2:])[0], "deny")
+
+        with_run(state_with(["huntstack/apps/mobile/**"]), msys_paths)
+
+        # A drive-ROOT cwd must not turn a relative target into a drive-relative path
+        # that resolves against the HOOK's cwd: the shell would write C:\huntstack\...,
+        # outside the umbrella. The bug depended on where the hook ran, so run it in two.
+        drive = os.path.splitdrive(UMBRELLA)[0]
+        lo, up = drive[0].lower(), drive[0].upper()
+        roots = ["/%s/" % lo, "/%s" % lo, "/cygdrive/%s/" % lo, up + ":\\", up + ":/"]
+
+        def root_cwds(_run_dir):
+            for run_in in (UMBRELLA, tempfile.gettempdir()):
+                for root in roots + [drive]:
+                    check("(9) drive-root cwd %r (hook in %s) + relative approved name is "
+                          "DENIED" % (root, os.path.basename(run_in)),
+                          outcome("echo x > huntstack/apps/mobile/App.tsx", cwd=root,
+                                  run_in=run_in)[0], "deny")
+            check("(9) a drive-root cwd does not break a legitimate absolute target",
+                  outcome("echo x > %s" % msys(os.path.join(mobile, "App.tsx")),
+                          cwd=up + ":/")[0], "allow")
+
+        with_run(state_with(["huntstack/apps/mobile/**"]), root_cwds)
+
+    # `/` as the shell's cwd: a relative approved name must resolve to /huntstack/..., not
+    # against the hook's own cwd. (Run on both platforms; the module cannot be imported to
+    # drive posixpath directly because it executes `main()` at import.)
+    def slash_cwd(_run_dir):
+        for run_in in (UMBRELLA, tempfile.gettempdir()):
+            check("(9) cwd '/' (hook in %s) + relative approved name is DENIED"
+                  % os.path.basename(run_in),
+                  outcome("echo x > huntstack/apps/mobile/App.tsx", cwd="/",
+                          run_in=run_in)[0], "deny")
+
+    with_run(state_with(["huntstack/apps/mobile/**"]), slash_cwd)
+
     # --- The escape hatch, which has to reach BOTH tools or it is not an escape. ---
     # `scope_exceptions` is how the orchestrator widens a file set deliberately and
     # auditably. It is read by `approved_paths`, so the Bash branch inherits it for free
