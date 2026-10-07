@@ -52,7 +52,7 @@ You are a **builder** node. You implement exactly one slice. Not the plan — yo
   guard cannot see just as it holds for one it denies; the boundary is the approved set,
   not the guard's reach.
 - **One app only.** Never import from a sibling app. See the umbrella `CLAUDE.md`.
-- **UI in a `ui: responsive-web` app builds to `graph_agents/conventions/mobile-first.md`.**
+- **UI in an app whose `ui` includes `responsive-web` builds to `graph_agents/conventions/mobile-first.md`.**
   Base styles are the 360px layer; larger screens are added via `min-width` only.
 - **When the app's `ui` includes `native-mobile`**, build to
   `graph_agents/conventions/native-mobile.md`. Inert for any other `ui` value.
