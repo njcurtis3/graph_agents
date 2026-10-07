@@ -1,0 +1,326 @@
+{
+  "$comment": "Shared state for ONE work-graph run. Lives at .graph/runs/<run-id>/state.json. Every node reads this on start and appends to its OWN key on finish - the builder writes its own builders.<slice> key, including the branch it worked on. Never rewrite another node's key. Every node key carries written_by, naming the node that wrote it: that is the ONLY record of authorship this file has, and without it 'never rewrite another node's key' is unverifiable - an orchestrator hand-writing all six keys is indistinguishable from six nodes doing their jobs. verify-state.py --audit checks it. This file is the edge: it is how context crosses between agents that cannot see each other.",
+  "run_id": "2026-10-07-native-followups",
+  "goal": "fix the follow ups (the four found by run 2026-10-07-native-app-expertise)",
+  "app": "graph_agents",
+  "status": "done",
+  "scout": {
+    "written_by": "scout",
+    "facts": [
+      {
+        "file": "graph_agents/.claude/agents/reviewer.md:65",
+        "finding": "Literal condition: 'If the app is `ui: responsive-web`' uses string match, not array-aware 'includes'"
+      },
+      {
+        "file": "graph_agents/.claude/agents/builder.md:55",
+        "finding": "Literal condition: 'UI in a `ui: responsive-web` app' uses string match, not array-aware 'includes'"
+      },
+      {
+        "file": "graph_agents/.claude/agents/architect.md:45",
+        "finding": "Literal condition: 'When the target app is `ui: responsive-web`' uses string match, but lines 50-53 properly qualify with 'includes responsive-web' for arrays"
+      },
+      {
+        "file": "graph_agents/.claude/agents/architect.md:50-53",
+        "finding": "Array-aware condition: 'Skip this only when `ui` does not include `responsive-web`' and 'an array such as [\"responsive-web\",\"native-mobile\"] still gets it for its web UI' — this is correct"
+      },
+      {
+        "file": "graph_agents/.claude/hooks/guard-builder-scope.py:357-425",
+        "finding": "Path resolution bug: bash_targets(command, cwd) receives cwd from payload.get('cwd') (line 469); at line 415 base=cwd; at line 420 os.path.join(base, target) called with POSIX path like '/c/Users/...' before norm() runs, causing os.path.join on Windows to misinterpret it as relative, producing 'c:/c/users/...' paths"
+      },
+      {
+        "file": "graph_agents/.claude/hooks/guard-builder-scope.py:97-104",
+        "finding": "norm(path) function exists to resolve POSIX to Windows, calling os.path.realpath() then forward-slashing, but it runs AFTER os.path.join at line 420 has already mangled the path"
+      },
+      {
+        "file": "graph_agents/.graph/scout-facts.py:162-163",
+        "finding": "When package.json is unparseable, 'package.json unparseable' is appended to BOTH found['expo'] AND found['tauri'] simultaneously, causing apps with broken package.json to false-report as both native stacks"
+      },
+      {
+        "file": "graph_agents/.graph/scout-facts.py:226-229",
+        "finding": "Contradictions reported when expo/tauri detected but ui lacks native-mobile/native-desktop; malformed package.json triggers both contradictions even for plain web apps"
+      },
+      {
+        "file": "graph_agents/.graph/test_scout_facts.py:87-89",
+        "finding": "Test 'malformed package.json' exists but only checks that 'unparseable' appears in evidence, not that it appears in only ONE kind (expo or tauri, not both)"
+      },
+      {
+        "file": "graph_agents/.claude/skills/new-app/SKILL.md:64",
+        "finding": "Says 'set `runtimeVersion` explicitly in `app.config`' but create-expo-app@latest scaffolds app.json, not app.config (which is an optional override)"
+      }
+    ],
+    "unknowns": [
+      "Does the payload's cwd field carry Windows paths (C:\\...) or POSIX paths (/c/...) on Git Bash, and which conversion should happen where — payload-side or hook-side?"
+    ],
+    "risks": [
+      {
+        "severity": "high",
+        "file": "graph_agents/.claude/hooks/guard-builder-scope.py:420",
+        "issue": "Path bug plan-killer: os.path.join(base, target) at line 420 with base='/c/...' on Windows produces c:/c/... before norm() can fix it. Builders on Git Bash with relative Bash writes get denied even for approved files. Fix differs if bug is in payload cwd (should be Windows format) vs hook join (should normalize before join, not after)."
+      },
+      {
+        "severity": "medium",
+        "file": "graph_agents/.graph/scout-facts.py:162-163",
+        "issue": "Malformed package.json at depth <= 2 false-reports as both expo and tauri, causing spurious contradictions for plain web apps with broken JSON"
+      },
+      {
+        "severity": "low",
+        "file": "graph_agents/.claude/skills/new-app/SKILL.md:64",
+        "issue": "Misleading to say app.config when the scaffold produces app.json; app.config.* is optional"
+      }
+    ]
+  },
+  "architect": {
+    "written_by": "architect",
+    "shape": "single-loop",
+    "parallel_safe": false,
+    "rationale": "Forced single-loop: every slice edits graph_agents/ itself (agents, skills, hooks, .graph) -- the fleet editing its own prompts and guard is not fanned out. Slices are still file-disjoint (s1 = 5 prose files, s2 = guard + its test, s3 = scout-facts + its test), so one builder does them in any order and each is reviewable alone. s1 low: no sensitive data, no file shared with another slice, and the defect is a literal phrase grep fully sees. s2 high: a security guard; a green suite cannot see a new allow path (fail-open), so the reviewer reads the diff and runs a negative control against the old guard. s3 low: no sensitive data, no shared file, behaviour fully pinned by test_scout_facts.py. Scout unknown (payload cwd as /c/... or C:\\...): the fix is hook-side and form-agnostic, so the plan does not depend on the answer.",
+    "plan": [
+      {
+        "slice": "s1",
+        "risk": "low",
+        "intent": "Make every pre-existing responsive-web condition array-aware, matching the native blocks wording ('includes'). Sites: architect.md:45 ('When the target app is `ui: responsive-web`' -> 'When the target app ui includes `responsive-web` (string or array)'); builder.md:55 ('UI in a `ui: responsive-web` app' -> 'UI in an app whose `ui` includes `responsive-web`'); reviewer.md:65 heading -> 'If the app `ui` includes `responsive-web` (registry; string or array)'; new-app/SKILL.md:45 and :98 ('If/When `ui` is `responsive-web`' -> 'includes'); mobile-first.md:154 ('born with `ui: responsive-web`' -> 'born with a `ui` that includes `responsive-web`'). mobile-first.md:18-24 and native-*.md are already array-aware -- leave them. Follow-up 4: new-app/SKILL.md:64 'set `runtimeVersion` explicitly in `app.config`' -> 'in `app.json` (or `app.config.*` if the app has one)'. Wording only.",
+        "files": [
+          "graph_agents/.claude/agents/architect.md",
+          "graph_agents/.claude/agents/builder.md",
+          "graph_agents/.claude/agents/reviewer.md",
+          "graph_agents/.claude/skills/new-app/SKILL.md",
+          "graph_agents/conventions/mobile-first.md"
+        ],
+        "done_when": "(a) grep -nE '(ui: responsive-web`|`ui` is `responsive-web`)' graph_agents/.claude/agents/architect.md graph_agents/.claude/agents/builder.md graph_agents/.claude/agents/reviewer.md graph_agents/.claude/skills/new-app/SKILL.md graph_agents/conventions/mobile-first.md -> no output, exit 1; (b) grep -L 'includes `responsive-web`' graph_agents/.claude/agents/architect.md graph_agents/.claude/agents/builder.md graph_agents/.claude/agents/reviewer.md graph_agents/.claude/skills/new-app/SKILL.md graph_agents/conventions/mobile-first.md -> no output; (c) grep -c 'in `app.config`' graph_agents/.claude/skills/new-app/SKILL.md -> 0, and grep -c 'runtimeVersion.*app[.]json' graph_agents/.claude/skills/new-app/SKILL.md -> 1"
+      },
+      {
+        "slice": "s2",
+        "risk": "high",
+        "intent": "Fix guard-builder-scope.py misresolving MSYS/Cygwin paths. ONE helper (e.g. _from_msys) called as the first step INSIDE norm(), active only when os.name == 'nt': a string matching ^/([A-Za-z])(/|$) or ^/cygdrive/([A-Za-z])(/|$) becomes '<X>:/' + rest; anything else is returned unchanged. Yes to /cygdrive/c (same regex, zero cost); NO to /mnt/c (WSL). norm() is already the single normaliser for the Write branch, the Bash branch, approved_paths and transient_roots, so the branches cannot drift. In bash_targets normalise the base BEFORE the join: base = norm(cwd) if cwd is a non-empty str else UMBRELLA; then norm(target if isabs else join(base, target)). This also fixes absolute MSYS targets (/c/Users/...), which isabs() accepts as rooted and realpath maps to C:/c/Users/... today. Fail-closed invariants, each pinned by a test: an unrecognised cwd (/zz/x, relative/dir, //c/x) passes through unchanged and is judged exactly as before; realpath still runs after the join so '..' is resolved before matching and traversal out of the approved set is denied; no new early-return/allow branch; main() exception handler still denies. Regression tests in the existing test_guard_builder_scope.py, run when os.name == 'nt', MSYS spelling derived from UMBRELLA (never hard-coded): (1) relative approved target, MSYS cwd of huntstack/apps/mobile + 'echo x > App.tsx' -> allow; (2) same with /cygdrive/c cwd -> allow; (3) relative unapproved target with MSYS cwd of huntstack/apps/web -> deny; (4) '..' traversal from an MSYS cwd inside the approved dir to an unapproved sibling -> deny; (5) absolute MSYS-spelled target: approved -> allow, unapproved -> deny; (6) Write payload with MSYS-spelled file_path: approved -> allow, unapproved -> deny; (7) unrecognised cwd /zz/nope with an unapproved relative target -> deny; (8) /cc/x is not treated as a drive. Update the norm() docstring and the comment above base =.",
+        "files": [
+          "graph_agents/.claude/hooks/guard-builder-scope.py",
+          "graph_agents/.claude/hooks/test_guard_builder_scope.py"
+        ],
+        "done_when": "python graph_agents/.claude/hooks/test_guard_builder_scope.py -> exit 0, 'all checks passed'; grep -c cygdrive graph_agents/.claude/hooks/test_guard_builder_scope.py -> >= 1; python graph_agents/.claude/hooks/test_bash_write_targets.py and test_hooks_resolve.py -> exit 0. Reviewer (high): negative control -- git -C graph_agents stash push .claude/hooks/guard-builder-scope.py, run the suite -> must FAIL on check (1); git stash pop -> passes. Read the diff for any new allow/return path."
+      },
+      {
+        "slice": "s3",
+        "risk": "low",
+        "intent": "scout-facts.py:162-163: an unparseable package.json is a parse problem, not expo or tauri evidence. _dir_native records it under its own key; native_facts emits it once per dir as a hit of kind 'unparseable' (evidence ['package.json unparseable']) so render() still shows it; contradictions_for stays keyed only on expo/tauri, so it yields no contradiction. app.json-unparseable stays expo evidence (unchanged). Extend the existing malformed case in test_scout_facts.py: (a) malformed package.json alone -> no expo hit and no tauri hit; (b) the problem reported exactly once; (c) sf.contradictions_for('x', ['responsive-web'], hits) == []; (d) malformed package.json + eas.json in one dir -> one expo hit, no tauri hit. Keep 'does not crash'.",
+        "files": [
+          "graph_agents/.graph/scout-facts.py",
+          "graph_agents/.graph/test_scout_facts.py"
+        ],
+        "done_when": "python graph_agents/.graph/test_scout_facts.py -> exit 0, no FAIL lines, the four new checks present; python graph_agents/.graph/scout-facts.py --all -> exit 0"
+      }
+    ],
+    "edges": "s1, s2, s3 independent -- no artifact flows between them; one builder, any order",
+    "final_done_when": "for f in graph_agents/.claude/hooks/test_*.py graph_agents/.graph/test_*.py; do python $f >/dev/null 2>&1 || echo FAIL $f; done -> no output",
+    "not_doing": [
+      "/mnt/c (WSL) translation",
+      "changing how the harness sends cwd",
+      "app.json-unparseable handling",
+      "rewording mobile-first.md:18-24 or native-*.md",
+      "CURRENT-STATE.md / HISTORY.md (audit-fleet after close)",
+      "bash_write_targets.py / the classifier",
+      "any app repo"
+    ]
+  },
+  "approved_by_human": true,
+  "scope_exceptions": [
+    "ORCHESTRATOR-OWNED, normally empty. Paths a builder may write that the approved plan does not list. guard-builder-scope.py DENIES a builder's Write/Edit outside architect.plan[].files, and this is the only way through it. Adding one is a deliberate, recorded act: pair it with deviation_from_approved_plan on the slice that needed it, and say why the gate's file set was wrong. Never add a path to silence the guard on work the human did not approve."
+  ],
+  "builders": {
+    "s1": {
+      "status": "done",
+      "branch": "fu-s1",
+      "commit": "d6e8a03",
+      "changed": [
+        "graph_agents/.claude/agents/architect.md",
+        "graph_agents/.claude/agents/builder.md",
+        "graph_agents/.claude/agents/reviewer.md",
+        "graph_agents/.claude/skills/new-app/SKILL.md",
+        "graph_agents/conventions/mobile-first.md"
+      ],
+      "notes": "graph_agents/CURRENT-STATE.md and HISTORY.md flagged stale by fleet-state hook; outside file set, not touched.",
+      "gate_results": [
+        {
+          "command": "(a) grep -nE '(ui: responsive-web`|`ui` is `responsive-web`)' <5 files>",
+          "output": "(no output) exit 1"
+        },
+        {
+          "command": "(b) grep -L 'includes `responsive-web`' <5 files>",
+          "output": "(no output)"
+        },
+        {
+          "command": "(c) grep -c 'in `app.config`' SKILL.md; grep -c 'runtimeVersion.*app[.]json' SKILL.md",
+          "output": "0\n1"
+        }
+      ],
+      "written_by": "builder"
+    },
+    "s2": {
+      "written_by": "builder",
+      "status": "done",
+      "branch": "fu-s2",
+      "commit": "301d2e8",
+      "changed": [
+        "graph_agents/.claude/hooks/guard-builder-scope.py",
+        "graph_agents/.claude/hooks/test_guard_builder_scope.py"
+      ],
+      "notes": "",
+      "gate_results": {
+        "attempt_2": {
+          "done_when": "python graph_agents/.claude/hooks/test_guard_builder_scope.py; test_bash_write_targets.py; test_hooks_resolve.py; grep -c cygdrive test file",
+          "output": "guard suite: 'all checks passed' (114 ok, exit 0); test_bash_write_targets exit 0; test_hooks_resolve exit 0; grep -c cygdrive = 3",
+          "negative_control_attempt1_guard_4bf34db": "FAILED (14): all (9) drive-root cwd checks for /c/, /c, /cygdrive/c/, C:\\, C:/, C: under hook cwd repos and Temp, plus cwd '/' x2: expected deny, got allow",
+          "negative_control_master_guard": "FAILED (7): (1),(2),(5),(6) MSYS checks plus (9) bare 'C:' x2 and legit absolute target",
+          "restored": "git checkout -- guard; status clean apart from run dir; CURRENT=2026-10-07-native-followups; suite green",
+          "design": "base = _from_msys(cwd), never norm()'d; bare/drive-relative cwd (c:) fails closed via an unmatchable marker target (denied, names the cwd); other non-abs cwd joined raw as master. POSIX: cwd '/' checked via subprocess; posixpath cannot drive the module directly as it runs main() on import."
+        }
+      },
+      "attempt": 2
+    },
+    "s3": {
+      "status": "done",
+      "branch": "fu-s3",
+      "changed": [
+        "graph_agents/.graph/scout-facts.py",
+        "graph_agents/.graph/test_scout_facts.py"
+      ],
+      "notes": "PostToolUse hook flags CURRENT-STATE.md/HISTORY.md stale; outside my set, not touched.",
+      "written_by": "builder",
+      "gate_results": [
+        {
+          "cmd": "python graph_agents/.graph/test_scout_facts.py",
+          "output": "exit 0, 0 FAIL lines; ok: neither expo nor tauri, reported exactly once, no contradiction, malformed+eas.json one expo hit (+read-only), does not crash; 'all ok'"
+        },
+        {
+          "cmd": "python graph_agents/.graph/scout-facts.py --all",
+          "output": "exit 0"
+        },
+        {
+          "cmd": "all hooks/test_*.py and .graph/test_*.py loop",
+          "output": "14 suites, every exit 0, 0 FAIL lines"
+        }
+      ]
+    }
+  },
+  "reviews": {
+    "s1": {
+      "verdict": "PASS",
+      "attempt": 1,
+      "written_by": "reviewer",
+      "findings": [
+        {
+          "file": "graph_agents/.claude/skills/new-app/SKILL.md",
+          "line": 64,
+          "issue": "Reads 'in `app.json` (or `app.config.*` if the app has one) (policy `fingerprint`)': two parentheticals side by side. Clumsy wording, but correct and clear.",
+          "severity": "note",
+          "origin": ""
+        }
+      ],
+      "summary": "PASS. I re-ran done_when on fu-s1 myself. (a) The grep printed nothing and exited 1. (b) grep -L listed no file. (c) 'in `app.config`' counts 0 and 'runtimeVersion.*app[.]json' counts 1. diff --stat master...fu-s1 touches exactly the five approved files, 7+/7-. I read the whole diff. Each of the six rewritten conditions (architect:45, builder:55, reviewer:65 heading, new-app SKILL:45 and :98, mobile-first:154) only changes 'is responsive-web' to 'includes responsive-web'. A string ui still matches, and an array that contains responsive-web now matches too. None mentions desktop-only, none or the native values, so no condition was broadened. The reviewer.md checklist bullets are unchanged. SKILL.md:64 now names app.json, with app.config.* as the fallback. Frontmatter is intact on the four agent/skill files; mobile-first.md has none on master either. Commit d6e8a03 is by njcurtis3 with no Claude trailers. graph_agents is left on master. The s1 key held the unfilled schema template, including a placeholder attempt_2; I replaced the whole template with this attempt 1."
+    },
+    "s2": {
+      "verdict": "REJECT",
+      "attempt": 1,
+      "written_by": "reviewer",
+      "findings": [
+        {
+          "file": "graph_agents/.claude/hooks/guard-builder-scope.py",
+          "line": 443,
+          "issue": "FAIL-OPEN. base = norm(cwd) strips the root separator: norm rstrips '/', so a drive-root cwd ('/c/', '/c', '/cygdrive/c/', and plain Windows 'C:\\' or 'C:/') becomes 'c:'. os.path.join('c:', rel) is DRIVE-RELATIVE ('c:huntstack/...'), so realpath resolves it against the HOOK PROCESS cwd, not the shell's. Concrete: approved huntstack/apps/mobile/**, Bash payload cwd='/c/' (or 'C:\\'), command 'echo x > huntstack/apps/mobile/App.tsx' -> the shell writes C:\\huntstack\\apps\\mobile\\App.tsx (outside the set); the guard resolves it to repos/huntstack/apps/mobile/app.tsx and ALLOWS. End to end via the suite's own hook_decision: all 5 root spellings x 2 hook cwds -> allow on fu-s2, deny on master. A plain Windows root cwd is a regression independent of MSYS. Also mis-resolves the other way: cwd '/c/' + '../../Windows/x' -> c:/users/natha/windows/x. The Bash tool's cwd persists between calls, so 'cd /c/' in one call then a relative write in the next reaches this. Fix: do not pre-norm the base -- join(_from_msys(cwd), target) and norm once after, or keep a trailing separator on a root base. Add a drive-root-cwd deny check.",
+          "severity": "blocker",
+          "origin": "architect"
+        },
+        {
+          "file": "graph_agents/.claude/hooks/guard-builder-scope.py",
+          "line": 443,
+          "issue": "Item 4 (non-Windows unchanged) does not hold for the same reason: on POSIX norm('/') -> '' and join('', rel) -> rel, resolved against the hook process cwd. A cwd of '/' with 'echo x > huntstack/apps/mobile/App.tsx' allows when the hook runs in repos/. Derived with posixpath, not run on a POSIX host. Same fix closes it.",
+          "severity": "blocker",
+          "origin": "architect"
+        },
+        {
+          "file": "graph_agents/.claude/hooks/guard-builder-scope.py",
+          "line": 451,
+          "issue": "Builder deviation (_from_msys(target) before isabs) is sound: on 3.13 Windows isabs('/c/x') is False, so without it an absolute MSYS target would be joined onto the base. _from_msys is a no-op on its own output, Write and Bash reach the same norm() result for the same spelling, no new return/allow path, inside the approved file set.",
+          "severity": "note",
+          "origin": ""
+        },
+        {
+          "file": "graph_agents/.claude/hooks/test_guard_builder_scope.py",
+          "line": 105,
+          "issue": "One of my suite runs died with PermissionError (WinError 32) removing guardtest-*/activity.jsonl during with_run teardown and left the dir behind (I deleted it). Not this diff; the teardown is not robust to a transient Windows file lock. Three re-runs passed.",
+          "severity": "note",
+          "origin": ""
+        }
+      ],
+      "summary": "REJECT. I re-ran done_when on fu-s2: the guard suite exits 0 with 'all checks passed', the cygdrive count is 2, and test_bash_write_targets and test_hooks_resolve exit 0. Negative control: with master's guard swapped in, checks (1), (2), (5) and (6) fail; after restoring the fu-s2 guard the suite is green and CURRENT is unchanged. I hand-probed _from_msys, norm and bash_targets with every listed input. Traversal, prefix collision, /d/, //c, /c:/, /cc, /zz and empty or non-str cwd all deny or pass through unchanged. One case fails open. base = norm(cwd) strips the root slash, so a drive-root cwd becomes 'c:', and join() then builds a drive-relative path that resolves against the hook process cwd. Example: cwd '/c/' or 'C:\\' plus 'echo x > huntstack/apps/mobile/App.tsx' is allowed, but the real write lands at C:\\huntstack. master denies this, end to end. POSIX cwd '/' has the same flaw. The plan specified base = norm(cwd), so origin is architect. The target-side _from_msys deviation is sound. Commit 4bf34db is by njcurtis3, has no trailers and touches the 2 approved files.",
+      "attempt_2": {
+        "verdict": "PASS",
+        "attempt": 2,
+        "written_by": "reviewer",
+        "summary": "PASS. I re-ran done_when on fu-s2. The guard suite exits 0 with 'all checks passed', cygdrive count is 3, and bash_write_targets and hooks_resolve exit 0. Negative controls: with 4bf34db's guard, 14 new (9) checks fail. With master's guard, (1), (2), (5), (6), bare C: and the legit-absolute check fail (7). I restored the guard. Status is clean (only the run dir) and CURRENT is unchanged. The attempt-1 blocker is closed. I sent /c/, /c, /cygdrive/c[/], C:\\, C:/, C:, c:, c:foo, C:huntstack and / through the real hook from 3 process cwds (repos, Temp, C:\\Windows), and all 33 DENY. The marker starts with '<', so it can never equal or prefix-match a norm()'d approved path or fnmatch one. Crafted cwds that embed the marker text or an approved path also deny. Other non-absolute cwds go through _from_msys, which is the identity for them, so they join raw exactly as master does (same verdicts on relative/dir, huntstack, /zz). On POSIX the code is identical to master. The attempt-1 adversarial list, non-str/empty cwds and Write MSYS spellings all behave. Legit MSYS, cygdrive and Windows cwds allow. 301d2e8 is by njcurtis3 with no trailers and touches only the 2 approved files.",
+        "findings": [
+          {
+            "severity": "note",
+            "origin": "",
+            "where": "graph_agents/.claude/hooks/guard-builder-scope.py:446-466",
+            "detail": "Attempt-1 blocker closed. I tested approved huntstack/apps/mobile/** with 'echo x > huntstack/apps/mobile/App.tsx' and cwd in {/c/, /c, /cygdrive/c/, /cygdrive/c, C:\\, C:/, C:, c:, c:foo, C:huntstack, /}, with the hook process cwd at repos, Temp and C:\\Windows. All 33 cases DENY through the real hook. The base is no longer norm()'d, so a root cwd keeps its separator (c:/ + rel is absolute)."
+          },
+          {
+            "severity": "note",
+            "origin": "",
+            "where": "graph_agents/.claude/hooks/guard-builder-scope.py:463",
+            "detail": "The unmatchable marker is sound. It is a raw string beginning with '<', and it is never passed through norm(). _match needs equality or a prefix of a norm()'d approved path (which starts with a drive letter), or an fnmatch pattern that also starts with the umbrella or an absolute drive path. worktree_context(marker) can never see the target under root+'/'. Probes with crafted cwds all deny: one embeds the marker text, one is 'c:<lowercased approved path>', one is c:'<approved path>. Absolute targets under a drive-relative cwd are still judged normally: an approved one allows, an unapproved one denies."
+          },
+          {
+            "severity": "note",
+            "origin": "",
+            "where": "graph_agents/.claude/hooks/guard-builder-scope.py:452",
+            "detail": "Tightenings, which are intended. (a) A bare 'C:' cwd plus a relative approved name was ALLOWED on master. Master also allowed c:foo and C:huntstack when the hook ran in Temp, because Windows resolves them against the inherited per-drive cwd. All of these now DENY. (b) A relative or rooted-no-drive target under a drive-relative cwd (e.g. cwd 'c:' with '> /tmp/x') is now denied rather than skipped as a temp sink, because the marker is appended before the transient check. The harness never sends a drive-relative cwd, so this is acceptable."
+          },
+          {
+            "severity": "note",
+            "origin": "",
+            "where": "graph_agents/.claude/hooks/guard-builder-scope.py:454",
+            "detail": "'Joined raw as master does' holds literally. For a cwd that does not match the MSYS regex, _from_msys returns it unchanged. posixpath.splitdrive is always '', so on POSIX base == cwd exactly as on master and the '/' cwd is the same as master (it is a fix relative to 4bf34db, not a tightening relative to master). Pre-existing and unchanged on both master and fu-s2: a relative cwd ('huntstack', 'relative/dir') resolves against the hook process cwd. The harness sends absolute cwds, so this is not a blocker for this slice."
+          }
+        ]
+      }
+    },
+    "s3": {
+      "verdict": "PASS",
+      "attempt": 1,
+      "written_by": "reviewer",
+      "findings": [
+        {
+          "file": "graph_agents/portfolio/registry.json",
+          "line": 0,
+          "issue": "scout-facts.py --all output carries one non-ASCII byte (0x97 em-dash via cp1252) in a registry RULE line ('...derived from it - exports/ and work/ are gitignored'). Pre-existing, comes from registry data not from this diff; the diff itself is 0 non-ASCII bytes and the new 'unparseable' line is ASCII.",
+          "severity": "note",
+          "origin": ""
+        }
+      ],
+      "summary": "PASS. On fu-s3 I re-ran test_scout_facts.py (exit 0, 0 FAIL, all four new checks present and ok: neither expo nor tauri, reported exactly once, contradictions_for == [], malformed+eas.json == [(expo,.),(unparseable,.)] plus read-only), scout-facts.py --all (exit 0) and --all --json (exit 0), and the full hooks/.graph test loop: 15 suites, all exit 0, 0 FAIL. diff --stat master...fu-s3 touches only .graph/scout-facts.py and .graph/test_scout_facts.py (14+/4-). Read the diff and surrounding code: _dir_native records the parse failure under its own key once; native_facts emits it as kind 'unparseable' so render() still shows it; contradictions_for checks only 'expo'/'tauri' in kinds, so no contradiction; app.json-unparseable remains expo evidence (untouched). Grepped for --json consumers: brief.py does not call scout-facts, scout.md and feature-graph SKILL only invoke it as text; no code switches on hit kind, so the new kind breaks nothing. Diff is pure ASCII. Commit ea33dab authored njcurtis3, no Claude trailers. graph_agents returned to master, clean except the untracked run dir. One note: a pre-existing non-ASCII byte from a registry rule in --all output."
+    }
+  },
+  "integrator": {
+    "written_by": "the node that wrote this key - here, always the string integrator",
+    "merged": [],
+    "conflicts": [],
+    "verification": "what command proved it works, and its output"
+  },
+  "ops": {
+    "written_by": "the node that wrote this key - here, always the string ops",
+    "gated": true,
+    "actions": []
+  },
+  "log": [
+    "2026-10-07 orchestrator: run opened. graph_agents is a git repo on master, clean. Edits .claude/agents and .claude/skills -> single-loop FORCED (step 0.5 check 2). Follow-ups: (1) reviewer.md/builder.md responsive-web blocks read literally for string ui; (2) guard-builder-scope.py misresolves relative Bash paths from a /c/... cwd as c:/c/...; (3) scout-facts.py reports broken package.json as both expo and tauri; (4) new-app says app.config where scaffold makes app.json.",
+    "2026-10-07 orchestrator: scout returned once without writing its key; re-prompted, key now verified. Guard bug at guard-builder-scope.py:420 (MSYS payload cwd joined before norm). Third literal ui condition at architect.md:45. Spawning architect.",
+    "2026-10-07 orchestrator: architect verified - single-loop (forced), 3 disjoint slices (s1 prose low, s2 guard high, s3 scout-facts low). Plan shown to human; awaiting approval.",
+    "2026-10-07 orchestrator: HUMAN GATE passed. User: 'approved' -> all 3 gate items (s2 design /c/ + /cygdrive/c/ only, s3 'unparseable' hit kind, s1's three extra sites). Building s1.",
+    "2026-10-07 orchestrator: s1 PASS attempt 1. Merged fu-s1 into master --no-ff at 7924db4. Building s2 (guard, high risk).",
+    "2026-10-07 orchestrator: s2 REJECT attempt 1 - FAIL-OPEN: base=norm(cwd) strips root slash; drive-root cwd (/c/, C:\\, /) becomes drive-relative and approved-looking relative targets are ALLOWED while writing outside the umbrella. Origin architect (plan specified base=norm(cwd)). Back to builder, attempt 2 (last before escalation).",
+    "2026-10-07 orchestrator: s2 PASS attempt 2 (33 root/drive-relative cwd cases deny; marker unmatchable; negative controls fail as expected). Merged fu-s2 into master --no-ff at da4273f. Building s3.",
+    "2026-10-07 orchestrator: s3 PASS attempt 1. Merged fu-s3 into master --no-ff at 83d8a8c. All 3 slices PASS and merged; closing.",
+    "2026-10-07 orchestrator: CLOSED. close-run.py exit 0. 3/3 slices PASS and merged into graph_agents master (fu-s1 7924db4, fu-s2 da4273f, fu-s3 83d8a8c). s2 REJECTed once for a fail-open the PLAN introduced (base=norm(cwd) made drive-root cwds drive-relative); attempt 2 also tightens a pre-existing allow on a bare 'C:' cwd. All four follow-ups from 2026-10-07-native-app-expertise closed. Nothing dropped. Open note: test_guard_builder_scope.py teardown can hit a transient WinError 32 on activity.jsonl."
+  ]
+}

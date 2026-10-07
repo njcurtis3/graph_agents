@@ -27,6 +27,20 @@ a new reason to be stale.
 Newest first. Each is inserted above the narrative it describes, never above another
 run's prose.
 
+### `2026-10-07-native-followups` — what happened
+
+The owner asked to "fix the follow ups" left by `2026-10-07-native-app-expertise`. Single loop,
+forced. The scout returned once without writing its key and was re-prompted. The architect
+found three more literal `responsive-web` conditions than the brief named, approved at the gate.
+
+s2 is the run's lesson. The plan said `base = norm(cwd)`; `norm()` strips trailing separators, so a
+drive-root cwd (`/c/`, `C:\`) became the drive-relative `c:` and a relative target resolved
+against the hook process's own cwd -- an approved-looking write allowed while the shell wrote
+outside the umbrella. The suite passed; the reviewer found it by hand (5 spellings x 2 hook cwds).
+Attempt 2 never normalises the cwd before the join and fails closed on bare or drive-relative
+cwds, which also closes a pre-existing allow on cwd `C:`; its re-review sent 33 cases through the
+real hook. Merges: `7924db4`, `da4273f`, `83d8a8c`.
+
 ### `2026-10-07-native-app-expertise` — what happened
 
 Goal, in the owner's words: prime the fleet to be "the ultimate experts at building desktop and
@@ -388,3 +402,4 @@ What `2026-08-25-refuge-freshness` found in huntstack, independent of the featur
 | 2026-10-06 | **Docs caught up with RLM, and v1.0.0 cut.** README gained the recursive-reading section, the `rlm` router row (seven skills, not six), `/rlm` in the command list, and a layout block that finally lists `HISTORY.md`, `conventions/`, `decisions/` and `rlm.py`. `reviewer.md`, `architect.md` and `integrator.md` each now say in their own file that they do not read through `/rlm` — ADR 0002 had said so, but a node reads its own page, not the decision log. Tagged `v1.0.0`: the first release, covering the fleet as it stands — six nodes, seven routers, the hooks, the checkers and the RLM reader. |
 | 2026-10-06 | **README reformatted to match `omaorchestra`'s.** Centred wordmark (`docs/assets/logo-{light,dark}.svg`, new), tagline, badge row and nav row; Introduction with `[!WARNING]`/`[!NOTE]` callouts; features as a two-column table; Install, Setup and a hooks table; Supported versions; Documentation. Badges are limited to what exists — no tests badge (no CI) and no license badge (no LICENSE). The registry example was corrected on the way: it is an object with an `apps` array, not a bare array, and carries `ui`. |
 | 2026-10-07 | Native app expertise: ADR 0003 (Expo/EAS + Tauri 2), `conventions/native-mobile.md` + `native-desktop.md`, `ui` values `native-mobile`/`native-desktop` (array allowed), gated native rules in architect/builder/reviewer/ops/scout, native scaffolding in `new-app`, Expo/Tauri detection in `scout-facts.py` + `test_scout_facts.py`. Run `2026-10-07-native-app-expertise` |
+| 2026-10-07 | Native follow-ups: `responsive-web` conditions are array-aware (architect, builder, reviewer, new-app, mobile-first); plan-scope guard resolves MSYS/Cygwin drive paths on Windows and fails closed on drive-relative cwd; `scout-facts.py` reports unparseable `package.json` as its own kind; `new-app` names `app.json`. Run `2026-10-07-native-followups` |
