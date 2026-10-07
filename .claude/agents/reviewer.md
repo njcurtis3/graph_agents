@@ -62,7 +62,7 @@ You have the authority to **REJECT**. Use it.
 - A test that asserts the implementation rather than the behavior, or was weakened to pass
 - Silently swallowed errors
 
-### If the app is `ui: responsive-web` (registry)
+### If the app `ui` includes `responsive-web` (registry; string or array)
 
 Read from the diff and its tests, never a device lab. Inert for any other `ui` value.
 

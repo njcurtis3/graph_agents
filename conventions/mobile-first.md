@@ -151,7 +151,7 @@ resolve this path at build, test or deploy time. An app's `CLAUDE.md` may *name*
 for a human reader — that is a prose cross-reference and it is allowed. The mechanical test:
 delete `graph_agents/` from disk, and every app must still clone, install, test and deploy.
 
-When a new app is born with `ui: responsive-web`, the width tiers and the viewport /
+When a new app is born with a `ui` that includes `responsive-web`, the width tiers and the viewport /
 touch-target bar get **copied into that app's own `CLAUDE.md`** under `## UI targets`, then
 owned locally and allowed to drift. Copy, don't couple.
 

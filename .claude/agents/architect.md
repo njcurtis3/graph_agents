@@ -42,7 +42,7 @@ you cannot name the disjoint file sets, it is not a diamond — it is a sequence
   disk-verifiable condition (`grep`, `jq`, an exit code). If it is genuinely unverifiable by
   any command, label it `human-read` and name what the human has to read. Do not invent a
   fake check that proves nothing.
-- **Plan mobile and desktop in the same slice.** When the target app is `ui: responsive-web`
+- **Plan mobile and desktop in the same slice.** When the target app `ui` includes `responsive-web` (string or array)
   in the registry, every UI slice plans the mobile layout as the base case and desktop as the
   additive case — one slice, not two. Never write a follow-on "make it responsive" slice:
   retrofitting responsiveness rewrites the layout layer rather than patching it, and that

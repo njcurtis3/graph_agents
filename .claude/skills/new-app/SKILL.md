@@ -42,7 +42,7 @@ the holding company into a monorepo.
 Scaffold with the ecosystem's own tool (`npm create`, `uv init`, `cargo new`, …). Do not
 hand-roll what a scaffolder does correctly.
 
-**If `ui` is `responsive-web`, then apply `graph_agents/conventions/mobile-first.md` to what
+**If `ui` includes `responsive-web`, then apply `graph_agents/conventions/mobile-first.md` to what
 the scaffolder just generated:**
 
 - set the viewport meta (`width=device-width, initial-scale=1`)
@@ -61,7 +61,7 @@ and retrofitting it later rewrites the layout layer.
 - `npx create-expo-app@latest` — Continuous Native Generation; add `ios/` and `android/` to
   `.gitignore`, never commit them
 - create `eas.json` with `development`, `preview` and `production` profiles, each with a `channel`
-- set `runtimeVersion` explicitly in `app.config` (policy `fingerprint`)
+- set `runtimeVersion` explicitly in `app.json` (or `app.config.*` if the app has one) (policy `fingerprint`)
 - install `expo-secure-store` and `react-native-safe-area-context`
 - run `npx expo-doctor` and fix what it reports
 
@@ -95,7 +95,7 @@ Every app is the authority on itself. Write `<id>/CLAUDE.md` covering:
   ever find yourself making code read that path, you have turned a convention into an
   edge — delete it. See `CLAUDE.md` § The one invariant.
 
-When `ui` is `responsive-web`, the app's CLAUDE.md must also carry its **own copy** of the
+When `ui` includes `responsive-web`, the app's CLAUDE.md must also carry its **own copy** of the
 width tiers and the viewport / touch-target bar under a `## UI targets` heading — copied out
 of `graph_agents/conventions/mobile-first.md`, then owned locally and allowed to drift, like
 any other copy. The app stays the authority on itself. It may *name*
