@@ -69,6 +69,7 @@ letting a guard that never ran read as a guard that approved. See `main()`.
 import fnmatch
 import json
 import os
+import re
 import sys
 import traceback
 
@@ -94,8 +95,33 @@ UNRESOLVED_SHAPE = "shape"      # parsed, but a target is a runtime value
 OVER_MAX_COMMAND = "size"       # never parsed: longer than the classifier's cap
 
 
+_MSYS_DRIVE = re.compile(r"^(?:/cygdrive)?/([A-Za-z])(/|$)")
+
+
+def _from_msys(path):
+    """`/c/Users/x` or `/cygdrive/c/Users/x` -> `c:/Users/x`, on Windows only.
+
+    Git Bash reports its cwd, and a builder types absolute targets, in MSYS spelling.
+    Windows `realpath` reads `/c/Users` as rooted-on-the-current-drive, i.e. `C:/c/Users`,
+    which matches no approved path. Anything that is not exactly a one-letter drive
+    mount (`/cc/x`, `//c/x`, `/zz/x`, a relative path) is returned unchanged. `/mnt/c`
+    (WSL) is deliberately not handled.
+    """
+    if os.name != "nt" or not isinstance(path, str):
+        return path
+    m = _MSYS_DRIVE.match(path)
+    if not m:
+        return path
+    return "%s:/%s" % (m.group(1), path[m.end():])
+
+
 def norm(path):
-    """Absolute, junction-resolved, forward-slashed, case-folded on Windows."""
+    """Absolute, junction-resolved, forward-slashed, case-folded on Windows.
+
+    An MSYS/Cygwin drive spelling is translated first (`_from_msys`), so every caller --
+    Write, Bash, approved paths, transient roots -- sees the same path for the same file.
+    """
+    path = _from_msys(path)
     try:
         real = os.path.realpath(path)
     except Exception:
@@ -411,12 +437,17 @@ def bash_targets(command, cwd):
     # A target is returned as the command wrote it, with any `cd` in the same command
     # already applied. Relative means relative to the shell's cwd, which the payload
     # carries; the launch rule (`repos/`) is the fallback, and it is what the Bash tool
-    # actually uses in every run this fleet has executed.
-    base = cwd if isinstance(cwd, str) and cwd.strip() else UMBRELLA
+    # actually uses in every run this fleet has executed. The base is normalised BEFORE
+    # the join: Git Bash sends an MSYS cwd (`/c/Users/...`), and joining a relative
+    # target onto that spelling yields a path `realpath` maps to `C:/c/Users/...`.
+    base = norm(cwd) if isinstance(cwd, str) and cwd.strip() else UMBRELLA
     skip = transient_roots()
 
     resolved = []
     for target in targets:
+        # Translate before `isabs`: on Python 3.13+ Windows `/c/Users/x` is not absolute,
+        # so it would be joined onto the base and keep only the base's drive.
+        target = _from_msys(target)
         absolute = norm(target if os.path.isabs(target) else os.path.join(base, target))
         if any(_match(absolute, root) for root in skip):
             continue                          # a temp file is a sink, not the plan's tree
