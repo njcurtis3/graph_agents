@@ -16,10 +16,15 @@ Before creating anything, get explicit answers and confirm them back:
 3. **kind** — `product` | `site` | `tool` | `vendor`
 4. **stack** — language and framework
 5. **Why is this not a feature of an existing app?** If there is no clean answer, it probably is one. Say so.
-6. **ui** — `responsive-web` | `desktop-only` | `none`. One-line test: does a human reach
-   this on a device they choose? If yes it is `responsive-web`. Local-only dev/inspection
-   UIs (a viewer bound to `127.0.0.1`) are `desktop-only`; CLIs, libraries and pipelines
-   are `none`.
+6. **ui** — `responsive-web` | `native-mobile` | `native-desktop` | `desktop-only` | `none`.
+   One-line test: does a human reach this on a device they choose, in a browser? If yes it
+   is `responsive-web`. An installed iOS/Android app is `native-mobile` (Expo, built on
+   EAS); an installed Windows/macOS/Linux app is `native-desktop` (Tauri 2). `desktop-only`
+   is only a local-only dev/inspection viewer bound to `127.0.0.1` — no installable binary.
+   CLIs, libraries and pipelines are `none`. One repo shipping several surfaces takes an
+   array, e.g. `["responsive-web", "native-mobile"]`. Expo + Tauri together is **two apps**
+   unless it is genuinely one product on one release cadence; if unsure, split it.
+   See `graph_agents/decisions/0003-native-stack.md`.
 
 Do not create anything until they confirm.
 
@@ -50,6 +55,28 @@ This step is not optional. Ecosystem scaffolders do not default to mobile-first;
 a desktop demo page. If nobody post-processes it, the app is desktop-shaped from commit one
 and retrofitting it later rewrites the layout layer.
 
+**If `ui` includes `native-mobile`, then scaffold to `graph_agents/conventions/native-mobile.md`
+(§ Stack and project shape, § Updates and runtime versions):**
+
+- `npx create-expo-app@latest` — Continuous Native Generation; add `ios/` and `android/` to
+  `.gitignore`, never commit them
+- create `eas.json` with `development`, `preview` and `production` profiles, each with a `channel`
+- set `runtimeVersion` explicitly in `app.config` (policy `fingerprint`)
+- install `expo-secure-store` and `react-native-safe-area-context`
+- run `npx expo-doctor` and fix what it reports
+
+**If `ui` includes `native-desktop`, then scaffold to `graph_agents/conventions/native-desktop.md`
+(§ Capabilities and permissions, § Content Security Policy):**
+
+- `npm create tauri-app@latest` (Tauri 2)
+- trim the default capability to only what the app uses — no blanket permission sets
+- set a CSP; do not leave it `null`
+- add a `.github/workflows` release matrix on `windows-latest` and `macos-latest` (plus
+  `ubuntu-latest` if Linux ships), copied in as a starting point and owned locally
+
+For both: **no signing keys, EAS project, store listing or updater key is created or committed
+at scaffold time.** Credentials and the first release are `ops`, behind its gate.
+
 ## Step 3 — the app's own CLAUDE.md
 
 Every app is the authority on itself. Write `<id>/CLAUDE.md` covering:
@@ -75,9 +102,16 @@ any other copy. The app stays the authority on itself. It may *name*
 `graph_agents/conventions/mobile-first.md` alongside the copy; that is the same kind of
 prose cross-reference as the line above, subject to the same test.
 
+When `ui` includes `native-mobile` or `native-desktop`, the app's CLAUDE.md likewise carries
+its **own copy** of the bar under a `## Native targets` heading — mobile: targets, secure
+storage, OTA discipline; desktop: capabilities, CSP — copied out of
+`graph_agents/conventions/native-mobile.md` and `graph_agents/conventions/native-desktop.md`,
+then owned locally. Config and workflow files are copy-once starting points, never a shared
+template package and never a path the app reads at runtime.
+
 ## Step 4 — register it
 
-Add an entry to `graph_agents/portfolio/registry.json`, with `path` and `entry_docs` relative to `repos/`. The entry must include `ui` — the fleet routes on it. Unregistered apps are invisible to the fleet —
+Add an entry to `graph_agents/portfolio/registry.json`, with `path` and `entry_docs` relative to `repos/`. The entry must include `ui` — the fleet routes on it; it may be a string or an array. Unregistered apps are invisible to the fleet —
 the registry is the index every agent routes through.
 
 ## Step 5 — first commit
