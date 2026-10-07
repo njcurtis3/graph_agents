@@ -27,6 +27,29 @@ a new reason to be stale.
 Newest first. Each is inserted above the narrative it describes, never above another
 run's prose.
 
+### `2026-10-07-native-app-expertise` — what happened
+
+Goal, in the owner's words: prime the fleet to be "the ultimate experts at building desktop and
+mobile applications". The owner settled the stack before the run: Expo for mobile, Tauri 2 for
+desktop, EAS cloud builds for iOS (Windows host, no Mac). Expertise was added the way
+mobile-first was -- a registry `ui` value, a convention, and gated rules in existing nodes --
+not as new "expert" agents. Single loop, forced by step 0.5 check 2.
+
+The scout missed that `huntstack/apps/mobile` is already an Expo app; the architect caught it,
+and the owner approved making huntstack's `ui` an array at the gate. Two real REJECTs: s1's
+mobile convention allowed the `appVersion` runtimeVersion policy without requiring a version
+bump on native change, so an OTA update would reach binaries lacking a new native module
+(fixed: `fingerprint` default, explicit bump rule, checklist item 7); s2 amended the
+architect's skip line so that mobile-first was cancelled for any native `ui`, which
+contradicted itself for huntstack's array (fixed: skip only when `ui` lacks `responsive-web`).
+Merges: `bdd4e55`, `d731660`, `6fe6351`, `3317dd5`.
+
+Follow-ups found, not fixed: reviewer/builder `responsive-web` blocks read literally for string
+`ui`; a broken `package.json` double-reports expo and tauri in `scout-facts.py`;
+`guard-builder-scope.py` misresolves relative Bash paths from a `/c/...` cwd as `c:/c/...`
+(denied approved writes, three builders worked around it with absolute paths); `new-app` says
+`app.config` where the scaffold produces `app.json`.
+
 ### `2026-09-20-fleet-gaps` — what happened
 
 The fleet's **second diamond**, run against itself, and the first run of any kind since
@@ -364,3 +387,4 @@ What `2026-08-25-refuge-freshness` found in huntstack, independent of the featur
 | 2026-10-06 | **Recursive Language Models, as a reading tool and never a judge.** `.graph/rlm.py` is an RLM REPL after Zhang, Kraska & Khattab (arXiv:2512.24601): the input sits in `context`, the caller peeks/greps/chunks it in code and maps headless `claude -p` haiku sub-calls over the pieces (`llm_map`, 4 concurrent — the paper's blocking sub-calls fixed). `/rlm` is the skill; `scout.md`, `postmortem` and `audit-fleet` point to it for inputs over ~50KB. `reviewer`/`architect`/`integrator` are excluded, because reading through haiku is a downgrade of the reader (ADR 0002). Three live measurements reshaped it before it shipped: the fleet's default system prompt made a sub-call 14x dearer, so sub-calls run bare and outside `repos/`; `--max-budget-usd` bills and then discards the answer, and the first session overspent $0.237 against $0.10, so every call now reserves a worst-case estimate first; thinking was ~90% of cost, but switching it off gave a wrong answer, so the default is `--effort low`. First real use, over `CURRENT-STATE.md`: $0.0996, 79s, 12/12 open gaps plus one false positive. |
 | 2026-10-06 | **Docs caught up with RLM, and v1.0.0 cut.** README gained the recursive-reading section, the `rlm` router row (seven skills, not six), `/rlm` in the command list, and a layout block that finally lists `HISTORY.md`, `conventions/`, `decisions/` and `rlm.py`. `reviewer.md`, `architect.md` and `integrator.md` each now say in their own file that they do not read through `/rlm` — ADR 0002 had said so, but a node reads its own page, not the decision log. Tagged `v1.0.0`: the first release, covering the fleet as it stands — six nodes, seven routers, the hooks, the checkers and the RLM reader. |
 | 2026-10-06 | **README reformatted to match `omaorchestra`'s.** Centred wordmark (`docs/assets/logo-{light,dark}.svg`, new), tagline, badge row and nav row; Introduction with `[!WARNING]`/`[!NOTE]` callouts; features as a two-column table; Install, Setup and a hooks table; Supported versions; Documentation. Badges are limited to what exists — no tests badge (no CI) and no license badge (no LICENSE). The registry example was corrected on the way: it is an object with an `apps` array, not a bare array, and carries `ui`. |
+| 2026-10-07 | Native app expertise: ADR 0003 (Expo/EAS + Tauri 2), `conventions/native-mobile.md` + `native-desktop.md`, `ui` values `native-mobile`/`native-desktop` (array allowed), gated native rules in architect/builder/reviewer/ops/scout, native scaffolding in `new-app`, Expo/Tauri detection in `scout-facts.py` + `test_scout_facts.py`. Run `2026-10-07-native-app-expertise` |

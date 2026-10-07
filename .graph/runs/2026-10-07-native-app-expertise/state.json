@@ -1,0 +1,472 @@
+{
+  "$comment": "Shared state for ONE work-graph run. Lives at .graph/runs/<run-id>/state.json. Every node reads this on start and appends to its OWN key on finish - the builder writes its own builders.<slice> key, including the branch it worked on. Never rewrite another node's key. Every node key carries written_by, naming the node that wrote it: that is the ONLY record of authorship this file has, and without it 'never rewrite another node's key' is unverifiable - an orchestrator hand-writing all six keys is indistinguishable from six nodes doing their jobs. verify-state.py --audit checks it. This file is the edge: it is how context crosses between agents that cannot see each other.",
+  "run_id": "2026-10-07-native-app-expertise",
+  "goal": "I want graph_agents to be primed to be a fleet of agents that are the ultimate experts at building desktop and mobile applications. Go with Expo and Tauri, use EAS for iOS.",
+  "app": "graph_agents",
+  "status": "done",
+  "scout": {
+    "written_by": "scout",
+    "facts": [
+      {
+        "file": "graph_agents/portfolio/registry.json:2",
+        "responsive-web": "device-chosen UI, mobile-first applies",
+        "desktop-only": "local-only viewer, mobile-first does not apply",
+        "none": "no UI"
+      },
+      {
+        "file": "graph_agents/.claude/skills/new-app/SKILL.md:19-22",
+        "step_1": "Human gate asks for ui value; test: does human reach on device they choose"
+      },
+      {
+        "file": "graph_agents/.claude/skills/new-app/SKILL.md:40-51",
+        "step_2": "If responsive-web, apply mobile-first.md to scaffold (viewport, 360px base, delete fixed-widths)"
+      },
+      {
+        "file": "graph_agents/.claude/skills/new-app/SKILL.md:71-76",
+        "step_3": "For responsive-web, CLAUDE.md copies width tiers and viewport/touch-target bar under ## UI targets"
+      },
+      {
+        "file": "graph_agents/.claude/agents/architect.md:45-50",
+        "condition": "When ui: responsive-web, plan mobile+desktop same slice (base mobile, additive desktop)"
+      },
+      {
+        "file": "graph_agents/.claude/agents/builder.md:55-56",
+        "rule": "UI in responsive-web app builds to mobile-first.md (360px base, min-width additive)"
+      },
+      {
+        "file": "graph_agents/.claude/agents/reviewer.md:65-77",
+        "conditional": "If responsive-web, check mobile compliance from diff (fixed px, viewport, 44x44, hover+tap, 100vh, 16px)"
+      },
+      {
+        "file": "graph_agents/conventions/mobile-first.md:20",
+        "routing": "responsive-web applies, desktop-only/none do not"
+      },
+      {
+        "file": "graph_agents/.graph/scout-facts.py:250",
+        "detection": "Git repo status, branch, dirty, identity, entry_docs, observed_stack via STACK_MARKERS. NO native-app detection (no app.json, eas.json, src-tauri, @tauri-apps)"
+      },
+      {
+        "file": "graph_agents/.graph/audit-fleet.py:616",
+        "validation": "Validates presence and line counts. Does NOT validate ui values against enum (unvalidated prose list)"
+      },
+      {
+        "file": "graph_agents/CURRENT-STATE.md:310-320",
+        "tables": "Line 310 Decisions (2 records), 312 Portfolio (5 nodes, registry 141ln), 317 Skills (7 listed), all audited"
+      },
+      {
+        "file": "graph_agents/.graph/test_*.py:7",
+        "suite": "Stdlib-only, no pytest. test_audit_fleet ran and passed"
+      },
+      {
+        "file": "graph_agents/decisions/0002-rlm-scope.md",
+        "format": "# ADR 0002. Sections: ## The decision, ## What an RLM is, ## How it maps, ## Why scope is narrow, ## What was measured, ## What would reverse, ## This is a decision record"
+      }
+    ],
+    "unknowns": [
+      "Expo and Tauri ui values: will they be native-mobile/native-desktop or reuse existing? Affects architect, builder, reviewer, new-app routing.",
+      "Desktop-only reuse for Tauri: single-machine product vs current local-viewer definition. Naming conflict risk.",
+      "New-app Step 1 test split: three categories (web-device, native-specific, local-operator) for Expo, Tauri, current desktop-only?",
+      "Expo scaffold mobile-first defaults: will Managed Workflow emit viewport/360px base, or must Step 2 post-process?",
+      "Tauri convention: separate conventions/native-desktop.md? Builder rule responsive-web-only; Tauri is desktop native.",
+      "Ops expansion: signing, keystore, App Store/Play Store submission? Currently deploy/infra focused."
+    ],
+    "risks": [
+      {
+        "severity": "high",
+        "file": "architect.md:45-50",
+        "issue": "Plan hardcodes responsive-web. New ui values = no architect routing."
+      },
+      {
+        "severity": "high",
+        "file": "reviewer.md:65-77",
+        "issue": "Review gates on responsive-web. Expo needs Expo checklist (perms, modules, iOS/Android). None exists."
+      },
+      {
+        "severity": "high",
+        "file": "builder.md:55-56",
+        "issue": "Builder rule gates on responsive-web. Tauri is desktop native, not responsive. No rule."
+      },
+      {
+        "severity": "medium",
+        "file": "new-app/SKILL.md:40-51",
+        "issue": "Step 2 checks responsive-web only. New values = no setup, desktop-shaped defaults."
+      },
+      {
+        "severity": "medium",
+        "file": "new-app/SKILL.md:19-22",
+        "issue": "Step 1 test binary. Expo/Tauri need three-category routing."
+      },
+      {
+        "severity": "medium",
+        "file": "mobile-first.md:20",
+        "issue": "Lists ui values in prose (unvalidated). Two more => drift. desktop-only gloss confuses Tauri."
+      },
+      {
+        "severity": "low",
+        "file": "CURRENT-STATE.md",
+        "issue": "New files/edits => line count drift. Audit will flag."
+      },
+      {
+        "severity": "low",
+        "file": "scout-facts.py",
+        "issue": "No native-stack detection. Add app.json/eas.json/src-tauri detection or document."
+      }
+    ]
+  },
+  "architect": {
+    "written_by": "architect",
+    "shape": "single-loop",
+    "parallel_safe": false,
+    "rationale": "FORCED single-loop by feature-graph step 0.5 check 2: s2 and s3 edit graph_agents/.claude/agents/** and .claude/skills/**, the definitions this session spawns from. graph_agents/ IS a git repo (git rev-parse true), so rollback exists, but no fan-out. Slices are a sequencing aid for one builder; their file sets are still disjoint (no file appears in two slices). UI-VALUE CALL, reading (a): add `native-mobile` (Expo app; conventions/native-mobile.md applies) and `native-desktop` (Tauri app; conventions/native-desktop.md applies). Keep `desktop-only` and sharpen its gloss to 'a local operator viewer served to a browser on 127.0.0.1 - not a shipped binary; a shipped desktop app is native-desktop'. Rename rejected: no script consumes `ui` (grep of .graph/, hooks, fleetview finds none), so a rename buys nothing and churns 2 registry entries plus 4 prose sites. MULTI-TARGET CALL: `ui` stays a string for single-surface apps and MAY be an array when ONE repo ships to several surfaces, e.g. [\"responsive-web\",\"native-mobile\"]. Every new gate is worded 'when the app's ui includes X' (a string trivially includes itself), and each convention applies only to the code for its own surface. Expo+Tauri in one repo is legal but not the default: new-app recommends two apps (two repos) unless they are one product sharing one identity and release cadence - and a task spanning two repos remains two tasks. NEW FACT the scout did not record (flagged, not contradicting it): huntstack already ships an Expo app at huntstack/apps/mobile (app.json present; CURRENT-STATE.md:1000 run 2026-09-01-huntstack-mobile) while its registry ui is `responsive-web`. Consequences: (1) scout-facts must look below the app root (bounded walk) or it misses the only existing native app; (2) s1 proposes huntstack ui -> [\"responsive-web\",\"native-mobile\"], subject to the human gate. RISK REASONS: s1 high - security guidance (secure storage, capability scopes, signing) that every future native app copies; grep proves a term is present, not that the advice points the right way; registry.json is untracked (.gitignore) so that edit has no git rollback. s2 high - rewrites five fleet node definitions incl. ops.md's credential/signing/store handling; 'inert for other ui values' is a property no test can see. s3 low - no sensitive data, no file shared with another slice, its additions are scaffold commands and pointers checkable by grep; the bar it copies is reviewed (high) in s1. s4 low - read-only tool, prints marker labels and relative paths only, behaviour fully exercised by a new stdlib test, no shared file. No test_scout_facts.py exists today (ls .graph/test_*.py), so s4 creates one in the existing stdlib/no-pytest style.",
+    "plan": [
+      {
+        "slice": "s1",
+        "risk": "high",
+        "intent": "Record the stack and write the two native conventions. decisions/0003-native-stack.md in 0002's ADR shape (# ADR 0003 title; ## The decision; ## Context incl. Windows/no-Mac: iOS builds via EAS cloud, macOS Tauri builds/signing/notarization via a GitHub Actions macOS runner on TelosRG, Linux via ubuntu runner; why Expo over Tauri-mobile and bare RN; Continuous Native Generation - ios/ and android/ are generated by prebuild, not committed, config via app.config + config plugins, because nobody can maintain an Xcode project here; ## What would reverse this - e.g. owner gets a Mac, EAS limits/pricing, a native capability Expo cannot reach, Tauri webview gap on a target OS, Tauri mobile maturing; ## This is a decision record, not a dependency; ## Sources). conventions/native-mobile.md and conventions/native-desktop.md modelled on mobile-first.md: ## Does this apply? (routing on ui includes native-*), rules, ## Prohibitions - each one visible in a diff, ## Reviewer checklist (yes/no from a diff), ## This is a convention, not a dependency (copy into app CLAUDE.md under ## Native targets). Mobile substance: safe areas (react-native-safe-area-context), 44pt/48dp targets + hitSlop, platform navigation (expo-router, Android back), offline/network state, permission flow (rationale before prompt, denied path, Info.plist usage strings via app.config), expo-secure-store for secrets never AsyncStorage, runtimeVersion/OTA discipline (native change => new build, policy fingerprint/appVersion), app.json/app.config + eas.json profiles (development/preview/production, channels), accessibility (accessibilityLabel/Role, Dynamic Type / font scaling). Desktop substance: capabilities/permissions allowlist (no broad fs scopes, no broad shell execute/open scope, per-window capabilities), CSP set in tauri.conf.json (no unsafe-eval, never null), IPC #[tauri::command] input validation and no path/command passthrough, window state persistence, menus/shortcuts per OS (CmdOrCtrl, macOS app menu), updater signing (pubkey in config, private key only in CI secrets), code signing (Authenticode, Developer ID + notarization on mac runner), webview differences (WebView2 / WKWebView / WebKitGTK). Also: graph_agents/CLAUDE.md Conventions table +2 rows and Decisions table +1 row; mobile-first.md ui routing line (~line 20) names the new values and the sharpened desktop-only gloss; registry.json $comment documents native-mobile, native-desktop, array form; huntstack ui -> [\"responsive-web\",\"native-mobile\"] IF approved at the gate.",
+        "files": [
+          "graph_agents/decisions/0003-native-stack.md",
+          "graph_agents/conventions/native-mobile.md",
+          "graph_agents/conventions/native-desktop.md",
+          "graph_agents/conventions/mobile-first.md",
+          "graph_agents/CLAUDE.md",
+          "graph_agents/portfolio/registry.json"
+        ],
+        "done_when": "python -c \"import json,sys;r=lambda p:open('graph_agents/'+p,encoding='utf-8').read();a=r('decisions/0003-native-stack.md');m=r('conventions/native-mobile.md');k=r('conventions/native-desktop.md');c=r('CLAUDE.md');f=r('conventions/mobile-first.md');j=json.loads(r('portfolio/registry.json'));need=[(a,'# ADR 0003'),(a,'## The decision'),(a,'## What would reverse'),(a,'## This is a decision record'),(a,'EAS'),(a,'macos'),(m,'## Does this apply?'),(m,'## Prohibitions'),(m,'## Reviewer checklist'),(m,'## This is a convention, not a dependency'),(m,'expo-secure-store'),(m,'AsyncStorage'),(m,'runtimeVersion'),(m,'eas.json'),(m,'48dp'),(m,'44pt'),(m,'safe-area'),(k,'## Does this apply?'),(k,'## Prohibitions'),(k,'## Reviewer checklist'),(k,'## This is a convention, not a dependency'),(k,'capabilities'),(k,'CSP'),(k,'tauri::command'),(k,'updater'),(k,'WebView2'),(k,'WKWebView'),(k,'WebKitGTK'),(c,'conventions/native-mobile.md'),(c,'conventions/native-desktop.md'),(c,'decisions/0003-native-stack.md'),(f,'native-mobile'),(j['$comment'],'native-mobile'),(j['$comment'],'native-desktop')];miss=[n for t,n in need if n.lower() not in t.lower()];print('MISSING',miss) if miss else print('OK');sys.exit(bool(miss))\" -> prints OK, exit 0. PLUS human-read: the human reads the 0003 reversal conditions and both conventions Prohibitions and Reviewer checklist for technical correctness; a grep cannot tell never-AsyncStorage-for-secrets from its inverse."
+      },
+      {
+        "slice": "s2",
+        "risk": "high",
+        "intent": "Gated native rules in five node definitions, same style as the responsive-web blocks, inert for every other ui value. architect.md: a 'When the app's ui includes native-mobile / native-desktop' bullet - plan iOS+Android (or Windows/macOS/Linux) in the same slice, never a follow-on 'make it work on iOS' slice; any slice touching app.json/app.config.*/eas.json/tauri.conf.json/src-tauri/capabilities/** is risk: high; a native-module/config-plugin change must name the runtimeVersion/new-build consequence; AND the Windows rule: every native done_when must be runnable on Windows (tsc --noEmit, jest/vitest, npx expo export, npx expo-doctor, cargo check / cargo test in src-tauri, cargo tauri build for the Windows target) or be labelled `ci` (names the workflow + runner, e.g. macos-latest) or `human-read` (names the device check); never a done_when needing a Mac, simulator, or eas build. Also amend the existing 'Skip this entirely for desktop-only, none' line to include the native values. builder.md: one hard-boundary bullet per native value pointing at its convention; builders never run eas build / eas submit / eas update / signing - those are ops. reviewer.md: '### If the app's ui includes native-mobile' and '### ... native-desktop' blocks, 5-7 diff-readable items each, 'Inert for any other ui value', pointing at each convention's Reviewer checklist. ops.md: a gated native section - EAS credentials (eas credentials; keystores/.p8/.p12/service-account JSON never committed or printed), eas build (spends build credits -> gate), eas submit (store submission; rollback is a new build or halting a phased rollout, state it), eas update OTA per channel/runtimeVersion (production change -> gate; rollback = republish previous update / eas update:rollback), Tauri updater key (TAURI_SIGNING_PRIVATE_KEY) and Authenticode / Developer ID + notarization via GitHub Actions secrets on TelosRG, one pipeline per app; read-only/dry-run allowed without gate (npx expo-doctor, eas config, eas build:list). scout.md: a bullet naming the native facts to collect (scout-facts native line, Expo SDK version, runtimeVersion policy, eas.json profiles/channels, config plugins, Tauri major version, capability files and their scopes, CSP, updater config, CI runners present).",
+        "files": [
+          "graph_agents/.claude/agents/architect.md",
+          "graph_agents/.claude/agents/builder.md",
+          "graph_agents/.claude/agents/reviewer.md",
+          "graph_agents/.claude/agents/ops.md",
+          "graph_agents/.claude/agents/scout.md"
+        ],
+        "done_when": "python -c \"import sys;N=['architect','builder','reviewer','ops','scout'];T={n:open('graph_agents/.claude/agents/'+n+'.md',encoding='utf-8').read() for n in N};need=[('architect','native-mobile'),('architect','native-desktop'),('architect','Windows'),('architect','`ci`'),('architect','human-read'),('architect','expo-doctor'),('architect','cargo check'),('builder','conventions/native-mobile.md'),('builder','conventions/native-desktop.md'),('builder','eas submit'),('reviewer','conventions/native-mobile.md'),('reviewer','conventions/native-desktop.md'),('ops','eas credentials'),('ops','eas submit'),('ops','eas update'),('ops','TAURI_SIGNING_PRIVATE_KEY'),('ops','AWAITING APPROVAL'),('scout','eas.json'),('scout','tauri.conf')];fm=[n for n in N if not T[n].startswith('---'+chr(10)+'name: '+n)];miss=[s for n,s in need if s not in T[n]];print('MISSING',miss,'BAD_FRONTMATTER',fm) if miss or fm else print('OK');sys.exit(bool(miss or fm))\" -> OK, exit 0; AND git -C graph_agents diff -U0 -- .claude/agents/reviewer.md .claude/agents/builder.md .claude/agents/ops.md | grep -E '^-[^-]' -> no output (additive only: the responsive-web blocks and the ops gate are untouched); AND python graph_agents/.claude/hooks/test_hooks_resolve.py -> exit 0. human-read: the human confirms each new block opens with its ui condition and states it is inert otherwise."
+      },
+      {
+        "slice": "s3",
+        "risk": "low",
+        "intent": "new-app SKILL.md. Step 1 q6: ui enum gains native-mobile and native-desktop, the array form for one repo shipping several surfaces, the sharpened desktop-only gloss, and the recommendation that Expo + Tauri is two apps unless one product/one release cadence. Step 2: 'If ui includes native-mobile' block - scaffold with `npx create-expo-app@latest`, keep CNG (gitignore ios/ android/), create eas.json with development/preview/production profiles and channels, set runtimeVersion policy, install expo-secure-store and react-native-safe-area-context, run npx expo-doctor; 'If ui includes native-desktop' block - `npm create tauri-app@latest` (Tauri 2), trim the default capability to what the app uses, set CSP, add a .github/workflows release matrix with windows-latest + macos-latest (+ ubuntu) runners as a copied starting point, never generate or commit signing keys at scaffold time (ops). Step 3: native apps copy the bar (targets, secure storage, OTA discipline / capabilities, CSP) from the convention into their own CLAUDE.md under `## Native targets`, owned locally; copy-once starting points, never a shared template package. Step 4: registry entry may carry an array ui.",
+        "files": [
+          "graph_agents/.claude/skills/new-app/SKILL.md"
+        ],
+        "done_when": "python -c \"import sys;t=open('graph_agents/.claude/skills/new-app/SKILL.md',encoding='utf-8').read();need=['native-mobile','native-desktop','desktop-only','create-expo-app','create tauri-app','eas.json','expo-doctor','capabilit','## Native targets','conventions/native-mobile.md','conventions/native-desktop.md','macos-latest'];miss=[n for n in need if n not in t];bad=not t.startswith('---'+chr(10)+'name: new-app');print('MISSING',miss,'BAD_FRONTMATTER',bad) if miss or bad else print('OK');sys.exit(bool(miss or bad))\" -> OK, exit 0"
+      },
+      {
+        "slice": "s4",
+        "risk": "low",
+        "intent": "scout-facts.py native detection. Add native_facts(path): bounded walk (root, then depth <= 2, skipping node_modules, .git, target, dist, build, .expo, ios, android) so huntstack/apps/mobile is found. Expo evidence: app.json with a top-level 'expo' key (bare RN app.json alone is NOT expo), app.config.js/ts/json, eas.json, 'expo' in package.json dependencies/devDependencies (+ its version string). Tauri evidence: src-tauri/ dir, tauri.conf.json / tauri.conf.json5 / Tauri.toml, any '@tauri-apps/*' dep (+ @tauri-apps/cli or api version). Malformed JSON is reported as evidence 'unparseable', never a crash. Each hit is {kind, dir (relative to repos/), evidence[]}. Print ui (registry, string or list) and a 'native:' line ('none detected' when empty) in render(), include both in --json. Add a contradiction when expo is detected but ui does not include native-mobile, or tauri detected but ui does not include native-desktop. Output stays ASCII. New graph_agents/.graph/test_scout_facts.py, stdlib only, importlib-loads the hyphenated module, builds temp fixtures: empty dir; expo via app.json{expo}; bare RN app.json (not expo); eas.json only; expo nested at apps/mobile; node_modules/expo ignored; tauri via src-tauri/tauri.conf.json; @tauri-apps/api dep; both in one repo; malformed package.json; ui string vs list contradiction cases.",
+        "files": [
+          "graph_agents/.graph/scout-facts.py",
+          "graph_agents/.graph/test_scout_facts.py"
+        ],
+        "done_when": "python graph_agents/.graph/test_scout_facts.py -> exit 0, every case ok, no FAIL; AND python graph_agents/.graph/scout-facts.py huntstack -> a 'native:' line naming expo at huntstack/apps/mobile; AND python graph_agents/.graph/scout-facts.py --all --json | python -c \"import json,sys;d=json.load(sys.stdin);assert all('native' in a for a in d['apps'])\" -> exit 0; AND for t in graph_agents/.graph/test_*.py graph_agents/.claude/hooks/test_*.py; do python $t >/dev/null || echo FAIL $t; done -> no FAIL lines"
+      }
+    ],
+    "edges": "s1 -> s2 because s2's gates point at conventions/native-*.md section names (Reviewer checklist) that s1 creates; s1 -> s3 because s3's Step 3 copies the bar out of s1's conventions and names their paths. s4 is independent of s1-s3 (the ui strings are fixed here in the plan, not produced by s1). Execution order for the one builder: s1, s2, s3, s4.",
+    "not_doing": [
+      "CURRENT-STATE.md - not a builder deliverable; /audit-fleet runs after close and reconciles line counts and tables.",
+      "No new agent nodes (no mobile-builder / native-reviewer). 'Fleet of experts' is read as expertise in conventions + gated rules on existing nodes; mobile-first.md already says build a specialised reviewer only after a recurring miss pattern.",
+      "No rename of desktop-only; fleetview and roamex registry entries keep their value.",
+      "No script validating the ui enum (audit-fleet/verify-state untouched). The array form is documented, not schema-enforced.",
+      "No edits to feature-graph SKILL.md, GRAPH.md, brief.py, verify-state.py: the new `ci` done_when label is prose in architect.md; nothing parses done_when labels today.",
+      "No changes inside any app (huntstack/apps/mobile untouched; only its registry ui value, and only if approved).",
+      "No shared template package, no templates/ directory with an Expo or Tauri skeleton - scaffolding is the ecosystem's own tool plus copy-once guidance.",
+      "No relitigating the stack (Expo, Tauri 2, EAS for iOS) - 0003 records it.",
+      "No real CI workflow, signing key, EAS project or store listing is created - that is ops, behind its gate, per app.",
+      "No repos/CLAUDE.md edit."
+    ],
+    "human_gate": [
+      "1. ui naming: approve reading (a) - add native-mobile + native-desktop, keep desktop-only with the sharpened 'local operator viewer on 127.0.0.1, not a shipped binary' gloss.",
+      "2. Multi-surface form: approve ui as string-or-array, gates worded 'includes', with new-app recommending two repos for Expo+Tauri unless one product/one release cadence.",
+      "3. huntstack: approve or strike changing its registry ui to [responsive-web, native-mobile] (it already has an Expo app at huntstack/apps/mobile). Registry is untracked, so this edit has no git rollback.",
+      "4. Continuous Native Generation (ios/ android/ not committed) as the convention default in 0003 and native-mobile.md.",
+      "5. After this run: start a fresh Claude Code session before the next fleet run - s2/s3 rewrite agent and skill definitions loaded at session start."
+    ]
+  },
+  "approved_by_human": true,
+  "scope_exceptions": [
+    "ORCHESTRATOR-OWNED, normally empty. Paths a builder may write that the approved plan does not list. guard-builder-scope.py DENIES a builder's Write/Edit outside architect.plan[].files, and this is the only way through it. Adding one is a deliberate, recorded act: pair it with deviation_from_approved_plan on the slice that needed it, and say why the gate's file set was wrong. Never add a path to silence the guard on work the human did not approve."
+  ],
+  "builders": {
+    "s1": {
+      "written_by": "builder",
+      "status": "done",
+      "branch": "native-s1",
+      "changed": [
+        "graph_agents/decisions/0003-native-stack.md",
+        "graph_agents/conventions/native-mobile.md",
+        "graph_agents/conventions/native-desktop.md",
+        "graph_agents/conventions/mobile-first.md",
+        "graph_agents/CLAUDE.md",
+        "graph_agents/portfolio/registry.json"
+      ],
+      "notes": "CURRENT-STATE.md/HISTORY.md stale per fleet hook, outside file set; registry.json still untracked.",
+      "gate_results": "done_when (python -c ... 34-needle check) -> OK, exit=0. Commit 63f3bfe on native-s1. Human-read of 0003 reversal conditions and both Prohibitions/Reviewer checklists still pending.\n\nattempt 2: done_when (same 34-needle python -c) -> OK, exit 0. Commit 6827198 on native-s1, author njcurtis3. Fixed: fingerprint default + appVersion bump rule + checklist 7; WebView2 fixedRuntime; EAS env vars; OTA diff-visibility; createUpdaterArtifacts; ipc: connect-src; 8pt/8dp.",
+      "attempt": 2,
+      "commit": "6827198"
+    },
+    "s2": {
+      "status": "done",
+      "branch": "native-s2",
+      "changed": [
+        "graph_agents/.claude/agents/architect.md",
+        "graph_agents/.claude/agents/builder.md",
+        "graph_agents/.claude/agents/ops.md",
+        "graph_agents/.claude/agents/reviewer.md",
+        "graph_agents/.claude/agents/scout.md"
+      ],
+      "notes": "",
+      "gate_results": [
+        {
+          "attempt": 2,
+          "cmd": "done_when python check (run from script file; shell backticks mangle inline `ci`)",
+          "output": "OK, exit 0"
+        },
+        {
+          "cmd": "additive-only check run as: git -C graph_agents diff -U0 master...native-s2 -- reviewer.md builder.md ops.md scout.md | grep -E '^-[^-]'",
+          "output": "no output (no removed lines)"
+        },
+        {
+          "cmd": "python graph_agents/.claude/hooks/test_hooks_resolve.py",
+          "output": "exit 0"
+        }
+      ],
+      "written_by": "builder",
+      "attempt": 2
+    },
+    "s3": {
+      "status": "done",
+      "branch": "native-s3",
+      "changed": [
+        "graph_agents/.claude/skills/new-app/SKILL.md"
+      ],
+      "notes": "CURRENT-STATE.md/HISTORY.md staleness hook fired; not in file set, left for orchestrator.",
+      "gate_results": [
+        {
+          "command": "python -c \"...need=['native-mobile',...,'macos-latest']...\" (done_when as planned)",
+          "output": "OK",
+          "exit": 0
+        }
+      ],
+      "commit": "d882df6",
+      "written_by": "builder"
+    },
+    "s4": {
+      "status": "done",
+      "branch": "native-s4",
+      "changed": [
+        "graph_agents/.graph/scout-facts.py",
+        "graph_agents/.graph/test_scout_facts.py"
+      ],
+      "notes": "CURRENT-STATE.md/HISTORY.md need a scout-facts row; outside this slice's file set.",
+      "gate_results": [
+        {
+          "command": "python graph_agents/.graph/test_scout_facts.py",
+          "output": "all ok, exit 0, no FAIL (35 checks)"
+        },
+        {
+          "command": "python graph_agents/.graph/scout-facts.py huntstack | grep -E 'ui:|native:|!'",
+          "output": "ui:          responsive-web, native-mobile\nnative:      expo at huntstack/apps/mobile (app.json has expo key, package.json dep expo ~57.0.19)\n(no contradiction line)"
+        },
+        {
+          "command": "scout-facts.py --all --json | python -c assert all('native' in a ...)",
+          "output": "json ok, exit 0"
+        },
+        {
+          "command": "for t in graph_agents/.graph/test_*.py graph_agents/.claude/hooks/test_*.py; do python $t >/dev/null || echo FAIL $t; done",
+          "output": "no FAIL lines"
+        }
+      ],
+      "written_by": "builder"
+    }
+  },
+  "reviews": {
+    "s1": {
+      "$comment": "RE-REVIEWS NEST, and this is the rule every reader follows. The TOP LEVEL of reviews.<slice> IS attempt 1. A re-review writes attempt_2, then attempt_3, and so on, each with the same fields as the top level. Every attempt SURVIVES PERMANENTLY - history is never overwritten, flattened, or migrated up. The LATEST attempt supplies the verdict: that is what close-run.py, brief.py and verify-state.py resolve through, and what fleetview's finalVerdict() has always shown. `ever_rejected` - did ANY attempt REJECT - is DISPLAY ONLY, forever, so a rejection stays visible after it is fixed; it must never gate anything, or the fleet stops being able to loop. NO NODE MAY REWRITE AN EARLIER ATTEMPT: a second reviewer writes its own attempt_N and leaves the ones before it alone, top-level verdict included - relocating that verdict would destroy the history the board keeps and leave a key stamped written_by:reviewer with someone else as its real author. The KEY INDEX numbers an attempt, not the `attempt` field inside it; the field is display. An EMPTY attempt_N is not a re-review, it is a key nobody wrote - write the whole attempt or none of it. The walk STOPS AT THE FIRST GAP, so an attempt_3 with no attempt_2 is ignored and the earlier verdict stands: A GAP IS MALFORMED AND NO NODE MAY LEAVE ONE. Write the next UNUSED N and never skip - a mis-numbered re-review is not reported anywhere, it is simply unread, and a REJECT nobody reads is a REJECT nobody acts on. The cap is attempt_9, matching fleetview's `for (i = 2; i < 10; i++)` exactly so the two readers cannot disagree; attempt_10 and beyond is reported loudly and resolved by nobody.",
+      "written_by": "reviewer",
+      "verdict": "REJECT",
+      "attempt": 1,
+      "summary": "REJECT, one blocker. Re-ran done_when myself: OK, exit 0. Read all five diff files and the untracked registry.json: it is valid JSON, 141 lines (same as CURRENT-STATE's count), huntstack ui is [\"responsive-web\",\"native-mobile\"] (approved at the gate), and the $comment matches the desktop-only gloss in mobile-first.md and native-desktop.md. There is no baseline to byte-compare the other entries against. Commit 63f3bfe: author and committer are njcurtis3, no Claude trailers. Read for technical accuracy: secrets go only in expo-secure-store, ios/ and android/ stay uncommitted, CSP is never null and has no unsafe-eval, fs and shell scopes are narrow, the updater pubkey is in config and the private key only in CI, the 44pt/48dp numbers are correct, and no step builds iOS on Windows. All of those point the right way. The blocker: native-mobile.md allows runtimeVersion policy appVersion but never says a native change must bump `version`. eas.json autoIncrement only raises buildNumber/versionCode. So the next eas update reaches old binaries that don't have the new native module, and checklist item 7 still passes. Notes are in findings.",
+      "findings": [
+        {
+          "file": "graph_agents/conventions/native-mobile.md",
+          "line": 73,
+          "severity": "blocker",
+          "origin": "builder",
+          "issue": "runtimeVersion/OTA rule is incomplete for the appVersion policy it approves. Lines 73-78 allow `appVersion` and say a native change needs a new build, but only fingerprint changes the runtime version 'by itself'. Nothing says that under appVersion the app's `version` MUST be bumped. eas.json `autoIncrement` (line 28) raises buildNumber/versionCode, not `version`. Concrete failure: an app on runtimeVersion {policy:'appVersion'} at version 1.0.0 adds a native module and ships a new build with autoIncrement. runtimeVersion is still '1.0.0'. The next `eas update --channel production` goes to the old 1.0.0 binaries too, and their JS calls a native module that isn't there, so the app crashes or rolls back. Checklist item 7 ('shipped as a new build, runtimeVersion set with a policy') answers yes. Fix: either make fingerprint the default and require a stated reason for appVersion, or add the rule 'with appVersion, every native change bumps `version`' to the rules, to Prohibitions and to checklist item 7."
+        },
+        {
+          "file": "graph_agents/conventions/native-desktop.md",
+          "line": 77,
+          "severity": "note",
+          "origin": "builder",
+          "issue": "'The OS decides the webview version; the app cannot bundle its own' is wrong on Windows. Tauri 2 can ship a fixed WebView2 runtime (bundle.windows.webviewInstallMode: fixedRuntime). The statement holds for WKWebView and WebKitGTK. Reword it to: macOS and Linux use the OS webview, and Windows uses the evergreen WebView2 unless the app ships a fixed runtime."
+        },
+        {
+          "file": "graph_agents/conventions/native-mobile.md",
+          "line": 68,
+          "severity": "note",
+          "origin": "builder",
+          "issue": "'EAS secrets': EAS has replaced `eas secret:*` with EAS environment variables (visibility: secret/sensitive). Name the current mechanism so builders don't reach for a deprecated CLI."
+        },
+        {
+          "file": "graph_agents/conventions/native-mobile.md",
+          "line": 97,
+          "severity": "note",
+          "origin": "builder",
+          "issue": "The section header promises each prohibition is visible in a diff. 'No native change shipped as an OTA update' is only visible when the publish step is in a committed CI workflow. A manual `eas update` never shows up in a diff. Either say so or tie the prohibition to the workflow file."
+        },
+        {
+          "file": "graph_agents/conventions/native-mobile.md",
+          "line": 106,
+          "severity": "note",
+          "origin": "",
+          "issue": "'reviewer.md points here by name' (same line in native-desktop.md:103) is a forward reference. It only becomes true when s2 lands, so s2's review should confirm it does."
+        },
+        {
+          "file": "graph_agents/conventions/native-desktop.md",
+          "line": 79,
+          "severity": "note",
+          "origin": "builder",
+          "issue": "The updater section omits bundle.createUpdaterArtifacts: true, without which Tauri 2 produces no signed updater artifacts. connect-src guidance (line 45) could mention that Tauri 2 IPC uses ipc:/http://ipc.localhost. Neither is wrong as written, but both are easy to miss when copying the convention."
+        },
+        {
+          "file": "graph_agents/conventions/native-mobile.md",
+          "line": 37,
+          "severity": "note",
+          "origin": "builder",
+          "issue": "'Keep >= 8 between adjacent targets' has no unit (8pt/8dp)."
+        }
+      ],
+      "attempt_2": {
+        "written_by": "reviewer",
+        "verdict": "PASS",
+        "attempt": 2,
+        "summary": "PASS. Re-ran done_when myself on native-s1: OK, exit 0. Read diff 63f3bfe..6827198 and the full native-mobile.md. The attempt-1 blocker is closed. fingerprint is now the default policy. appVersion is allowed only if every native change bumps `version` in the same change, and the text says autoIncrement does not satisfy that. Prohibitions and checklist item 7 now cover native deps in package.json and require fingerprint or a version bump in the same diff. So the old 1.0.0-plus-new-native-module case is now a checklist 'no', i.e. a REJECT. Checked the note fixes against Tauri 2 / EAS: fixedRuntime webviewInstallMode, EAS env vars with secret/sensitive visibility replacing eas secret:*, bundle.createUpdaterArtifacts, and ipc: plus http://ipc.localhost in connect-src are all correct. The OTA prohibition now admits a manual eas update leaves no diff. Units are 8pt/8dp. No new contradictions: the OTA bullet dropped its fingerprint clause, which moved to the policy bullet. 6827198 is authored and committed by njcurtis3 with no Claude trailers. One small note follows.",
+        "findings": [
+          {
+            "file": "graph_agents/conventions/native-desktop.md",
+            "line": 78,
+            "severity": "note",
+            "origin": "",
+            "issue": "`bundle.windows.webviewInstallMode: fixedRuntime` is shorthand. In tauri.conf.json the value is an object, `{\"type\": \"fixedRuntime\", \"path\": \"./<runtime-dir>/\"}`, and the fixed runtime adds roughly 180MB to the installer. Writing the object form would stop a copier from pasting a bare string that fails schema validation. The prose is correct as written."
+          },
+          {
+            "file": "graph_agents/conventions/native-mobile.md",
+            "line": 127,
+            "severity": "note",
+            "origin": "",
+            "issue": "Forward reference still stands: 'reviewer.md points here by name' (and native-desktop.md) only becomes true when s2 lands. s2's review should confirm it does (carried from attempt 1)."
+          }
+        ]
+      }
+    },
+    "s2": {
+      "written_by": "reviewer",
+      "verdict": "REJECT",
+      "attempt": 1,
+      "summary": "REJECT, one blocker. Re-ran done_when myself from a script file (the inline form loses `ci` to bash backtick substitution, so a shell run checks for ''): OK, exit 0; additive grep against master...native-s2 (the stated `git diff -U0` is vacuous once committed): no removed lines in reviewer/builder/ops/scout; test_hooks_resolve exit 0. Frontmatter of all 5 unchanged, return blocks untouched, 508570c owner-authored with no trailers. Checked every block against conventions on master: Reviewer checklist sections exist, fingerprint/appVersion, 44pt/48dp, CSP, pubkey all match; ops gates eas credentials/build/submit/update and Tauri release, read-only cmds ungated; builder bars eas build/submit/update/signing. Blocker: the one removed line, architect.md's amended skip list, now says to skip the responsive-web rule 'entirely for ... the native values'. huntstack, the only app with a native value, is ui [\"responsive-web\",\"native-mobile\"], so for its web UI architect.md now says both plan mobile-first and skip it, against native-mobile.md 'Does this apply?' (hybrid bound by mobile-first.md for its web target). Fix: qualify it, e.g. skip when ui does not include responsive-web.",
+      "findings": [
+        {
+          "severity": "blocker",
+          "origin": "architect",
+          "file": "graph_agents/.claude/agents/architect.md:51-52",
+          "finding": "Amended line 'Skip this entirely for `desktop-only`, `none`, the native values (which have their own rules below), and non-UI apps' changes the responsive-web rule's meaning for array-valued ui. Input: huntstack (registry ui [\"responsive-web\",\"native-mobile\"]) web UI slice -> the responsive-web rule fires (ui includes responsive-web) and the skip clause also fires (ui includes a native value); 'Skip this entirely' reads as overriding, so mobile-first planning can be dropped for the only hybrid app in the portfolio. On master huntstack was never in the skip list. Contradicts conventions/native-mobile.md 'Does this apply?' and mobile-first.md line 23 (hybrid bound by mobile-first.md for its web target). The plan's intent asked for this amendment without the array qualifier, hence origin architect. Fix: 'Skip this entirely when `ui` does not include `responsive-web` (`desktop-only`, `none`, native-only values, non-UI apps).'"
+        },
+        {
+          "severity": "note",
+          "origin": "architect",
+          "file": "done_when",
+          "finding": "Check 2 uses `git -C graph_agents diff -U0` (worktree vs index), which is empty once the builder commits, so it proves nothing; it should diff master...native-s2. Also the inline python passed in bash double quotes turns `ci` into a command substitution, so the ('architect','`ci`') check degenerates to '' in s. Reviewer re-ran both correctly: pass."
+        },
+        {
+          "severity": "note",
+          "origin": "",
+          "file": "graph_agents/.claude/agents/ops.md (Native apps)",
+          "finding": "Tauri release is gated but no rollback is stated for it (eas submit and eas update each have one). The general 'state the rollback before a destructive step' rule still covers it; a one-liner (ship a superseding signed release / pull the updater manifest entry) would make it explicit."
+        }
+      ],
+      "attempt_2": {
+        "verdict": "PASS",
+        "attempt": 2,
+        "written_by": "reviewer",
+        "summary": "PASS. Attempt-1 blocker closed by a6805af (owner njcurtis3, no trailers on either branch commit). Re-ran done_when from a script against native-s2 (OK, exit 0), additive grep on master...native-s2 for reviewer/builder/ops/scout (no removed lines; the only deletions in the slice are architect.md's two skip-list lines), test_hooks_resolve exit 0. Walked architect.md per ui: \"responsive-web\" -> mobile-first fires, native inert (same as master); [\"responsive-web\",\"native-mobile\"] -> mobile-first fires (stated explicitly for arrays) plus native rules incl. Windows rule; \"native-mobile\" / \"native-desktop\" -> mobile-first skipped, native fires; \"desktop-only\", \"none\" -> both skipped (same as master). String-valued meaning is unchanged: skip set is exactly the strings that are not responsive-web. Tauri rollback line sits inside the gated Native apps section and is directionally right; one precision note on it. No new contradictions found in the five files.",
+        "findings": [
+          {
+            "severity": "note",
+            "file": "graph_agents/.claude/agents/ops.md (Native apps, Tauri release)",
+            "origin": "",
+            "detail": "Tauri's updater only installs when the remote version is greater than the installed one (default comparator), so publishing latest.json pointing at the prior version halts spread but does not move clients already on the bad version back; the manifest itself is not signed, the artifacts are. 'installed binaries are not recalled' covers it, but the stronger roll-forward is re-releasing the prior code under a higher version. Worth a word if this line is touched again; not a wrong instruction."
+          },
+          {
+            "severity": "note",
+            "file": "graph_agents/.claude/agents/reviewer.md:65",
+            "origin": "",
+            "detail": "Pre-existing master text, out of scope for an additive slice: the responsive-web reviewer block heads 'If the app is ui: responsive-web' + 'Inert for any other ui value', which a literal reader could treat as inert for huntstack's array. architect.md now spells out the array case; reviewer.md and builder.md:55 do not. A follow-up could align them."
+          }
+        ]
+      }
+    },
+    "s3": {
+      "verdict": "PASS",
+      "attempt": 1,
+      "written_by": "reviewer",
+      "findings": [
+        {
+          "severity": "note",
+          "origin": "",
+          "text": "Step 2 says set runtimeVersion in `app.config`; create-expo-app emits app.json. Harmless (convention uses the same wording, and app.json is an app config), but a literal reader may hunt for app.config.ts."
+        }
+      ],
+      "summary": "PASS. Re-ran done_when on native-s3 myself: OK, exit 0. `git diff --stat master...native-s3` touches only .claude/skills/new-app/SKILL.md (+39/-5); branch is based on master. Read the diff in full: scaffold commands are the current ones (npx create-expo-app@latest, npm create tauri-app@latest); guidance matches the merged conventions on master (fingerprint runtimeVersion, ios/ android/ gitignored under CNG, trimmed capability, CSP not null; it does not mention eas secret at all, so no conflict); cited section names exist in both conventions and decisions/0003-native-stack.md exists. Explicitly forbids creating signing keys, EAS project, store listing or updater key at scaffold (ops). Step 3 keeps native bar as a local copy and forbids runtime reads of graph_agents/ - invariant intact. responsive-web step-2 block untouched; frontmatter intact. Commit d882df6 authored njcurtis3 <nathanjcurtis3@gmail.com>, no trailers. Risk low confirmed. One cosmetic note (app.config vs app.json)."
+    },
+    "s4": {
+      "verdict": "PASS",
+      "attempt": 1,
+      "written_by": "reviewer",
+      "summary": "PASS. Re-ran every done_when on native-s4 myself: test_scout_facts.py exits 0 with no FAIL; scout-facts.py huntstack prints 'native: expo at huntstack/apps/mobile (app.json has expo key, package.json dep expo ~57.0.19)' and no contradiction; --all --json has 'native' in all 5 apps; every .graph/test_*.py and .claude/hooks/test_*.py passes. Diff vs master touches only .graph/scout-facts.py and .graph/test_scout_facts.py, additive only (two new render lines, two new JSON keys, no existing field changed). Consumers (scout.md, feature-graph step 0.5) read it as prose; brief.py does not call it. Seams verified from code and tests: ui str/list/None normalised; root src-tauri/ is evidence on its parent so skipping recursion into it hides nothing; bare RN app.json is not Expo; malformed JSON caught as ValueError/OSError; walker only lists/reads; commit 453e717 authored njcurtis3, no trailers. Output non-ASCII on --all comes from a pre-existing registry rule em dash, identical on master. Two notes only.",
+      "findings": [
+        {
+          "severity": "note",
+          "origin": "architect",
+          "title": "Malformed package.json is reported as both expo and tauri",
+          "detail": "_dir_native appends 'package.json unparseable' to both kinds, so any plain web app whose package.json (at depth <= 2, e.g. a deliberately broken test fixture) fails to parse yields an expo hit AND a tauri hit, and app_facts then emits two contradictions ('expo detected ... lacks native-mobile', 'tauri detected ...'). This is what the intent literally specifies, so not a builder miss; a separate 'unparseable' kind or excluding unparseable-only hits from contradictions_for would avoid the false alarm."
+        },
+        {
+          "severity": "note",
+          "origin": "",
+          "title": "--all output is not ASCII, pre-existing",
+          "detail": "Line 'RULE: Never commit the Roam export ...' carries a non-ASCII dash from registry.json; master's scout-facts.py produces the same byte. Not introduced here. New strings are ASCII, but dependency version strings and directory names are printed verbatim, so ASCII holds only as far as the inputs are."
+        }
+      ]
+    }
+  },
+  "integrator": {
+    "written_by": "the node that wrote this key - here, always the string integrator",
+    "merged": [],
+    "conflicts": [],
+    "verification": "what command proved it works, and its output"
+  },
+  "ops": {
+    "written_by": "the node that wrote this key - here, always the string ops",
+    "gated": true,
+    "actions": []
+  },
+  "log": [
+    "2026-10-07 orchestrator: run opened. Pre-flight: graph_agents is a git repo (clean); run edits .claude/agents and .claude/skills -> shape FORCED single-loop (step 0.5 check 2). Stack decided by user: Expo (mobile), Tauri 2 (desktop), EAS cloud builds for iOS.",
+    "2026-10-07 orchestrator: scout verified (20 facts, no hard-coded ui enum; responsive-web conditionals in architect/builder/reviewer/new-app). Note: scout did not explicitly answer Q5 (ops.md coverage) â€” architect to read ops.md directly. Spawning architect.",
+    "2026-10-07 orchestrator: architect verified — single-loop (forced), 4 slices s1->s2,s3; s4 independent. Architect found huntstack/apps/mobile Expo app missed by scout. Plan shown to human; awaiting approval.",
+    "2026-10-07 orchestrator: HUMAN GATE passed. User: 'go with native-mobile and native-desktop and everything else you planned' -> all 5 gate items approved (incl. huntstack ui -> [responsive-web, native-mobile], CNG default, ui array form). Building s1.",
+    "2026-10-07 orchestrator: s1 REJECT attempt 1 (runtimeVersion appVersion policy without version-bump rule -> OTA to incompatible binaries). Sending back to builder for attempt 2.",
+    "2026-10-07 orchestrator: s1 PASS attempt 2. Merged native-s1 into master --no-ff at bdd4e55. Building s2.",
+    "2026-10-07 orchestrator: s2 REJECT attempt 1 (architect.md skip line contradicts mobile-first for array ui like huntstack). Back to builder, attempt 2.",
+    "2026-10-07 orchestrator: s2 PASS attempt 2. Merged native-s2 into master --no-ff at d731660. Open note for summary: responsive-web blocks in reviewer.md/builder.md (pre-existing, out of s2's additive-only scope) read literally for string ui; follow-up candidate. Building s3.",
+    "2026-10-07 orchestrator: s3 PASS attempt 1. Merged native-s3 into master --no-ff at 6fe6351. Building s4.",
+    "2026-10-07 orchestrator: s4 PASS attempt 1. Merged native-s4 into master --no-ff at 3317dd5. All 4 slices PASS and merged; closing via /close-run.",
+    "2026-10-07 orchestrator: CLOSED. close-run.py exit 0. 4/4 slices PASS and merged into graph_agents master (native-s1 bdd4e55, native-s2 d731660, native-s3 6fe6351, native-s4 3317dd5); s1 and s2 each REJECTed once and fixed. Shape single-loop, forced by step 0.5 check 2. registry.json edits (huntstack ui array, $comment) are on disk only (file untracked). Nothing dropped. Open follow-ups, not in scope: responsive-web blocks in reviewer.md/builder.md read literally for string ui; broken package.json double-reports expo+tauri in scout-facts; guard-builder-scope misresolves relative Bash paths from a /c/ cwd; new-app says app.config where scaffold makes app.json. Fresh session required before next fleet run."
+  ]
+}
