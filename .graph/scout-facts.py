@@ -65,6 +65,12 @@ STACK_MARKERS = [
 ]
 
 
+# Native-app detection walks the root and two levels down (huntstack keeps its
+# Expo app at apps/mobile) and never enters build output or vendored trees.
+NATIVE_SKIP = {"node_modules", ".git", "target", "dist", "build", ".expo", "ios", "android"}
+NATIVE_MAX_DEPTH = 2
+
+
 def git(args: list[str], cwd: str | Path) -> tuple[int, str]:
     try:
         proc = subprocess.run(
@@ -125,6 +131,105 @@ def repo_facts(path: Path) -> dict:
     }
 
 
+def _read_json(path: Path):
+    """(data, ok). A file that will not parse is evidence, never a crash."""
+    try:
+        return json.loads(path.read_text(encoding="utf-8")), True
+    except (OSError, ValueError):
+        return None, False
+
+
+def _dir_native(d: Path) -> dict:
+    """Evidence for one directory, keyed by kind. Only what is in `d` itself."""
+    found = {"expo": [], "tauri": []}
+
+    app_json = d / "app.json"
+    if app_json.is_file():
+        data, ok = _read_json(app_json)
+        if not ok:
+            found["expo"].append("app.json unparseable")
+        elif isinstance(data, dict) and "expo" in data:
+            found["expo"].append("app.json has expo key")
+        # a bare React Native app.json has no 'expo' key and is not evidence
+    for name in ("app.config.js", "app.config.ts", "app.config.json", "eas.json"):
+        if (d / name).is_file():
+            found["expo"].append(name)
+
+    pkg = d / "package.json"
+    if pkg.is_file():
+        data, ok = _read_json(pkg)
+        if not ok:
+            found["expo"].append("package.json unparseable")
+            found["tauri"].append("package.json unparseable")
+        elif isinstance(data, dict):
+            deps = {}
+            for key in ("dependencies", "devDependencies"):
+                if isinstance(data.get(key), dict):
+                    deps.update(data[key])
+            if "expo" in deps:
+                found["expo"].append(f"package.json dep expo {deps['expo']}")
+            for name in sorted(deps):
+                if name.startswith("@tauri-apps/"):
+                    found["tauri"].append(f"package.json dep {name} {deps[name]}")
+
+    if (d / "src-tauri").is_dir():
+        found["tauri"].append("src-tauri/ dir")
+    for name in ("tauri.conf.json", "tauri.conf.json5", "Tauri.toml"):
+        if (d / name).is_file():
+            found["tauri"].append(name)
+    return found
+
+
+def native_facts(path: Path) -> list[dict]:
+    """Expo / Tauri evidence under an app: root, then depth <= 2.
+
+    Each hit is {kind, dir, evidence[]}; `dir` is the app path joined with the
+    sub-path, so relative to repos/. Read-only: it only lists and reads files.
+    """
+    path = Path(path)
+    hits: list[dict] = []
+    if not path.is_dir():
+        return hits
+
+    def visit(d: Path, depth: int) -> None:
+        found = _dir_native(d)
+        for kind in ("expo", "tauri"):
+            if found[kind]:
+                hits.append({"kind": kind, "dir": d.as_posix(), "evidence": found[kind]})
+        if depth >= NATIVE_MAX_DEPTH:
+            return
+        try:
+            children = sorted(c for c in d.iterdir() if c.is_dir())
+        except OSError:
+            return
+        for c in children:
+            # src-tauri is already evidence on its parent; its config is not a second app
+            if c.name not in NATIVE_SKIP and c.name != "src-tauri":
+                visit(c, depth + 1)
+
+    visit(path, 0)
+    return hits
+
+
+def ui_list(ui) -> list[str]:
+    """Registry `ui` is a string in older entries and a list in newer ones."""
+    if ui is None:
+        return []
+    if isinstance(ui, str):
+        return [ui]
+    return [str(u) for u in ui]
+
+
+def contradictions_for(app_path: str, ui: list[str], native: list[dict]) -> list[str]:
+    kinds = {h["kind"] for h in native}
+    out = []
+    if "expo" in kinds and "native-mobile" not in ui:
+        out.append(f"expo detected in {app_path} but registry ui {ui} lacks native-mobile")
+    if "tauri" in kinds and "native-desktop" not in ui:
+        out.append(f"tauri detected in {app_path} but registry ui {ui} lacks native-desktop")
+    return out
+
+
 def app_facts(app: dict) -> dict:
     path = Path(app["path"])
     facts = {
@@ -136,8 +241,10 @@ def app_facts(app: dict) -> dict:
         "registry_stack": app.get("stack", []),
         "owns": app.get("owns", []),
         "rules": app.get("rules", []),
+        "ui": ui_list(app.get("ui")),
         "git": repo_facts(path),
     }
+    facts["native"] = native_facts(path)
 
     facts["entry_docs"] = [
         {"path": d, "exists": Path(d).exists()} for d in app.get("entry_docs", [])
@@ -162,6 +269,7 @@ def app_facts(app: dict) -> dict:
             f"{app['path']} is NOT a git repo - worktree isolation is unexecutable, "
             "so a diamond here is forced to single-loop (GRAPH.md: No repo, no diamond)"
         )
+    contradictions.extend(contradictions_for(app["path"], facts["ui"], facts["native"]))
     facts["contradictions"] = contradictions
     return facts
 
@@ -184,6 +292,14 @@ def render(facts: dict) -> str:
         if g["remote"]:
             lines.append(f"  remote:      {g['remote']}")
     lines.append(f"  stack:       registry={facts['registry_stack']} observed={facts['observed_stack']}")
+    lines.append(f"  ui:          {', '.join(facts['ui']) or 'NOT SET'}")
+    if facts["native"]:
+        native = "; ".join(
+            f"{h['kind']} at {h['dir']} ({', '.join(h['evidence'])})" for h in facts["native"]
+        )
+    else:
+        native = "none detected"
+    lines.append(f"  native:      {native}")
     docs = ", ".join(
         f"{d['path']}{'' if d['exists'] else ' (MISSING)'}" for d in facts["entry_docs"]
     )
