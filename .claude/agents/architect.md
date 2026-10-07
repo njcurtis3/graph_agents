@@ -47,8 +47,10 @@ you cannot name the disjoint file sets, it is not a diamond — it is a sequence
   additive case — one slice, not two. Never write a follow-on "make it responsive" slice:
   retrofitting responsiveness rewrites the layout layer rather than patching it, and that
   second slice would touch the same files as the first — the overlap named above. The bar is
-  `graph_agents/conventions/mobile-first.md`. Skip this entirely for `desktop-only`, `none`,
-  the native values (which have their own rules below), and non-UI apps.
+  `graph_agents/conventions/mobile-first.md`. Skip this only when `ui` does not include `responsive-web`
+  (`desktop-only`, `none`, native-only values, non-UI apps); an array such as
+  `["responsive-web","native-mobile"]` still gets it for its web UI, and the native values
+  add their own rules below without cancelling it.
 - **Native apps.** When the app's `ui` (a string or an array) includes `native-mobile` or
   `native-desktop`, plan iOS and Android (or Windows, macOS and Linux) in the same slice —
   never a follow-on "make it work on iOS" slice. Bars: `graph_agents/conventions/native-mobile.md`,

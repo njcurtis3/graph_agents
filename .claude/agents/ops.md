@@ -57,6 +57,8 @@ Behind the gate, each its own approval:
   republishing the previous update or `eas update:rollback`.
 - Tauri release — updater key (`TAURI_SIGNING_PRIVATE_KEY`), Authenticode, and Developer ID
   with notarization live in GitHub Actions secrets, never in the repo or a log.
+  Rollback is a new signed updater manifest pointing at the prior version, or pulling the
+  GitHub release; installed binaries are not recalled.
 
 ## Return
 
