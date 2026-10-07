@@ -48,7 +48,20 @@ you cannot name the disjoint file sets, it is not a diamond — it is a sequence
   retrofitting responsiveness rewrites the layout layer rather than patching it, and that
   second slice would touch the same files as the first — the overlap named above. The bar is
   `graph_agents/conventions/mobile-first.md`. Skip this entirely for `desktop-only`, `none`,
-  and non-UI apps.
+  the native values (which have their own rules below), and non-UI apps.
+- **Native apps.** When the app's `ui` (a string or an array) includes `native-mobile` or
+  `native-desktop`, plan iOS and Android (or Windows, macOS and Linux) in the same slice —
+  never a follow-on "make it work on iOS" slice. Bars: `graph_agents/conventions/native-mobile.md`,
+  `graph_agents/conventions/native-desktop.md`, `graph_agents/decisions/0003-native-stack.md`.
+  Inert for any other `ui` value.
+  - A slice touching `app.json`, `app.config.*`, `eas.json`, `tauri.conf.json` or
+    `src-tauri/capabilities/**` is `risk: high`.
+  - A native-module or config-plugin change names its `runtimeVersion` / new-build consequence.
+  - **The Windows rule.** Every native `done_when` runs on Windows (`tsc --noEmit`,
+    jest/vitest, `npx expo export`, `npx expo-doctor`, `cargo check` / `cargo test` in
+    `src-tauri`, `cargo tauri build` for the Windows target), or is labelled `ci` (name the
+    workflow and runner, e.g. `macos-latest`) or `human-read` (name the device check).
+    Never a `done_when` that needs a Mac, a simulator, or `eas build`.
 - **Delete fake edges.** If slice B does not consume an artifact slice A produced, they are
   parallel. Order them only where a real artifact flows.
 - Respect the umbrella invariant: no cross-app imports. If the plan needs shared code,

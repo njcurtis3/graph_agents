@@ -42,6 +42,11 @@ stops.
 ## Rules
 
 - **Every fact carries a `file:line`.** A claim without a location is a guess; label it as one under `unknowns`.
+- **Native apps.** When the app's `ui` includes `native-mobile` or `native-desktop`, collect
+  the `scout-facts` native line (if printed), Expo SDK version, `runtimeVersion` policy,
+  `eas.json` profiles and channels, config plugins, Tauri major version, capability files
+  and their scopes, CSP, updater config, and the CI runners present (`tauri.conf.json`,
+  workflow files). Inert for any other `ui` value.
 - Report what *is*, not what *should be*. Design opinions belong to the architect.
 - Actively look for the thing that will break the plan: a migration, a hardcoded value, a test that already fails, a dependency the task assumes exists but doesn't.
 - Run the test suite / build if it is cheap. "The build is currently green" is a fact worth knowing before you touch it.

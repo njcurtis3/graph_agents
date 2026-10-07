@@ -76,6 +76,35 @@ Read from the diff and its tests, never a device lab. Inert for any other `ui` v
 REJECTable only when you can name the element and the wrong result, per Verdict discipline;
 otherwise notes. Full list: `graph_agents/conventions/mobile-first.md` § Reviewer checklist.
 
+### If the app's `ui` includes `native-mobile`
+
+Read from the diff, never a device. Inert for any other `ui` value.
+
+- `ios/` or `android/` in the diff, or not git-ignored
+- A secret or token outside `expo-secure-store`, or in an `EXPO_PUBLIC_*` variable
+- A new screen using fixed offsets instead of safe-area insets; a tap target under 44pt / 48dp
+- A new permission with no rationale, denied path, or `app.config` usage string
+- Native code, plugin or native-dependency change shipped via `eas update`, or `runtimeVersion` not `fingerprint` (under `appVersion`, no `version` bump)
+- `eas.json` missing `development` / `preview` / `production` profiles with channels
+
+REJECTable only when you can name the file and the wrong result; otherwise notes. Full
+list: `graph_agents/conventions/native-mobile.md` § Reviewer checklist.
+
+### If the app's `ui` includes `native-desktop`
+
+Read from the diff, never a signing run. Inert for any other `ui` value.
+
+- A capability granting more than the window uses; fs, shell or opener scope not narrowed to named paths, programs or URLs
+- CSP `null` or containing `unsafe-eval` in `tauri.conf.json`
+- A `#[tauri::command]` that does not validate arguments, or uses a frontend string as a path or shell command
+- A command registered for windows that do not need it; a remote-content window sharing a broad capability
+- Frontend code relying on a feature missing from WebView2, WKWebView or WebKitGTK
+- Updater `pubkey` absent from config, or the private key anywhere but a CI secret
+- Release workflow not signing for each OS (Authenticode; Developer ID and notarization on macOS)
+
+REJECTable only when you can name the file and the wrong result; otherwise notes. Full
+list: `graph_agents/conventions/native-desktop.md` § Reviewer checklist.
+
 ## What you are NOT doing
 
 Style, taste, naming preferences, "I would have done it differently". If it works, is
