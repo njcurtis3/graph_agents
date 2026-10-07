@@ -87,8 +87,18 @@ try:
     check("malformed package.json does not crash", len(hits) > 0, True)
     check("malformed package.json reported unparseable",
           all("package.json unparseable" in h["evidence"] for h in hits), True)
+    check("malformed package.json is neither expo nor tauri",
+          [h["kind"] for h in hits if h["kind"] in ("expo", "tauri")], [])
+    check("malformed package.json reported exactly once",
+          sum("package.json unparseable" in h["evidence"] for h in hits), 1)
+    check("malformed package.json yields no contradiction",
+          sf.contradictions_for("x", ["responsive-web"], hits), [])
 finally:
     shutil.rmtree(root, ignore_errors=True)
+
+run("malformed package.json + eas.json is one expo hit",
+    {"package.json": "{ not json", "eas.json": {"build": {}}},
+    [("expo", "."), ("unparseable", ".")])
 
 root = fixture({"package.json": {"dependencies": {"expo": "~52.0.0"}}})
 try:
