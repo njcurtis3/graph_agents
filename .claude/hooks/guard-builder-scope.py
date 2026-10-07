@@ -437,10 +437,21 @@ def bash_targets(command, cwd):
     # A target is returned as the command wrote it, with any `cd` in the same command
     # already applied. Relative means relative to the shell's cwd, which the payload
     # carries; the launch rule (`repos/`) is the fallback, and it is what the Bash tool
-    # actually uses in every run this fleet has executed. The base is normalised BEFORE
-    # the join: Git Bash sends an MSYS cwd (`/c/Users/...`), and joining a relative
-    # target onto that spelling yields a path `realpath` maps to `C:/c/Users/...`.
-    base = norm(cwd) if isinstance(cwd, str) and cwd.strip() else UMBRELLA
+    # actually uses in every run this fleet has executed. Only the MSYS spelling of the
+    # base is translated before the join (Git Bash sends `/c/Users/...`, which `realpath`
+    # would map to `C:/c/Users/...`); the base is NEVER passed through `norm`, because
+    # `norm` strips the root separator and a drive-root cwd (`/c/`, `C:\`) would become the
+    # drive-RELATIVE `c:`, which resolves against the HOOK's cwd instead of the shell's.
+    base = UMBRELLA
+    unresolvable_cwd = None
+    if isinstance(cwd, str) and cwd.strip():
+        base = _from_msys(cwd)
+        if not os.path.isabs(base) and os.path.splitdrive(base)[0]:
+            # A bare or drive-relative spec (`c:`, `c:foo`): the shell's directory on
+            # that drive is unknowable here, so nothing relative can be judged. Fail closed.
+            unresolvable_cwd = cwd
+        # Any other non-absolute cwd (`/zz/x` on Windows, `relative/dir`) is joined as-is,
+        # exactly as before this change.
     skip = transient_roots()
 
     resolved = []
@@ -448,6 +459,11 @@ def bash_targets(command, cwd):
         # Translate before `isabs`: on Python 3.13+ Windows `/c/Users/x` is not absolute,
         # so it would be joined onto the base and keep only the base's drive.
         target = _from_msys(target)
+        if unresolvable_cwd is not None and not os.path.isabs(target):
+            marker = "<relative target under unresolvable cwd %r>" % unresolvable_cwd
+            if marker not in resolved:
+                resolved.append(marker)       # matches no approved path, so it is denied
+            continue
         absolute = norm(target if os.path.isabs(target) else os.path.join(base, target))
         if any(_match(absolute, root) for root in skip):
             continue                          # a temp file is a sink, not the plan's tree

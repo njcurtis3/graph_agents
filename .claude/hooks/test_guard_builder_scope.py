@@ -439,6 +439,38 @@ def main():
 
         with_run(state_with(["huntstack/apps/mobile/**"]), msys_paths)
 
+        # A drive-ROOT cwd must not turn a relative target into a drive-relative path
+        # that resolves against the HOOK's cwd: the shell would write C:\huntstack\...,
+        # outside the umbrella. The bug depended on where the hook ran, so run it in two.
+        drive = os.path.splitdrive(UMBRELLA)[0]
+        lo, up = drive[0].lower(), drive[0].upper()
+        roots = ["/%s/" % lo, "/%s" % lo, "/cygdrive/%s/" % lo, up + ":\\", up + ":/"]
+
+        def root_cwds(_run_dir):
+            for run_in in (UMBRELLA, tempfile.gettempdir()):
+                for root in roots + [drive]:
+                    check("(9) drive-root cwd %r (hook in %s) + relative approved name is "
+                          "DENIED" % (root, os.path.basename(run_in)),
+                          outcome("echo x > huntstack/apps/mobile/App.tsx", cwd=root,
+                                  run_in=run_in)[0], "deny")
+            check("(9) a drive-root cwd does not break a legitimate absolute target",
+                  outcome("echo x > %s" % msys(os.path.join(mobile, "App.tsx")),
+                          cwd=up + ":/")[0], "allow")
+
+        with_run(state_with(["huntstack/apps/mobile/**"]), root_cwds)
+
+    # `/` as the shell's cwd: a relative approved name must resolve to /huntstack/..., not
+    # against the hook's own cwd. (Run on both platforms; the module cannot be imported to
+    # drive posixpath directly because it executes `main()` at import.)
+    def slash_cwd(_run_dir):
+        for run_in in (UMBRELLA, tempfile.gettempdir()):
+            check("(9) cwd '/' (hook in %s) + relative approved name is DENIED"
+                  % os.path.basename(run_in),
+                  outcome("echo x > huntstack/apps/mobile/App.tsx", cwd="/",
+                          run_in=run_in)[0], "deny")
+
+    with_run(state_with(["huntstack/apps/mobile/**"]), slash_cwd)
+
     # --- The escape hatch, which has to reach BOTH tools or it is not an escape. ---
     # `scope_exceptions` is how the orchestrator widens a file set deliberately and
     # auditably. It is read by `approved_paths`, so the Bash branch inherits it for free
