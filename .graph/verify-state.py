@@ -355,7 +355,9 @@ def real_slices(state, template):
     example -- `s1` in the shipped schema -- is indistinguishable from a real slice and
     carries the literal verdict "PASS|REJECT". That made the fan-in check below fire on
     EVERY run that reached an integrator: no diamond could ever close with a green audit.
+    # umbrella:begin vs-fanin-origin
     Found 2026-08-26 by run `archive-adapters`, the first run to reach fan-in.
+    # umbrella:end vs-fanin-origin
 
     A slice is real if the architect PLANNED it, or if some node actually WROTE its
     builders/reviews key. Both halves are load-bearing and neither may be dropped:

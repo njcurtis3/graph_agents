@@ -25,8 +25,9 @@ UMBRELLA = os.path.dirname(FLEET)                             # the project root
 @@@ end
 @@@ alt gbs-doc-worktree pin=3afc9e9d2775
   worktree's absolute paths are rooted outside the project and can never equal the
-  plan's. The repo is taken to be a plan entry's first path segment, which holds where
-  each top-level directory is its own repo. If that ever stops being true the
+  plan's. The repo is the project root (UMBRELLA = dirname(FLEET) assumes the fleet
+  directory sits directly under the project root) and a plan entry is a path inside it.
+  If that ever stops being true the
 @@@ end
 @@@ alt bwt-root-example pin=a5e01c7ef3bf
   path that resolves against the session root, so the caller would judge `<root>/GRAPH.md`
@@ -314,4 +315,10 @@ The path derivation below is COPIED
 @@@ end
 @@@ alt cr-why-exists pin=00adb20cca1d
 **Why this exists.** An early run closed with its `log` reading
+@@@ end
+@@@ alt vs-fanin-origin pin=89e3f23984f1
+    Found by an early run, the first to reach fan-in.
+@@@ end
+@@@ alt brief-example-goal pin=73c66d2c8e7a
+      goal   Fix the date shown on the settings page
 @@@ end

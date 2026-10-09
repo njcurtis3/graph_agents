@@ -9,7 +9,9 @@
     # umbrella:begin brief-example-app
     2026-09-02-date-accuracy | huntstack | building | gate ok
     # umbrella:end brief-example-app
+      # umbrella:begin brief-example-goal
       goal   Fix the UTC off-by-one so season dates render the day the regulation says
+      # umbrella:end brief-example-goal
       scout      ok  9 facts | 2 unknowns | 1 risk
       architect  ok  single-loop | 3 slices
       s1  build done       review PASS
