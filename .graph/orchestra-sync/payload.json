@@ -1,0 +1,126 @@
+{
+  "$comment": "Allowlist for the graph_agents -> orchestra/fleet sync. Anything not in include never travels. token and denylist are fixed by s1; later slices may only ADD leak_allow entries (file + pattern name + reason) and dropped_hooks names. App ids are NOT here: sync.py reads them live from portfolio/registry.json and refuses without it.",
+  "include": [
+    ".claude/agents/architect.md",
+    ".claude/agents/builder.md",
+    ".claude/agents/integrator.md",
+    ".claude/agents/ops.md",
+    ".claude/agents/reviewer.md",
+    ".claude/agents/scout.md",
+    ".claude/skills/feature-graph/SKILL.md",
+    ".claude/skills/close-run/SKILL.md",
+    ".claude/skills/rlm/SKILL.md",
+    ".claude/hooks/guard-builder-scope.py",
+    ".claude/hooks/bash_write_targets.py",
+    ".claude/hooks/record-activity.py",
+    ".claude/hooks/show-board.py",
+    ".claude/hooks/flag-state-gap.py",
+    ".claude/settings.json",
+    ".graph/verify-state.py",
+    ".graph/brief.py",
+    ".graph/close-run.py",
+    ".graph/check-return-cap.py",
+    ".graph/scout-facts.py",
+    ".graph/rlm.py",
+    ".graph/runs/_schema.json",
+    "GRAPH.md"
+  ],
+  "token": {
+    "graph_agents": "@FLEET@"
+  },
+  "denylist": [
+    {
+      "name": "repos/",
+      "regex": "(?<![A-Za-z0-9_])repos/"
+    },
+    {
+      "name": "registry.json",
+      "regex": "registry\\.json",
+      "ignore_case": true
+    },
+    {
+      "name": "portfolio",
+      "regex": "portfolio",
+      "ignore_case": true
+    },
+    {
+      "name": "telosrg",
+      "regex": "telosrg",
+      "ignore_case": true
+    },
+    {
+      "name": "umbrella",
+      "regex": "[Uu]mbrella"
+    },
+    {
+      "name": "CURRENT-STATE",
+      "regex": "CURRENT-STATE"
+    },
+    {
+      "name": "HISTORY.md",
+      "regex": "HISTORY\\.md"
+    },
+    {
+      "name": "audit-fleet",
+      "regex": "audit-fleet"
+    },
+    {
+      "name": "verify-invariant",
+      "regex": "verify-invariant"
+    },
+    {
+      "name": "flag-cross-app-import",
+      "regex": "flag-cross-app-import"
+    },
+    {
+      "name": "flag-stale-state",
+      "regex": "flag-stale-state"
+    },
+    {
+      "name": "guard-commit-trailers",
+      "regex": "guard-commit-trailers"
+    },
+    {
+      "name": "new-app",
+      "regex": "new-app"
+    },
+    {
+      "name": "fleetview",
+      "regex": "fleetview",
+      "ignore_case": true
+    },
+    {
+      "name": "postmortem",
+      "regex": "postmortem",
+      "ignore_case": true
+    },
+    {
+      "name": "conventions/",
+      "regex": "conventions/"
+    },
+    {
+      "name": "decisions/",
+      "regex": "decisions/"
+    },
+    {
+      "name": "njcurtis3",
+      "regex": "njcurtis3",
+      "ignore_case": true
+    },
+    {
+      "name": "abs-path-windows",
+      "regex": "[A-Za-z]:[\\/]+Users[\\/]"
+    },
+    {
+      "name": "abs-path-unix",
+      "regex": "(?<![A-Za-z0-9_.])/(?:Users|home)/[A-Za-z0-9_.-]+"
+    }
+  ],
+  "leak_allow": [],
+  "prose_ok_prefixes": [
+    ".graph/CURRENT",
+    ".graph/runs/",
+    ".graph/worktrees/"
+  ],
+  "dropped_hooks": []
+}
