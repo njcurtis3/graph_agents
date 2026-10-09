@@ -23,7 +23,9 @@ one agent instance:
 That is the same undocumented, internal storage layout `record-activity.py`'s `tokens`/
 `say` fields already lean on (see that file's module docstring) -- taken again here,
 deliberately, for the same reason: the alternative is not checking the rule at all.
+# umbrella:begin crc-copy-rule
 Per `graph_agents/CLAUDE.md` ("copy, don't couple"), the path derivation below is COPIED
+# umbrella:end crc-copy-rule
 from `record-activity.py`, not imported -- a checker importing a hook would inherit the
 hook's own failure modes (silent-on-stdin-error, exit 0 always) as its own, which are the
 wrong defaults for a script whose whole job is to report a violation with a real exit code.
@@ -89,13 +91,17 @@ def load_module(path, name):
 
 
 # --------------------------------------------------- transcript location (copied from
+# umbrella:begin crc-copy-comment
 # .claude/hooks/record-activity.py -- see graph_agents/CLAUDE.md, "copy, don't couple")
+# umbrella:end crc-copy-comment
 
 def encode_cwd(cwd):
     """Mirror Claude Code's own project-directory name for a launch cwd.
 
+    # umbrella:begin crc-encode-cwd
     Observed, not documented: `C:\\Users\\natha\\Desktop\\repos` names its project
     directory `C--Users-natha-Desktop-repos` -- every `\\`, `/` and `:` becomes `-`,
+    # umbrella:end crc-encode-cwd
     everything else is left alone.
     """
     return re.sub(r"[\\/:]", "-", cwd)
@@ -193,7 +199,9 @@ def line_count(text):
 
 
 # ------------------------------------------------------------------- lane identity
+# umbrella:begin crc-lane-origin
 # (copied from .graph/postmortem.py's `read_lanes` -- gap #20: a lone `stop` event with
+# umbrella:end crc-lane-origin
 # a fresh id, never seen on a `start` or `tool` event, is a phantom lane and must not be
 # handed a return to check at all.)
 

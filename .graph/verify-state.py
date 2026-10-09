@@ -111,19 +111,25 @@ def die(message):
 # re-review as `attempt_2` (`attempt_3`, ...). Every attempt survives; the LATEST one
 # supplies the verdict. Two reviewers invented that shape independently and nothing in the
 # fleet read it, so a slice that was rejected and then fixed reported as failed -- which is
+# umbrella:begin vs-payload-split
 # why `close-run.py` could not close 2026-09-04-payload-split and why the audit had been
 # misreporting 2026-08-25-fleet-hardening since the day it closed.
+# umbrella:end vs-payload-split
 #
 # The rule lives HERE, once, because `close-run.py` and `brief.py` already import this
 # module: four readers with four rules is how this defect comes back. `resolve()` above is
 # deliberately NOT taught about attempts -- it is a dumb dotted-path walker, and a magic
 # resolve would silently change every unrelated dotted read in three scripts.
 #
+# umbrella:begin vs-board-ref
 # `fleetview/index.html` (reviewAttempts/finalVerdict/everRejected) is the reference this
 # mirrors, read and copied, never imported: it is a separate app, and importing it would be
 # the cross-app edge the umbrella invariant forbids.
+# umbrella:end vs-board-ref
 
+# umbrella:begin vs-walk
 # fleetview's walk is `for (var i = 2; i < 10; i++)`, so it stops after attempt_9. This
+# umbrella:end vs-walk
 # matches that bound EXACTLY on purpose: two readers with different caps disagreeing about
 # a verdict, in a place nobody would look, is the precise divergence this rule exists to
 # prevent. Where they would silently differ -- attempt_10 and beyond -- this side is loud
@@ -144,7 +150,9 @@ def _norm(verdict):
 
 
 def _attempt(obj, number, key):
+    # umbrella:begin vs-mirrors
     """One attempt, flattened to the fields every reader needs. Mirrors fleetview's."""
+    # umbrella:end vs-mirrors
     return {"verdict": _norm(obj.get("verdict")),
             "attempt": obj.get("attempt") or number,
             "summary": obj.get("summary"),
@@ -182,7 +190,9 @@ def review_attempts(review):
     numbering is not what the reader thinks it is, and guessing past it is how a verdict
     nobody wrote gets applied.
 
+    # umbrella:begin vs-divergence
     One documented divergence from fleetview, which breaks on `!a`: an EMPTY attempt dict
+    # umbrella:end vs-divergence
     stops the walk here too. `{}` is truthy in JS, but in this file empty has always meant
     "the node did not write it" (`is_empty`), and an empty attempt is not a re-review.
     """
@@ -196,7 +206,9 @@ def review_attempts(review):
         out.append(_attempt(nested, i, "attempt_%d" % i))
     for key in over_cap_attempts(review):
         message = ("verify-state: WARNING: %s is past the attempt_%d cap this fleet and "
+                   # umbrella:begin vs-cap-warning
                    "fleetview both stop at -- it is NOT resolved, and the two readers now "
+                   # umbrella:end vs-cap-warning
                    "disagree about this slice's verdict\n" % (key, ATTEMPT_CAP))
         if message not in _WARNED:
             _WARNED.add(message)
@@ -351,7 +363,9 @@ def real_slices(state, template):
       - planned-but-unwritten must stay in, or `status: done` with a slice never built
         stops being detectable -- the check that catches a dropped slice.
       - written-but-unplanned must stay in, or a slice a node invented off-plan goes
+        # umbrella:begin vs-closing-fix
         unaudited. That is exactly `builders.closing_fix` in 2026-08-25-fleet-hardening,
+        # umbrella:end vs-closing-fix
         the defect this audit was built to catch.
 
     Only the intersection of neither -- unplanned AND unwritten -- is template noise.
@@ -406,7 +420,9 @@ def audit(state, template):
         # the disagreement is reported to a human instead of one of the two winning.
         for over in over_cap_attempts(resolve(state, "reviews.%s" % s)[1]):
             problems.append(
+                # umbrella:begin vs-cap-audit
                 "reviews.%s.%s is past the attempt_%d cap that this audit and fleetview "
+                # umbrella:end vs-cap-audit
                 "both stop at -- its verdict is NOT resolved here, and the board and the "
                 "fleet now disagree about reviews.%s" % (s, over, ATTEMPT_CAP, s))
 

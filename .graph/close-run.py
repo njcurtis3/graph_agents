@@ -7,7 +7,9 @@
 
 Exit 0 only when every blocker is clear. Exit 1 otherwise, naming each one.
 
+# umbrella:begin cr-why-exists
 **Why this exists.** `2026-08-25-fleet-hardening` closed with its `log` reading
+# umbrella:end cr-why-exists
 "5/5 slices PASS" while `reviews.s4` and `reviews.s5` still recorded the REJECT they had
 already been fixed for, and `builders.closing_fix` had no reviewer at all. Nothing caught
 it for a day, because nothing was looking. `feature-graph` answered that with a rule --
@@ -41,7 +43,9 @@ UMBRELLA = os.path.dirname(FLEET)
 RUNS = os.path.join(HERE, "runs")
 CURRENT = os.path.join(HERE, "CURRENT")
 VERIFY = os.path.join(HERE, "verify-state.py")
+# umbrella:begin cr-registry-const
 REGISTRY = os.path.join(FLEET, "portfolio", "registry.json")
+# umbrella:end cr-registry-const
 
 
 def load_module(path, name):
@@ -61,6 +65,7 @@ def git(target, *args):
     return proc.returncode, proc.stdout.strip()
 
 
+# umbrella:begin cr-target-repo
 def target_repo(app):
     """The directory this run's work landed in, or None if it cannot be resolved."""
     if not app:
@@ -80,19 +85,24 @@ def target_repo(app):
     # `archive-adapters` -- a historical run stays verifiable after its app leaves.
     fallback = os.path.join(UMBRELLA, str(app))
     return fallback if os.path.isdir(fallback) else None
+# umbrella:end cr-target-repo
 
 
 def merge_evidence(state, slice_id):
     """(kind, ref) -- the strongest proof this slice's work exists as a commit.
 
     A branch is the first choice. A branch deleted after merging is normal hygiene, so
+    # umbrella:begin cr-commit-field
     fall back to the commit the builder recorded; `date-accuracy` writes that field as
+    # umbrella:end cr-commit-field
     "<sha> <subject>", hence the split.
     """
     branch = state.get("builders", {}).get(slice_id, {}).get("branch")
     if isinstance(branch, str) and branch.strip():
         # First token only. A branch name cannot contain whitespace, and builders have
+        # umbrella:begin cr-prose-branch
         # written prose into this field -- `invariant-check` s1 records
+        # umbrella:end cr-prose-branch
         # "master (committed directly -- shape is single-loop...)", which as a whole
         # string resolves to nothing and reports an unprovable merge for work that
         # plainly landed.
@@ -128,11 +138,15 @@ def check(run_id, recheck=False):
         blockers.append("audit: %s" % problem)
 
     # -- every slice built and PASSed. `real_slices` includes off-plan ids, which is the
+    # umbrella:begin cr-fleet-hardening
     #    point: `builders.closing_fix` in fleet-hardening was real work with no reviewer.
+    # umbrella:end cr-fleet-hardening
     #    "PASSed" is the LATEST review attempt, not the top of `reviews.<slice>`: a
     #    re-review nests as `attempt_N` and attempt 1's REJECT stays where its reviewer
     #    wrote it, so reading the top level certified a fixed slice as failed and is why
+    # umbrella:begin cr-payload-split
     #    2026-09-04-payload-split could not close. The rule is imported from
+    # umbrella:end cr-payload-split
     #    verify-state.py rather than restated here -- a second copy of it is a second
     #    chance to disagree, which is the defect, not the fix.
     slices = verify.real_slices(state, template)

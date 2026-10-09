@@ -6,7 +6,9 @@
     python graph_agents/.graph/brief.py --ascii <run-id>
     python graph_agents/.graph/brief.py --for <node>[:<slice>] [<run-id>]
 
+    # umbrella:begin brief-example-app
     2026-09-02-date-accuracy | huntstack | building | gate ok
+    # umbrella:end brief-example-app
       goal   Fix the UTC off-by-one so season dates render the day the regulation says
       scout      ok  9 facts | 2 unknowns | 1 risk
       architect  ok  single-loop | 3 slices
@@ -14,7 +16,9 @@
       s2  build done       review .. waiting
       s3  build --         review --
       now  builder | 7m | 88 tools | last Edit
+      # umbrella:begin brief-detail-example
       detail  graph_agents/.graph/runs/2026-09-02-date-accuracy/state.json
+      # umbrella:end brief-detail-example
 
 Why this exists. `GRAPH.md` §3 splits a run into two channels and this fills the second
 one. `state.json` is the MACHINE channel -- the edge between nodes that cannot see each
@@ -286,6 +290,7 @@ def count(value, noun, plural=None):
 
 
 def relative(path):
+    # umbrella:begin brief-relative-doc
     """Umbrella-relative where possible.
 
     Against `repos/`, never against cwd. Every path this fleet writes is relative to the
@@ -294,6 +299,7 @@ def relative(path):
     renders differently depending on who is printing it and pastes back into nothing.
     An absolute `C:\\Users\\...` line is the fallback, for a run that genuinely lives
     outside the umbrella.
+    # umbrella:end brief-relative-doc
     """
     try:
         rel = os.path.relpath(path, UMBRELLA)
@@ -318,8 +324,10 @@ def attempt_count(attempts):
 
     The one thing the list cannot see is a re-review from before the nesting convention,
     where the second reviewer overwrote the top level and only bumped its own `attempt`
+    # umbrella:begin brief-old-reviews
     (`2026-08-25-transclusion-external-previews` s1 is one, `2026-08-26-archive-adapters`
     s1-whoop another). Taking the larger keeps those loops visible instead of demoting
+    # umbrella:end brief-old-reviews
     them to first-try passes -- this board may never make a loop LESS visible than it
     already was.
     """
@@ -386,8 +394,10 @@ def slice_row(reader, state, sid, plan, g, width):
         if str(entry.get("risk") or "").strip().lower() == "high":
             tail = "  [high risk]"
     elif built or reviewed:
+        # umbrella:begin brief-off-plan
         # A slice no approved plan contains. `builders.closing_fix` in
         # 2026-08-25-fleet-hardening is the case: real work, off the gate.
+        # umbrella:end brief-off-plan
         tail = "  [off-plan]"
 
     return "  %-*s  build %-13s review %s%s" % (width, sid, build, review, tail)

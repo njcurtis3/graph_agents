@@ -7,7 +7,9 @@ know which node just finished -- it sees a file path. So this fires the script's
 `--audit` half instead, which asks the question a lone state.json can answer: given
 everything written so far, did the graph's edges hold?
 
+# umbrella:begin fsg-gap7
 What that turns from convention into machinery (`CURRENT-STATE.md` gap #7):
+# umbrella:end fsg-gap7
   - builders written with `approved_by_human` still false -- the human gate skipped
   - a review with no build behind it
   - a fan-in over a slice that never passed
@@ -18,11 +20,15 @@ Deliberately SILENT on a merely half-filled run. Mid-run, most keys are unwritte
 that is exactly what work in progress looks like; a hook that complained on every
 intermediate write would be switched off inside a day, and then it checks nothing.
 
+# umbrella:begin fsg-reuse
 The rule lives in `verify-state.py`, not here -- same reuse as
 `flag-cross-app-import.py`. `importlib` rather than `import` because the filename is
+# umbrella:end fsg-reuse
 hyphenated and not a legal module name.
 
+# umbrella:begin fsg-junction
 `repos/.claude` is a junction into `graph_agents/.claude`, so resolve the path before
+# umbrella:end fsg-junction
 routing on it, or the hook is silent on half the paths agents actually use.
 
 Exit 0 always -- a hook must never block a legitimate edit.

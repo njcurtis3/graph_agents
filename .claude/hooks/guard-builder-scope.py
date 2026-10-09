@@ -19,9 +19,11 @@ Scope, stated honestly:
   other's trees, so what the union still buys is the plan boundary itself.
 
   It matches a builder working in a linked git WORKTREE by repo-relative path, since a
+  # umbrella:begin gbs-doc-worktree
   worktree's absolute paths are rooted outside the umbrella and can never equal the
   plan's. The repo is taken to be a plan entry's first path segment, which holds because
   every node under the umbrella owns its own repo. If that ever stops being true the
+  # umbrella:end gbs-doc-worktree
   entry fails to match and only the absolute rule applies -- the guard narrows, never
   widens.
 
@@ -75,12 +77,16 @@ import traceback
 
 HERE = os.path.dirname(os.path.realpath(__file__))
 FLEET = os.path.normpath(os.path.join(HERE, "..", ".."))      # graph_agents/
+# umbrella:begin gbs-umbrella-comment
 UMBRELLA = os.path.dirname(FLEET)                             # repos/
+# umbrella:end gbs-umbrella-comment
 CURRENT = os.path.join(FLEET, ".graph", "CURRENT")
 SCHEMA = os.path.join(FLEET, ".graph", "runs", "_schema.json")
+# umbrella:begin gbs-closed-note
 # `parked` added 2026-09-19, matching `show-board.py`. A pointer left on a parked run --
 # `2026-08-25-refuge-freshness` has been parked since it opened -- must no more constrain
 # a later builder than a pointer left on a closed one.
+# umbrella:end gbs-closed-note
 CLOSED = ("done", "blocked", "parked")
 
 # How much of a command to quote back in a denial. Enough to recognise it, not enough to
@@ -99,7 +105,9 @@ _MSYS_DRIVE = re.compile(r"^(?:/cygdrive)?/([A-Za-z])(/|$)")
 
 
 def _from_msys(path):
+    # umbrella:begin gbs-msys-doc
     """`/c/Users/x` or `/cygdrive/c/Users/x` -> `c:/Users/x`, on Windows only.
+    # umbrella:end gbs-msys-doc
 
     Git Bash reports its cwd, and a builder types absolute targets, in MSYS spelling.
     Windows `realpath` reads `/c/Users` as rooted-on-the-current-drive, i.e. `C:/c/Users`,
@@ -156,8 +164,10 @@ def schema_placeholders():
     so the "a space and no separator means prose" heuristic below reads it as a path:
     it became a bogus approved entry and a bogus `rel_map` root, and the `Approved:` list
     a denied builder was shown carried a paragraph of schema documentation in it (gap
+    # umbrella:begin gbs-gap14-origin
     #14, found in `2026-08-26-archive-adapters` and worked around there by setting that
     one run's `scope_exceptions` to `[]`).
+    # umbrella:end gbs-gap14-origin
 
     Identity against the schema is used rather than a smarter prose heuristic because it
     is exact: the question "is this the untouched template?" has a correct answer on disk,
@@ -235,14 +245,18 @@ def approved_paths(state, run_dir):
             continue
 
         # A plan entry is a GLOB, not a literal path: an architect writes
+        # umbrella:begin gbs-glob-example
         # `huntstack/apps/mobile/**` to mean "everything under apps/mobile". Reduce a
+        # umbrella:end gbs-glob-example
         # trailing wildcard segment to the directory it stands for, so the prefix tests
         # below cover it.
         #
         # Without this the normalised entry kept its literal `**`, and since no real file
         # is ever equal to -- or prefixed by -- a path ending in `**`, the guard denied
+        # umbrella:begin gbs-glob-incident
         # EVERY write under an approved directory. That happened on 2026-09-01: three
         # slices of `2026-09-01-huntstack-mobile` had `huntstack/apps/mobile/**` as their
+        # umbrella:end gbs-glob-incident
         # entire file set, and s1's builder could not create so much as a package.json in
         # a directory the human had explicitly approved. It cost a round trip and a
         # `scope_exceptions` entry that granted nothing the plan had not already granted.
@@ -263,6 +277,7 @@ def approved_paths(state, run_dir):
         allowed[norm(entry_path if os.path.isabs(entry_path)
                      else os.path.join(UMBRELLA, entry_path))] = entry
 
+        # umbrella:begin gbs-rel-map
         # Same entry, expressed as (repo root, path within that repo). A plan entry's
         # first segment IS the repo, because every node under the umbrella owns its own
         # repo -- see CLAUDE.md. This is what lets a builder in a linked worktree be
@@ -274,6 +289,7 @@ def approved_paths(state, run_dir):
             root = norm(os.path.join(UMBRELLA, parts[0]))
             rel = "/".join(parts[1:])
             rel_map.setdefault(root, {})[rel.lower() if os.name == "nt" else rel] = entry
+        # umbrella:end gbs-rel-map
 
         planned = True
 
@@ -352,7 +368,9 @@ def in_scope(target, allowed, rel_map):
         return True
 
     # Diamond mode: the builder is in a linked worktree, so its absolute path is rooted
+    # umbrella:begin gbs-diamond-path
     # somewhere else entirely and can never equal the plan's umbrella-relative path. Match
+    # umbrella:end gbs-diamond-path
     # the repo-relative path against the same repo's approved entries instead. Without
     # this the guard denies EVERY write by EVERY builder in a diamond -- which it did,
     # undetected, from the day it was written until the first run actually fanned out.
@@ -436,10 +454,12 @@ def bash_targets(command, cwd):
 
     # A target is returned as the command wrote it, with any `cd` in the same command
     # already applied. Relative means relative to the shell's cwd, which the payload
+    # umbrella:begin gbs-base-comment
     # carries; the launch rule (`repos/`) is the fallback, and it is what the Bash tool
     # actually uses in every run this fleet has executed. Only the MSYS spelling of the
     # base is translated before the join (Git Bash sends `/c/Users/...`, which `realpath`
     # would map to `C:/c/Users/...`); the base is NEVER passed through `norm`, because
+    # umbrella:end gbs-base-comment
     # `norm` strips the root separator and a drive-root cwd (`/c/`, `C:\`) would become the
     # drive-RELATIVE `c:`, which resolves against the HOOK's cwd instead of the shell's.
     base = UMBRELLA
@@ -456,7 +476,9 @@ def bash_targets(command, cwd):
 
     resolved = []
     for target in targets:
+        # umbrella:begin gbs-msys-comment
         # Translate before `isabs`: on Python 3.13+ Windows `/c/Users/x` is not absolute,
+        # umbrella:end gbs-msys-comment
         # so it would be joined onto the base and keep only the base's drive.
         target = _from_msys(target)
         if unresolvable_cwd is not None and not os.path.isabs(target):
@@ -654,9 +676,11 @@ def main():
             "guard fails closed rather than silently approving writes nobody verified.\n"
             "Builder: stop and report this to the orchestrator verbatim. Do not retry and "
             "do not route around it with Bash.\n"
+            # umbrella:begin gbs-fix-hook-msg
             "Orchestrator: fix the hook, then re-run "
             "`python graph_agents/.claude/hooks/test_guard_builder_scope.py` before "
             "resuming the run." % traceback.format_exc(limit=4).strip()
+            # umbrella:end gbs-fix-hook-msg
         )
 
 
