@@ -133,3 +133,35 @@ an input too large to hold — a diamond's `activity.jsonl`
 @@@ alt graph-rlm-decision pin=84c943817a79
 The scope and the measurements behind each default are in the `rlm.py` docstring.
 @@@ end
+@@@ alt scout-facts-cmd pin=a172cb6e4f48
+   python graph_agents/.graph/scout-facts.py
+@@@ end
+@@@ alt scout-collector-output pin=9e78146acb41
+   It reports facts for the project root (the git repo containing the current directory),
+   computed fresh: whether the target is a git repo (the fact that decides graph shape), its
+   branch/HEAD/dirty state, the commit identity, the stack observed on disk, and a `native:`
+   line only when it finds native-app evidence on disk. Anything it prints is established —
+   do not re-derive it with your own `git` or `glob` calls, and do not restate it as a FACT
+   line unless the task turns on it.
+@@@ end
+@@@ alt scout-native-rule pin=2beb2101c82e
+- **Native apps.** When the `scout-facts` output has a `native:` line (printed only when
+  native-app evidence exists on disk), collect that line, Expo SDK version, `runtimeVersion`
+  policy, `eas.json` profiles and channels, config plugins, Tauri major version, capability
+  files and their scopes, CSP, updater config, and the CI runners present
+  (`tauri.conf.json`, workflow files).
+@@@ end
+@@@ alt fg-facts-cmd pin=0b5a5e32b8f2
+python graph_agents/.graph/scout-facts.py             # answers this and more
+@@@ end
+@@@ alt fg-brief-app pin=6c19f5604e9f
+- the project and the two entry docs to start from
+@@@ end
+@@@ alt graph-facts-script pin=20d7921efb70
+**The mechanical half of that brief is now a script.** `@FLEET@/.graph/scout-facts.py`
+computes what every scout was re-deriving by hand — git repo or not, branch, HEAD, dirty
+state, commit identity, the stack observed on disk, and a `native:` line when it finds
+native-app evidence — and `scout.md` step 0 runs it before anything else.
+@@@ end
+@@@ alt graph-new-app-gate pin=5cc3574ea131
+@@@ end

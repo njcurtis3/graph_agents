@@ -365,10 +365,12 @@ be tighter. Tell it exactly which questions to answer and which files to start f
 Don't hand it "go look at the app." A vague scout brief is where the savings evaporate —
 it reads everything, returns mush, and the architect plans on sand.
 
+<!-- umbrella:begin graph-facts-script -->
 **The mechanical half of that brief is now a script.** `graph_agents/.graph/scout-facts.py
 <app-id>` computes what every scout was re-deriving by hand — git repo or not, branch,
 HEAD, dirty state, per-repo commit identity, registry entry, which entry docs exist, stack
 on disk vs. stack claimed — and `scout.md` step 0 runs it before anything else.
+<!-- umbrella:end graph-facts-script -->
 
 <!-- umbrella:begin graph-cache-anecdote -->
 A per-app fact **cache** was designed first and rejected on evidence (2026-08-28). Past
@@ -436,6 +438,8 @@ Place them exactly where a mistake gets expensive to undo:
   not as a sandbox. Widening it after the fact is possible, deliberate and recorded —
   `scope_exceptions` plus the slice's `deviation_from_approved_plan` — never silent.
 - before `ops` — deploys, DB migrations, anything that costs money or touches prod
+<!-- umbrella:begin graph-new-app-gate -->
 - before creating a new app — a new repo is a long-term maintenance commitment
+<!-- umbrella:end graph-new-app-gate -->
 
 Everywhere else, let it run.

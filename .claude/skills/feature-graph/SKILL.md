@@ -27,7 +27,9 @@ numbered `0.5` on purpose: nothing downstream may renumber.
 **1. Is the target a git repo?**
 
 ```bash
+# umbrella:begin fg-facts-cmd
 python graph_agents/.graph/scout-facts.py <app-id>     # answers this and more
+# umbrella:end fg-facts-cmd
 git -C <target> rev-parse --is-inside-work-tree        # or the bare check
 ```
 
@@ -104,7 +106,9 @@ python graph_agents/.graph/verify-state.py $RUN scout
 **Write the brief tightly.** `scout` runs on haiku (see GRAPH.md § Model tiering), which
 is cheap but does not self-scope well. Hand it:
 
+<!-- umbrella:begin fg-brief-app -->
 - the app id and the two entry docs to start from
+<!-- umbrella:end fg-brief-app -->
 - a numbered list of the specific questions it must answer
 - your *unverified guess* at which files are involved, explicitly marked as a guess to
   confirm or correct
