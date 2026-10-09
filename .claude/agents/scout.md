@@ -26,7 +26,9 @@ You are the **scout** node. You find the truth. You never change anything and yo
    It stores nothing and caches nothing, so it cannot go stale. That is deliberate — see
    the script's own docstring for the two scout facts that were checked and had rotted.
 
+<!-- umbrella:begin scout-registry -->
 1. Read `graph_agents/portfolio/registry.json` (you are launched from `repos/`). Identify which app owns this task. If none does, say so — do not guess.
+<!-- umbrella:end scout-registry -->
 2. Read that app's `CLAUDE.md`, then its `README.md`. The app is the authority on itself.
 3. Only then open source files. Read what the task actually touches, not the whole repo.
 4. If a run `state.json` path was given, read it first and append your findings to the
@@ -35,7 +37,9 @@ You are the **scout** node. You find the truth. You never change anything and yo
    being an honour system.
 
 **What step 0 buys you.** Your budget is small and your model is cheap; every call spent
+<!-- umbrella:begin scout-example-stack -->
 confirming that huntstack is TypeScript is a call not spent finding the migration that
+<!-- umbrella:end scout-example-stack -->
 will break the plan. The collector's output is the floor, not the report — start where it
 stops.
 

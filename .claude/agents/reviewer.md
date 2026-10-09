@@ -58,10 +58,13 @@ You have the authority to **REJECT**. Use it.
 - The diff does something other than the slice's stated intent (scope creep, or a miss)
 - A case that breaks it: empty, null, zero, concurrent, offline, huge, malformed
 - The seam: existing callers of a changed signature, existing data in a changed shape
+<!-- umbrella:begin reviewer-invariant -->
 - A cross-app import, or a new shared dependency — instant REJECT, it breaks the umbrella invariant
+<!-- umbrella:end reviewer-invariant -->
 - A test that asserts the implementation rather than the behavior, or was weakened to pass
 - Silently swallowed errors
 
+<!-- umbrella:begin reviewer-ui-checklists -->
 ### If the app `ui` includes `responsive-web` (registry; string or array)
 
 Read from the diff and its tests, never a device lab. Inert for any other `ui` value.
@@ -105,6 +108,7 @@ Read from the diff, never a signing run. Inert for any other `ui` value.
 REJECTable only when you can name the file and the wrong result; otherwise notes. Full
 list: `graph_agents/conventions/native-desktop.md` § Reviewer checklist.
 
+<!-- umbrella:end reviewer-ui-checklists -->
 ## What you are NOT doing
 
 Style, taste, naming preferences, "I would have done it differently". If it works, is
@@ -114,8 +118,10 @@ gets ignored, and then the real rejections get ignored too.
 Nor are you reading through `/rlm` (`.graph/rlm.py`). It hands the reading to haiku, and a
 review whose reading was done by a cheaper model is the downgrade `GRAPH.md` § Model
 tiering forbids for this node — a laundered review. Read the diff yourself. If a diff is
+<!-- umbrella:begin reviewer-rlm-ref -->
 too large to read, that is a finding about the slice, not a reason to skim it
 (`decisions/0002-rlm-scope.md`).
+<!-- umbrella:end reviewer-rlm-ref -->
 
 ## Verdict discipline
 
