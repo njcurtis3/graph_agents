@@ -8,7 +8,9 @@
     python graph_agents/.graph/rlm.py final <session>              # print the FINAL_VAR answer
     python graph_agents/.graph/rlm.py cost  <session>              # sub-calls, spend, budget
 
+# umbrella:begin rlm-run-from
 Run from `repos/`, like everything else in the fleet.
+# umbrella:end rlm-run-from
 
 WHAT AN RLM IS
 --------------
@@ -20,7 +22,9 @@ of each cell's output re-enters the root's history, so the root's window stays c
 matter how large `context` is. The paper's headline configuration is depth 1 with a
 cheaper sub-model (GPT-5 root, GPT-5-mini sub), and that is the shape here:
 
+    # umbrella:begin rlm-root-model
     root model      the node already running (scout, postmortem, an orchestrator)
+    # umbrella:end rlm-root-model
     REPL            this script, driven through Bash; state persists between `exec`s
     sub-model       headless `claude -p`, haiku by default, no tools, no settings
 
@@ -46,7 +50,9 @@ it would only turn an over-budget call into a wasted one. The first live run of 
 script did pass it, with each concurrent call handed the whole remaining budget, and a
 $0.10 session spent $0.237. That is why the reservation exists.
 
+# umbrella:begin rlm-measured-on
 THINKING AND CACHING, measured 2026-10-06 on one 30KB chunk of CURRENT-STATE.md
+# umbrella:end rlm-measured-on
 -------------------------------------------------------------------------------
     default effort, cached     $0.051   60s   6466 thinking tokens   answer correct
     thinking off               $0.019    2s      0                   answer WRONG (2 closed
@@ -60,25 +66,33 @@ literal (a grep could almost do it); the measurement says do not use it for judg
 
 THE SUB-CALL IS ISOLATED FROM THE FLEET, and that is load-bearing
 -----------------------------------------------------------------
+# umbrella:begin rlm-launched-from
 `claude -p` launched from `repos/` would load the fleet's hooks and CLAUDE.md: every
+# umbrella:end rlm-launched-from
 sub-call would land in the open run's `activity.jsonl` as a phantom node, and pay for the
 constitution as input. So each call runs with `--tools "" --setting-sources ""
+# umbrella:begin rlm-cwd-outside
 --no-session-persistence`, a minimal `--system-prompt`, and a cwd OUTSIDE `repos/` (the
+# umbrella:end rlm-cwd-outside
 session directory, under the system temp dir). Measured 2026-10-06: the default Claude
 Code system prompt costs $0.0105 for a one-word haiku reply; the minimal one, $0.00076.
 
 WHERE IT MUST NOT BE USED
 -------------------------
+  # umbrella:begin rlm-must-not
   - In `.claude/hooks/**`. A sub-call is a network call; ADR 0001 § 4 holds.
   - By `reviewer`, `architect` or `integrator`. An RLM hands the reading to haiku, and
     those are the nodes GRAPH.md § Model tiering says are never downgraded. A reviewer
     reading a diff through haiku summaries is a laundered review. See
     `decisions/0002-rlm-scope.md`.
+  # umbrella:end rlm-must-not
 
 STATE
 -----
 `$RLM_HOME/<session>/` (default: <tempdir>/graph-rlm/<session>/). Machine-local and
+# umbrella:begin rlm-state-root
 disposable -- nothing under `repos/` is written, so there is nothing to gitignore.
+# umbrella:end rlm-state-root
 
     context.txt   the loaded input, verbatim
     ns.pickle     the REPL namespace: every picklable variable you assigned
@@ -92,7 +106,9 @@ cell do not -- redefine them, or keep them in one cell. The skipped names are li
 TESTING
 -------
 `RLM_FAKE_LLM=1` swaps the sub-model for a deterministic offline stub that costs
+# umbrella:begin rlm-test-ref
 $0.001 a call. `test_rlm.py` runs entirely under it.
+# umbrella:end rlm-test-ref
 """
 import argparse
 import contextlib

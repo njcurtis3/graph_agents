@@ -57,7 +57,9 @@ running total, so unlike `tokens` a later write simply REPLACES the field rather
 accumulating it.
 
 Both are a real coupling to an undocumented, internal Claude Code storage layout rather
+# umbrella:begin ra-board-ref
 than to any documented hook field -- accepted deliberately (see fleetview's token-counter
+# umbrella:end ra-board-ref
 work) because the alternative is fabricating a number or a quote, and unwritten if the
 layout doesn't match: `tokens_used_by` returns `None` on any read/parse failure and
 `last_said_by` returns `None` when no text block is found, and each field is simply
@@ -79,8 +81,10 @@ TOKEN_FIELDS = ("input_tokens", "output_tokens",
 def encode_cwd(cwd):
     """Mirror Claude Code's own project-directory name for a launch cwd.
 
+    # umbrella:begin ra-encode-cwd
     Observed, not documented: `C:\\Users\\natha\\Desktop\\repos` names its project
     directory `C--Users-natha-Desktop-repos` -- every `\\`, `/` and `:` becomes `-`,
+    # umbrella:end ra-encode-cwd
     everything else is left alone.
     """
     return re.sub(r"[\\/:]", "-", cwd)
@@ -233,8 +237,10 @@ def append_line(path, text):
     That is not hypothetical here. `2026-09-06-bash-write-guard`'s log line 1225 reads
     `"Bash"}` -- the tail of an event whose head was overwritten by another process's
     append. The event it recorded is gone, not merely mangled. Readers (`brief.py`,
+    # umbrella:begin ra-readers-1
     `postmortem.py`) skip unparseable lines, so it cost no crash and left no report; it
     silently subtracted one event from the evidence base those two are built on.
+    # umbrella:end ra-readers-1
 
     **`O_APPEND` alone does not fix this on Windows, and believing it did was the first
     attempt.** On POSIX the seek-to-end and the write are one atomic operation; the
@@ -248,7 +254,9 @@ def append_line(path, text):
     So the write is serialised by an advisory lock on a sidecar `.lock` file: `flock`
     where there is one, `msvcrt.locking` where there is not. The lock is on a sidecar
     rather than on the log itself because a Windows lock is mandatory, not advisory --
+    # umbrella:begin ra-readers-2
     locking the log would make `brief.py` and `postmortem.py` fail to READ it mid-run,
+    # umbrella:end ra-readers-2
     turning a write-safety fix into a read outage.
 
     Failure to take the lock is not a reason to drop the event: after ~1s of contention

@@ -46,7 +46,9 @@ WHY A `cd` IS APPLIED, WHICH IS THE ONE PLACE A TARGET IS NOT VERBATIM
 
   877 of the 2073 unique Bash commands this fleet has ever run begin with `cd`. Returning
   `GRAPH.md` verbatim for `cd graph_agents && echo x > GRAPH.md` would hand the caller a
+  # umbrella:begin bwt-root-example
   path that resolves against the session root, so the caller would judge `repos/GRAPH.md`
+  # umbrella:end bwt-root-example
   -- a file that does not exist -- and deny a write the plan had approved. So a `cd`
   earlier in the same command string is joined onto later relative targets. An absolute
   target is never touched. If the `cd` target itself cannot be resolved -- an unresolvable
@@ -128,11 +130,13 @@ WHAT IT DOES NOT DETECT, ON PURPOSE, SO THE CALLER CAN SAY SO OUT LOUD
     Measured, that was simply wrong -- `curl` is in command position 171 times in the
     corpus and 9 unique commands write a literal path with `-o` -- so they moved up to
     the detected list instead. See `_download_targets` for the full breakdown.
+  # umbrella:begin bwt-measure-tool
   * A write flag the parser reads but a MEASUREMENT could not have shown: this list is
     kept honest by the pre-filter soundness counter in `measure_bash_corpus.py`, which
     asks the parser directly for every command the pre-filter rejected and must print 0,
     and by the spelling sweep in the suite, which asks the same of every command it has
     in five spellings each rather than in the one it was written in.
+  # umbrella:end bwt-measure-tool
   * A command word spelled so that the PRE-FILTER's anchor and the parser's lexer
     disagree. A backslash-escaped verb, `'rm'` and `FOO="a b" rm` used to be exactly
     that and are admitted now; `r""m`, `$'rm'` and a line continuation written inside the

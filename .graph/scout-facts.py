@@ -1,4 +1,5 @@
 #!/usr/bin/env python
+# umbrella:begin sf-doc
 """Compute the facts a scout would otherwise re-derive by hand, every run.
 
     python graph_agents/.graph/scout-facts.py <app-id>
@@ -39,6 +40,7 @@ correct answer that a `git` call or a registry lookup already knows.
 It reports what IS. Every "missing"/"absent" line is a fact, not a complaint;
 the scout decides whether any of them matter to the task at hand.
 """
+# umbrella:end sf-doc
 
 from __future__ import annotations
 
@@ -47,7 +49,9 @@ import subprocess
 import sys
 from pathlib import Path
 
+# umbrella:begin sf-registry-const
 REGISTRY = Path("graph_agents/portfolio/registry.json")
+# umbrella:end sf-registry-const
 
 # Files that answer "how is this app built and tested" without opening any of
 # them. Presence is the fact; the scout reads the ones the task touches.
@@ -65,7 +69,9 @@ STACK_MARKERS = [
 ]
 
 
+# umbrella:begin sf-native-comment
 # Native-app detection walks the root and two levels down (huntstack keeps its
+# umbrella:end sf-native-comment
 # Expo app at apps/mobile) and never enters build output or vendored trees.
 NATIVE_SKIP = {"node_modules", ".git", "target", "dist", "build", ".expo", "ios", "android"}
 NATIVE_MAX_DEPTH = 2
@@ -85,6 +91,7 @@ def git(args: list[str], cwd: str | Path) -> tuple[int, str]:
         return 1, f"git unavailable: {exc}"
 
 
+# umbrella:begin sf-load-registry
 def load_registry() -> dict:
     if not REGISTRY.exists():
         sys.exit(
@@ -96,6 +103,7 @@ def load_registry() -> dict:
     return json.loads(REGISTRY.read_text(encoding="utf-8"))
 
 
+# umbrella:end sf-load-registry
 def repo_facts(path: Path) -> dict:
     """The git questions, answered now rather than remembered.
 
@@ -183,8 +191,10 @@ def _dir_native(d: Path) -> dict:
 def native_facts(path: Path) -> list[dict]:
     """Expo / Tauri evidence under an app: root, then depth <= 2.
 
+    # umbrella:begin sf-native-doc
     Each hit is {kind, dir, evidence[]}; `dir` is the app path joined with the
     sub-path, so relative to repos/. Read-only: it only lists and reads files.
+    # umbrella:end sf-native-doc
     """
     path = Path(path)
     hits: list[dict] = []
@@ -211,6 +221,7 @@ def native_facts(path: Path) -> list[dict]:
     return hits
 
 
+# umbrella:begin sf-report
 def ui_list(ui) -> list[str]:
     """Registry `ui` is a string in older entries and a list in newer ones."""
     if ui is None:
@@ -360,6 +371,7 @@ def main(argv: list[str]) -> None:
     for f in facts:
         print(render(f))
         print()
+# umbrella:end sf-report
 
 
 if __name__ == "__main__":

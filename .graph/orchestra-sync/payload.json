@@ -135,7 +135,11 @@
     ".graph/runs/",
     ".graph/worktrees/"
   ],
-  "dropped_hooks": [],
+  "dropped_hooks": [
+    "guard-commit-trailers",
+    "flag-stale-state",
+    "flag-cross-app-import"
+  ],
   "stem_stoplist": [
     "tracker",
     "archive",

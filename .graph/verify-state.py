@@ -119,11 +119,15 @@ def die(message):
 # deliberately NOT taught about attempts -- it is a dumb dotted-path walker, and a magic
 # resolve would silently change every unrelated dotted read in three scripts.
 #
+# umbrella:begin vs-board-ref
 # `fleetview/index.html` (reviewAttempts/finalVerdict/everRejected) is the reference this
 # mirrors, read and copied, never imported: it is a separate app, and importing it would be
 # the cross-app edge the umbrella invariant forbids.
+# umbrella:end vs-board-ref
 
+# umbrella:begin vs-walk
 # fleetview's walk is `for (var i = 2; i < 10; i++)`, so it stops after attempt_9. This
+# umbrella:end vs-walk
 # matches that bound EXACTLY on purpose: two readers with different caps disagreeing about
 # a verdict, in a place nobody would look, is the precise divergence this rule exists to
 # prevent. Where they would silently differ -- attempt_10 and beyond -- this side is loud
@@ -144,7 +148,9 @@ def _norm(verdict):
 
 
 def _attempt(obj, number, key):
+    # umbrella:begin vs-mirrors
     """One attempt, flattened to the fields every reader needs. Mirrors fleetview's."""
+    # umbrella:end vs-mirrors
     return {"verdict": _norm(obj.get("verdict")),
             "attempt": obj.get("attempt") or number,
             "summary": obj.get("summary"),
@@ -182,7 +188,9 @@ def review_attempts(review):
     numbering is not what the reader thinks it is, and guessing past it is how a verdict
     nobody wrote gets applied.
 
+    # umbrella:begin vs-divergence
     One documented divergence from fleetview, which breaks on `!a`: an EMPTY attempt dict
+    # umbrella:end vs-divergence
     stops the walk here too. `{}` is truthy in JS, but in this file empty has always meant
     "the node did not write it" (`is_empty`), and an empty attempt is not a re-review.
     """
@@ -196,7 +204,9 @@ def review_attempts(review):
         out.append(_attempt(nested, i, "attempt_%d" % i))
     for key in over_cap_attempts(review):
         message = ("verify-state: WARNING: %s is past the attempt_%d cap this fleet and "
+                   # umbrella:begin vs-cap-warning
                    "fleetview both stop at -- it is NOT resolved, and the two readers now "
+                   # umbrella:end vs-cap-warning
                    "disagree about this slice's verdict\n" % (key, ATTEMPT_CAP))
         if message not in _WARNED:
             _WARNED.add(message)
@@ -406,7 +416,9 @@ def audit(state, template):
         # the disagreement is reported to a human instead of one of the two winning.
         for over in over_cap_attempts(resolve(state, "reviews.%s" % s)[1]):
             problems.append(
+                # umbrella:begin vs-cap-audit
                 "reviews.%s.%s is past the attempt_%d cap that this audit and fleetview "
+                # umbrella:end vs-cap-audit
                 "both stop at -- its verdict is NOT resolved here, and the board and the "
                 "fleet now disagree about reviews.%s" % (s, over, ATTEMPT_CAP, s))
 

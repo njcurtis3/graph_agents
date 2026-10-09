@@ -41,7 +41,9 @@ UMBRELLA = os.path.dirname(FLEET)
 RUNS = os.path.join(HERE, "runs")
 CURRENT = os.path.join(HERE, "CURRENT")
 VERIFY = os.path.join(HERE, "verify-state.py")
+# umbrella:begin cr-registry-const
 REGISTRY = os.path.join(FLEET, "portfolio", "registry.json")
+# umbrella:end cr-registry-const
 
 
 def load_module(path, name):
@@ -61,6 +63,7 @@ def git(target, *args):
     return proc.returncode, proc.stdout.strip()
 
 
+# umbrella:begin cr-target-repo
 def target_repo(app):
     """The directory this run's work landed in, or None if it cannot be resolved."""
     if not app:
@@ -80,6 +83,7 @@ def target_repo(app):
     # `archive-adapters` -- a historical run stays verifiable after its app leaves.
     fallback = os.path.join(UMBRELLA, str(app))
     return fallback if os.path.isdir(fallback) else None
+# umbrella:end cr-target-repo
 
 
 def merge_evidence(state, slice_id):

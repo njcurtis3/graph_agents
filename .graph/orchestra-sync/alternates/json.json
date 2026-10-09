@@ -1,3 +1,36 @@
 {
-  "patches": []
+  "patches": [
+    {
+      "file": ".claude/settings.json",
+      "op": "remove",
+      "path": "/hooks/PostToolUse/0/hooks/1",
+      "pin": "27cfff9c95ed"
+    },
+    {
+      "file": ".claude/settings.json",
+      "op": "remove",
+      "path": "/hooks/PostToolUse/0/hooks/0",
+      "pin": "2afc833f55d5"
+    },
+    {
+      "file": ".claude/settings.json",
+      "op": "remove",
+      "path": "/hooks/PreToolUse/1",
+      "pin": "080ae9002405"
+    },
+    {
+      "file": ".graph/runs/_schema.json",
+      "op": "replace",
+      "path": "/app",
+      "pin": "0302c40c7080",
+      "value": "the project's name"
+    },
+    {
+      "file": ".graph/runs/_schema.json",
+      "op": "replace",
+      "path": "/reviews/s1/$comment",
+      "pin": "cb62316099a4",
+      "value": "RE-REVIEWS NEST, and this is the rule every reader follows. The TOP LEVEL of reviews.<slice> IS attempt 1. A re-review writes attempt_2, then attempt_3, and so on, each with the same fields as the top level. Every attempt SURVIVES PERMANENTLY - history is never overwritten, flattened, or migrated up. The LATEST attempt supplies the verdict: that is what close-run.py, brief.py and verify-state.py resolve through, and what the board's finalVerdict() has always shown. `ever_rejected` - did ANY attempt REJECT - is DISPLAY ONLY, forever, so a rejection stays visible after it is fixed; it must never gate anything, or the fleet stops being able to loop. NO NODE MAY REWRITE AN EARLIER ATTEMPT: a second reviewer writes its own attempt_N and leaves the ones before it alone, top-level verdict included - relocating that verdict would destroy the history the board keeps and leave a key stamped written_by:reviewer with someone else as its real author. The KEY INDEX numbers an attempt, not the `attempt` field inside it; the field is display. An EMPTY attempt_N is not a re-review, it is a key nobody wrote - write the whole attempt or none of it. The walk STOPS AT THE FIRST GAP, so an attempt_3 with no attempt_2 is ignored and the earlier verdict stands: A GAP IS MALFORMED AND NO NODE MAY LEAVE ONE. Write the next UNUSED N and never skip - a mis-numbered re-review is not reported anywhere, it is simply unread, and a REJECT nobody reads is a REJECT nobody acts on. The cap is attempt_9, matching the board's `for (i = 2; i < 10; i++)` exactly so the two readers cannot disagree; attempt_10 and beyond is reported loudly and resolved by nobody."
+    }
+  ]
 }
