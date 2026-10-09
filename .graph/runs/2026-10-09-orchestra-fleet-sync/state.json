@@ -1,0 +1,929 @@
+{
+  "$comment": "Shared state for ONE work-graph run. Lives at .graph/runs/<run-id>/state.json. Every node reads this on start and appends to its OWN key on finish - the builder writes its own builders.<slice> key, including the branch it worked on. Never rewrite another node's key. Every node key carries written_by, naming the node that wrote it: that is the ONLY record of authorship this file has, and without it 'never rewrite another node's key' is unverifiable - an orchestrator hand-writing all six keys is indistinguishable from six nodes doing their jobs. verify-state.py --audit checks it. This file is the edge: it is how context crosses between agents that cannot see each other.",
+  "run_id": "2026-10-09-orchestra-fleet-sync",
+  "goal": "I want to be able to test and update graph_agents separately for fine tuning, but then be able to take those updates and also update them in the orchestra repo.",
+  "app": "graph_agents",
+  "status": "done",
+  "scout": {
+    "written_by": "scout",
+    "facts": [
+      "UMBRELLA: repos/ is not a git repo (scout-facts). graph_agents/ is a git repo, clean, HEAD 0adbe2a. One annotated tag exists, v1.0.0 (0fd4ff6, 2026-10-06). No other version or tag scheme is in use.",
+      "orchestra/ is a git repo, branch main at cd6e591 (Initial scaffold), git status clean, remote https://github.com/njcurtis3/Orchestra.git (registry.json orchestra entry). orchestra/fleet/ contains only README.md (1041 bytes); no SOURCE file; README says empty until the first sync (orchestra/fleet/README.md).",
+      "orchestra/CLAUDE.md Constraints section: fleet/ is vendored and one-way, upstream commit recorded in fleet/SOURCE, nothing in the repo may read a path outside it.",
+      "PAYLOAD CANDIDATES (lines): agents architect 115, builder 97, integrator 58, ops 78, reviewer 143, scout 78 (569 total). Skills feature-graph 374 (only file in dir), close-run 89. Hooks: guard-builder-scope 663, bash_write_targets 1689, record-activity 358, show-board 118, flag-state-gap 125, flag-stale-state 143. Scripts: verify-state 560, brief 682, close-run 267, check-return-cap 293, scout-facts 366. Schema .graph/runs/_schema.json 32 lines (5737 bytes). .claude/settings.json 97. GRAPH.md 411. Core total about 6836 lines.",
+      "OPTIONAL: skills rlm (92) + .graph/rlm.py (513); skills postmortem (74) + .graph/postmortem.py (309); hooks guard-commit-trailers.py (223, umbrella attribution policy).",
+      "UMBRELLA-ONLY: skills new-app (134), fleetview (56), audit-fleet (93); .graph/audit-fleet.py (616), .graph/verify-invariant.py (194); hooks flag-cross-app-import.py (88, loads verify-invariant.py by path at lines 25-32); CLAUDE.md, CURRENT-STATE.md, HISTORY.md, docs/, conventions/, decisions/, portfolio/ (registry.json gitignored: graph_agents/.gitignore).",
+      "COUPLING DENSITY (literal path refs | umbrella-concept words | dated incidents): agents architect 4|6|0, builder 4|8|0, integrator 1|1|0, ops 2|4|0, reviewer 4|6|0, scout 3|6|0. Skills feature-graph 21|21|13 (SKILL.md:32 On 2026-08-28 a scout fact was checked and had become false; SKILL.md:157 until 2026-08-26 nothing here said who lands it), close-run 3|3|2, rlm 4|4|0, postmortem 4|4|2. GRAPH.md 18|25|7. Hooks: guard-builder-scope 5|7|9 (UMBRELLA at :78, launch-rule fallback at :439), record-activity 0|2|7, show-board 0|0|2, flag-stale-state 16|16|4, flag-state-gap 3|3|0, guard-commit-trailers 3|3|2, bash_write_targets 5|5|0. Scripts: verify-state 2|9|12, brief 6|7|4 (repos-relative rendering brief.py:291), close-run 4|9|3 (REGISTRY close-run.py:44), check-return-cap 3|4|2, scout-facts 14|33|4.",
+      "CONCEPT QUOTES: reviewer.md:61 A cross-app import, or a new shared dependency: instant REJECT, it breaks the umbrella invariant. architect.md:69 Respect the umbrella invariant: no cross-app imports. scout.md:29 Read graph_agents/portfolio/registry.json (you are launched from repos/). ops.md:44 secrets on the app own repo under TelosRG. feature-graph/SKILL.md:57 if the run edits graph_agents/.claude/agents/** or skills/** the shape is forced single-loop.",
+      "PATH RESOLUTION, __file__-relative, not cwd: guard-builder-scope.py:76-80 HERE = dirname(realpath(__file__)); FLEET = normpath(join(HERE, \"..\", \"..\")) (graph_agents/); UMBRELLA = dirname(FLEET) (repos/); CURRENT = join(FLEET, \".graph\", \"CURRENT\"). verify-state.py:37 RUNS = join(dirname(abspath(__file__)), \"runs\"). brief.py:63-67 HERE from __file__, UMBRELLA = dirname(dirname(HERE)), CURRENT = HERE/CURRENT, VERIFY = HERE/verify-state.py. record-activity.py:280-282 and show-board.py:55-58 same pattern. flag-state-gap.py:36 VERIFY = normpath(join(HERE, \"..\", \"..\", \".graph\", \"verify-state.py\")). All assume .claude/ and .graph/ are siblings under one fleet root.",
+      "CWD EXCEPTIONS: scout-facts.py:50 REGISTRY = Path(\"graph_agents/portfolio/registry.json\") is cwd-relative; scout-facts.py:338 repo_facts(Path(\".\")). check-return-cap.py:270 check(run_dir, os.getcwd()). guard-builder-scope.py:439-441 falls back to base=UMBRELLA (fleet parent) when payload has no cwd. record-activity.py:82-84 encode_cwd mirrors the ~/.claude/projects/<encoded cwd>/ layout (observed, not documented).",
+      "SETTINGS: .claude/settings.json has 9 hook commands, each python \"${CLAUDE_PROJECT_DIR:-.}/graph_agents/.claude/hooks/<name>.py\" at lines 10, 21, 34, 40, 46, 57, 67, 79, 90. Seven (lines 34, 40, 46, 57, 67, 79, 90) end in || true, so a missing script exits 0 silently.",
+      "SIBLING MODULE THAT MUST TRAVEL: guard-builder-scope.py:411-413 inserts HERE into sys.path and imports bash_write_targets (MAX_COMMAND, classify, has_write_signature). Script-to-script loads by path: show-board.py:64 loads brief.py; brief.py:94 and flag-state-gap.py:54 load verify-state.py; close-run.py:48, check-return-cap.py:85, postmortem.py:68 load siblings; flag-cross-app-import.py:32 loads verify-invariant.py (umbrella-only).",
+      "RUN STATE INSIDE THE FLEET TREE: .graph/CURRENT (run-id pointer), .graph/runs/<run-id>/ (state.json, activity.jsonl written by record-activity.py), .graph/worktrees/. Path constants brief.py:65-66, close-run.py:41-42, guard-builder-scope.py:79.",
+      "TESTS: no runner config, no CI, no pytest or unittest. Each test_*.py is a standalone script run as python <file>. Run today, all 15 exit 0. hooks: test_bash_write_targets (all checks passed), test_flag_stale_state (23/23), test_guard_builder_scope (all checks passed), test_guard_commit_trailers (all checks passed), test_hooks_resolve (rc 0, no summary), test_record_activity (28/28), test_show_board (all checks passed). graph: test_audit_fleet, test_brief, test_check_return_cap (50/50), test_close_run, test_postmortem, test_rlm, test_scout_facts (rc 0, no summary), test_verify_state. test_hooks_resolve.py:1-13 runs every settings hook command from a non-umbrella cwd (gap 18 regression guard).",
+      "BUILD: no build exists; the self-test set is green (15 of 15 exit 0)."
+    ],
+    "unknowns": [
+      "No file in graph_agents/ or orchestra/ performs an export, copy, vendor or sync (grep for sync, vendor, copytree, rsync across .claude, .graph, GRAPH.md, CLAUDE.md returned prose only). The sync tool is greenfield.",
+      "Whether test_verify_state.py and test_brief.py are hermetic: their printed output names the live run 2026-10-09-orchestra-fleet-sync, suggesting they read the real .graph/runs/. Not confirmed from test source.",
+      "Where the orchestra desktop would place the fleet relative to an end-user project. Hook commands resolve via CLAUDE_PROJECT_DIR, so this decides whether settings.json lines 10-90 can work at all. Design question for the architect.",
+      "Whether the harness reads hook registrations only from the project .claude/settings.json. Assumed; not checked against harness docs.",
+      "measure_bash_corpus.py and check-return-cap.py internals were scanned for path constants, not read in full.",
+      "Read cost of feature-graph/SKILL.md and GRAPH.md not measured; both under 50KB, so Read was used; no rlm call was made."
+    ],
+    "risks": [
+      "PLAN-KILLER: prose is not path-only. About 60 path literals across agents and skills; feature-graph alone has 21 path refs, 21 concept refs and 13 dated incidents. The umbrella invariant, registry-first routing (scout.md:29), the repos/ launch rule (GRAPH.md:131) and TelosRG secrets (ops.md:44) are behavioural rules. A sync-time path rewrite yields instructions wrong for an end-user project.",
+      "Runtime state inside the vendored tree: .graph/CURRENT and .graph/runs/ are written by hooks and nodes. A one-way sync overwriting fleet/ would delete live run state or conflict with the never hand-edit rule. Runs and CURRENT must move outside fleet/ in orchestra, contradicting the __file__-relative layout.",
+      "Hook resolution cannot work for an arbitrary end-user project as written: settings.json lines 10-90 prefix every command with CLAUDE_PROJECT_DIR plus graph_agents/.claude/hooks/. CLAUDE_PROJECT_DIR is the end-user project, not orchestra, so the fleet must sit at a fixed path under that project root.",
+      "Silent failure: seven hook commands end in || true (settings.json lines 34, 40, 46, 57, 67, 79, 90). A payload that drops verify-invariant.py while keeping flag-cross-app-import.py at settings.json:40 fails silently (gap 18 pattern, test_hooks_resolve.py:6-10).",
+      "flag-cross-app-import.py (settings.json:40) depends on verify-invariant.py (umbrella-only, flag-cross-app-import.py:25-32). Drop both and the settings entry in one change.",
+      "scout-facts.py:50 uses a cwd-relative REGISTRY. Orchestra has no registry, and scout.md:16 makes scout-facts the mandatory first call. Payload needs a degraded mode or a fleet-local registry (registry is gitignored).",
+      "guard-builder-scope.py:439-441 falls back to UMBRELLA = fleet parent when the payload has no cwd. In an end-user project, relative write targets are judged against the wrong base.",
+      "bash_write_targets.py (1689 lines) is a hard import at guard-builder-scope.py:413. If it is missing the guard raises and fails closed (guard-builder-scope.py:652-658), denying every builder write.",
+      "Coupling to Claude Code internals: record-activity.py encode_cwd and subagent_transcript_path mirror ~/.claude/projects/<encoded cwd>/ (record-activity.py:82-84; check-return-cap.py:94-101). Observed, not documented.",
+      "Single-loop is forced for any edit to agents/ or skills/ (feature-graph/SKILL.md:57)."
+    ]
+  },
+  "architect": {
+    "written_by": "architect",
+    "shape": "single-loop",
+    "parallel_safe": false,
+    "scope_decision": {
+      "chosen": "(c) marked umbrella spans in upstream + hash-pinned orchestra alternates in a sidecar + a fail-closed leak gate + one path token",
+      "mechanism": [
+        "PATHS are tokenized, CONCEPTS are marked. Every literal 'graph_agents' in a payload file becomes the single token '@FLEET@' (fleet root, rendered by Orchestra at install time). No other path rewriting.",
+        "CONCEPT spans (umbrella invariant, registry-first routing, repos/ launch rule, TelosRG, CURRENT-STATE/HISTORY, conventions/ and decisions/ pointers, references to excluded skills/hooks, dated incidents that name the umbrella) are wrapped upstream in whole-line markers: '<!-- umbrella:begin <id> -->' / '<!-- umbrella:end <id> -->' in Markdown prose, '# umbrella:begin <id>' / '# umbrella:end <id>' in Python, YAML frontmatter and fenced bash. No nesting, no mid-line spans.",
+        "Alternates live OUTSIDE the agent files, in graph_agents/.graph/orchestra-sync/alternates/{prose.md,code.md,json.json}, keyed by marker id. Each entry carries a pin: sha256 (12 hex) of the umbrella span it replaces. Empty body = drop. Sync REFUSES on: marker without entry, entry without marker (orphan), or pin mismatch (umbrella span was tuned since the alternate was written; tool prints the new hash, a human re-reads and re-pins).",
+        "JSON files cannot carry markers, so settings.json and runs/_schema.json are handled by pinned JSON-pointer patches in alternates/json.json (remove/replace, each pinned to the old value) - same drift guard.",
+        "LEAK GATE, fail closed: after render, every payload file is scanned against a denylist (repos/, registry.json, portfolio, TelosRG/telosrg, lowercase 'umbrella'/'Umbrella', CURRENT-STATE, HISTORY.md, audit-fleet, verify-invariant, flag-cross-app-import, flag-stale-state, guard-commit-trailers, new-app, fleetview, postmortem, conventions/, decisions/, njcurtis3, absolute user paths, AND every app id read live from portfolio/registry.json). Any hit not in payload.json leak_allow (file + pattern + reason) refuses the sync. Registry absent -> refuse (the denylist would be silently weaker). The 'UMBRELLA' Python constant is case-distinct and not a hit.",
+        "UMBRELLA RENDER IDENTITY: '--verify-upstream <commit>' renders each payload file in umbrella mode (marker lines deleted, spans kept, no tokens) and byte-compares to 'git show <commit>:<file>'. This proves marking changed nothing the umbrella agents/hooks execute or read, except the marker lines themselves."
+      ],
+      "why_not_a": "(a) as posed, strip-only or with inline orchestra text: inline alternates would sit in every agent prompt the umbrella loads (token cost + a second, contradictory rule set visible to e.g. reviewer). Strip-only without alternates leaves steps dangling (scout step 1 reads the registry; drop it and scout has no first step). (c) keeps (a)'s single source of truth and moves only the alternates out.",
+      "why_not_b": "(b) whole-file overlays: the drift is the whole problem. Every tune to architect.md upstream would silently not reach Orchestra's overlay copy, which defeats the stated goal (tune in graph_agents, carry tunes to Orchestra). Nothing mechanical would notice.",
+      "cost": [
+        "Forces SINGLE-LOOP (edits .claude/agents/** and .claude/skills/**, feature-graph step 0.5 item 2). Fresh session required before the next fleet run.",
+        "Upstream files grow marker lines (estimate 80-150 across ~20 files); umbrella agents read them as visible comments. Small, labelled noise, not zero.",
+        "A standing maintenance tax: any future upstream edit that introduces an umbrella concept outside a marker makes the next sync refuse until it is marked. That is the intended failure mode (loud), but it is a tax on every tuning session that touches payload files.",
+        "Re-pinning is a human step whenever a marked span is tuned. Drift is detected, not prevented: a re-pin without re-reading the alternate is possible and nothing can catch it.",
+        "The leak gate proves absence of listed strings, not absence of umbrella meaning. Concept leaks phrased without a denylisted word pass. That is why every slice that writes alternates is risk high."
+      ]
+    },
+    "payload_decisions": {
+      "include": [
+        ".claude/agents/{architect,builder,integrator,ops,reviewer,scout}.md",
+        ".claude/skills/feature-graph/SKILL.md",
+        ".claude/skills/close-run/SKILL.md",
+        ".claude/skills/rlm/SKILL.md",
+        ".claude/hooks/{guard-builder-scope,bash_write_targets,record-activity,show-board,flag-state-gap}.py",
+        ".claude/settings.json (patched)",
+        ".graph/{verify-state,brief,close-run,check-return-cap,scout-facts,rlm}.py",
+        ".graph/runs/_schema.json (patched)",
+        "GRAPH.md"
+      ],
+      "rlm": "INCLUDE. scout.md:55 makes it the route for inputs too large to Read, and end-user projects have more such inputs than this umbrella. Excluding it would require marking out a scout rule that is generic. Cost: it spends haiku on the end user's account via claude -p; Orchestra must surface that.",
+      "postmortem": "EXCLUDE. It reads closed runs to tune the fleet definitions - that is the upstream tuning loop, which lives here by the user's own stated intent. Shipping it implies end-user run telemetry flowing back, a product decision Orchestra has not made. check-return-cap.py:196 copies from it (copy, not import), so no sibling breaks.",
+      "guard-commit-trailers": "EXCLUDE. It enforces this owner's attribution policy; imposing it on an end user's repo is policy imposition, not orchestration. Its settings entry (PreToolUse Bash, no || true) is removed by pinned patch. Orchestra may offer an equivalent as a user setting later.",
+      "flag-stale-state": "EXCLUDE - disagreement with the scout's payload-candidate list, flagged not silent. The scout's FACT is right; the CLASSIFICATION is the architect's: flag-stale-state.py:74-130 fires only on paths under /graph_agents/ and tells the editor to update graph_agents/CURRENT-STATE.md and HISTORY.md. It is the umbrella's own bookkeeping, meaningless in a user project. Its settings entry is removed by pinned patch.",
+      "also_excluded": "measure_bash_corpus.py (dev tool); every test_*.py (see not_doing); flag-cross-app-import + verify-invariant; new-app, audit-fleet, fleetview, postmortem skills; CLAUDE.md, CURRENT-STATE.md, HISTORY.md, docs/, conventions/, decisions/, portfolio/, .graph/CURRENT, .graph/runs/<id>/, .graph/worktrees/, the sync tool itself. The include list is an ALLOWLIST in payload.json; anything unlisted never travels."
+    },
+    "design_notes": [
+      "INSTALL LAYOUT this payload assumes (stated so Orchestra's later run inherits it, not decided for it): Orchestra copies fleet/ into an end-user project as ONE directory segment under the project root, <project>/<fleet-dir>/, and renders '@FLEET@' -> <fleet-dir>. Under that layout every existing __file__-relative constant is already correct: FLEET = the installed dir, UMBRELLA = dirname(FLEET) = the project root (so guard-builder-scope.py:439-441's fallback base is the right base), settings.json commands resolve via CLAUDE_PROJECT_DIR/<fleet-dir>/.claude/hooks/, and run state (.graph/CURRENT, runs/, worktrees/) is written into the INSTALLED copy, never into orchestra/fleet/. This dissolves the scout's 'run state inside the vendored tree' risk: orchestra/fleet/ is a template, not a runtime directory.",
+      "REFUSAL RULE, interpreted: the SOURCE manifest is the authority. Sync refuses iff any file under the target (other than README.md, which is orchestra-owned and never written) is missing from SOURCE.files, has a different hash, or a SOURCE-listed file is missing. Uncommitted changes that MATCH SOURCE are the sync's own pending output and are allowed, which is what makes a re-run idempotent before the owner commits. First sync: allowed only when the target holds nothing but README.md and no SOURCE. Hashes are computed on LF-normalized bytes so git autocrlf on another machine is not mistaken for a hand-edit.",
+      "UPSTREAM CLEANLINESS: sync refuses if git -C graph_agents status --porcelain shows changes in any payload path or in .graph/orchestra-sync/ (the run's own untracked .graph/runs/<id>/ does not count). SOURCE names a commit, and a dirty tree would make that a lie.",
+      "SOURCE format (JSON, no extension, no wall-clock timestamp so a re-run is byte-identical): upstream_repo 'graph_agents', upstream_commit (full sha), upstream_commit_date, sync_tool_version, token {'@FLEET@': 'fleet root, render at install'}, files {path: sha256}, dropped_hooks [names], unmanaged ['README.md'].",
+      "SELF-CONSISTENCY CHECKS (all fail closed, all exercised by fixture tests): (1) every settings.json hook command resolves to a payload file, checked with '|| true' stripped; (2) every payload .py's sibling loads - 'import <name>' where <name>.py exists upstream beside it, and spec_from_file_location / join(HERE, '<x>.py') literals - resolve inside the payload; (3) every backticked .claude/... / .graph/... / @FLEET@/... path in payload prose resolves inside the payload; (4) every payload .py passes py_compile; (5) smoke: render into <tmp>/proj/fleet with '@FLEET@' -> 'fleet', git init proj, run each settings hook command with stdin '{}' and CLAUDE_PROJECT_DIR=proj, each exits 0 without its '|| true'.",
+      "AMBIGUITY - what alternates SAY. Reading 1: s2/s3 write full end-user rewrites for every marked span. Reading 2 (RECOMMENDED): drop by default; write a replacement only where dropping leaves an instruction dangling (scout step 1 registry read, feature-graph routing, the repos/ launch rule, scout-facts' registry lookup, close-run's target_repo), phrased minimally and generically ('the project root', 'the project's CLAUDE.md if present'). Reading 1 would make product decisions Orchestra has not made, inside graph_agents.",
+      "Conventions are excluded per the brief, so the mobile-first / native-* bars in architect.md, builder.md, reviewer.md and ops.md become marked-and-dropped spans. End users lose those rules - a real product loss, recorded in not_doing."
+    ],
+    "plan": [
+      {
+        "slice": "s1",
+        "intent": "Build the sync tool, its allowlist manifest and its fixture tests. sync.py (stdlib only): modes default (write target), --dry-run (print plan and diff summary, write nothing), --check [--scope md|all] (render into a temp dir and run every gate, write nothing), --verify-upstream <commit> (umbrella-render identity), --verify-source <target> (SOURCE.upstream_commit equals graph_agents HEAD and every file hash matches; prints 'SOURCE matches HEAD'), --target <dir> (default orchestra/fleet, relative to the repos/ cwd). Implements: allowlist copy, '@FLEET@' token, marker parse (both comment forms, no nesting, whole-line), pinned alternates from alternates/*, pinned JSON-pointer patches, leak gate with live registry ids, the five self-consistency checks, the SOURCE-based refusal rule, upstream-clean refusal, deletion of files dropped from the allowlist, LF-normalized hashing, README.md untouched, byte-identical re-run. payload.json holds the include allowlist, token map, denylist and leak_allow. alternates/ starts as three empty-but-valid files. test_sync.py builds throwaway upstream + target git repos under a tempdir and never touches the real orchestra/. README.md documents usage and the marker grammar for whoever tunes agents next.",
+        "files": [
+          "graph_agents/.graph/orchestra-sync/sync.py",
+          "graph_agents/.graph/orchestra-sync/test_sync.py",
+          "graph_agents/.graph/orchestra-sync/payload.json",
+          "graph_agents/.graph/orchestra-sync/README.md",
+          "graph_agents/.graph/orchestra-sync/alternates/prose.md",
+          "graph_agents/.graph/orchestra-sync/alternates/code.md",
+          "graph_agents/.graph/orchestra-sync/alternates/json.json"
+        ],
+        "done_when": "python graph_agents/.graph/orchestra-sync/test_sync.py -> exit 0, last line 'all checks passed', output names a passing case for EACH of: marker without alternate refuses; orphan alternate refuses; pin mismatch refuses; leak hit refuses; registry-app-id leak refuses; registry absent refuses; settings hook pointing at an unshipped script refuses (with || true present); missing sibling import refuses (bash_write_targets-shaped fixture); dangling prose path refuses; hand-edited target file refuses; extra file in target refuses; dirty upstream refuses; first sync into README-only target succeeds and leaves README byte-identical; second run reports 'no changes' with identical target bytes; --dry-run and --check write nothing; --verify-source passes after a sync and fails after a hand-edit; umbrella render identity holds for a marked fixture. AND git -C orchestra status --porcelain -> empty (tests never touched the real target).",
+        "risk": "high",
+        "risk_reason": "It is the only barrier between the gitignored registry (real app names, personal names per graph_agents/.gitignore) and a repo with a GitHub remote. A green leak gate cannot distinguish 'redacted' from 'leaked under a word not on the denylist' - logic a test cannot fully see."
+      },
+      {
+        "slice": "s2",
+        "intent": "Mark umbrella concept spans in the payload's PROSE and write their pinned alternates, Reading 2 (drop by default, minimal generic replacement only where a drop dangles). Path literals are left alone (the token handles them). Covers registry routing, repos/ launch rule, the umbrella invariant (reviewer.md:61, architect.md:69), TelosRG (ops.md:44), conventions/ and decisions/ pointers, excluded-skill references (/audit-fleet, postmortem, guard-commit-trailers at GRAPH.md:275, CURRENT-STATE at GRAPH.md:208/245/368 and feature-graph SKILL.md:363-364), dated umbrella incidents that hit the denylist, and YAML frontmatter if it names the umbrella.",
+        "files": [
+          "graph_agents/.claude/agents/architect.md",
+          "graph_agents/.claude/agents/builder.md",
+          "graph_agents/.claude/agents/integrator.md",
+          "graph_agents/.claude/agents/ops.md",
+          "graph_agents/.claude/agents/reviewer.md",
+          "graph_agents/.claude/agents/scout.md",
+          "graph_agents/.claude/skills/feature-graph/SKILL.md",
+          "graph_agents/.claude/skills/close-run/SKILL.md",
+          "graph_agents/.claude/skills/rlm/SKILL.md",
+          "graph_agents/GRAPH.md",
+          "graph_agents/.graph/orchestra-sync/alternates/prose.md"
+        ],
+        "done_when": "python graph_agents/.graph/orchestra-sync/sync.py --verify-upstream 0adbe2a -> exit 0, 'umbrella render identical' for every payload file; AND python graph_agents/.graph/orchestra-sync/sync.py --check --scope md -> exit 0 with 'leak hits: 0', 'alternates: all pinned, 0 orphans', 'prose refs: all resolved'; AND for t in graph_agents/.claude/hooks/test_*.py graph_agents/.graph/test_*.py; do python $t >/dev/null 2>&1 || echo FAIL $t; done -> prints nothing (15 of 15). HUMAN-READ in addition: the reviewer reads every non-empty entry in alternates/prose.md against its umbrella span - no gate can judge whether a replacement is a correct end-user instruction.",
+        "risk": "high",
+        "risk_reason": "Edits the agent definitions every future run spawns from (self-modifying, single-loop forced), and the alternates are prose a mechanical check cannot judge. Shares no file with s1 or s3."
+      },
+      {
+        "slice": "s3",
+        "intent": "Mark umbrella spans in the payload's CODE and patch its JSON. Python: comments/docstrings that hit the denylist (e.g. guard-builder-scope.py:78 and :439, flag-state-gap.py:25, brief.py:291, scout-facts.py:8-37, rlm.py:11 and 63-81, check-return-cap.py:26 and 92) are marked-and-dropped or added to payload.json leak_allow with a reason; behavioural swaps only where the umbrella path dangles: scout-facts.py:50/88-92 registry load (alternate: no registry, report repo facts for the project root) and close-run.py:44/63-82 target_repo (alternate: the project root). Umbrella behaviour untouched (render identity). JSON: pinned patches removing the guard-commit-trailers, flag-stale-state and flag-cross-app-import entries from settings.json and replacing the umbrella wording in runs/_schema.json 'app'.",
+        "files": [
+          "graph_agents/.claude/hooks/guard-builder-scope.py",
+          "graph_agents/.claude/hooks/bash_write_targets.py",
+          "graph_agents/.claude/hooks/record-activity.py",
+          "graph_agents/.claude/hooks/show-board.py",
+          "graph_agents/.claude/hooks/flag-state-gap.py",
+          "graph_agents/.graph/verify-state.py",
+          "graph_agents/.graph/brief.py",
+          "graph_agents/.graph/close-run.py",
+          "graph_agents/.graph/check-return-cap.py",
+          "graph_agents/.graph/scout-facts.py",
+          "graph_agents/.graph/rlm.py",
+          "graph_agents/.graph/orchestra-sync/alternates/code.md",
+          "graph_agents/.graph/orchestra-sync/alternates/json.json",
+          "graph_agents/.graph/orchestra-sync/payload.json"
+        ],
+        "done_when": "python graph_agents/.graph/orchestra-sync/sync.py --verify-upstream 0adbe2a -> exit 0, 'umbrella render identical' for every payload file; AND python graph_agents/.graph/orchestra-sync/sync.py --check --scope all -> exit 0 with 'leak hits: 0', 'hooks: N of N resolve', 'sibling imports: resolved', 'py_compile: ok', 'smoke: N of N hooks exit 0' and the rendered scout-facts run in a registry-less temp git repo named as passing; AND for t in graph_agents/.claude/hooks/test_*.py graph_agents/.graph/test_*.py graph_agents/.graph/orchestra-sync/test_sync.py; do python $t >/dev/null 2>&1 || echo FAIL $t; done -> prints nothing (16 of 16).",
+        "risk": "high",
+        "risk_reason": "Edits live hooks, including guard-builder-scope.py, the scope guard enforcing this very run - a broken edit there fails closed and denies every builder write mid-run. Also touches payload.json, which s1 creates: strictly sequential, and s3 may only ADD leak_allow entries, never change the allowlist or denylist (reviewer checks that diff)."
+      },
+      {
+        "slice": "s4",
+        "intent": "Prove it on the real target AFTER s1-s3 are merged and committed in graph_agents (the sync refuses a dirty upstream, and SOURCE must name a real commit). Run the sync once into orchestra/fleet/ and leave orchestra's working tree changed and UNCOMMITTED for the owner. Not a hand edit: the only writer is sync.py.",
+        "files": [
+          "orchestra/fleet/SOURCE",
+          "orchestra/fleet/GRAPH.md",
+          "orchestra/fleet/.claude/**",
+          "orchestra/fleet/.graph/**"
+        ],
+        "done_when": "git -C graph_agents status --porcelain -- .claude GRAPH.md .graph/orchestra-sync -> empty; python graph_agents/.graph/orchestra-sync/sync.py -> exit 0, 'wrote N files'; python graph_agents/.graph/orchestra-sync/sync.py -> exit 0, 'no changes'; python graph_agents/.graph/orchestra-sync/sync.py --verify-source orchestra/fleet -> exit 0, 'SOURCE matches HEAD'; git -C orchestra rev-parse --short HEAD -> cd6e591 (nothing committed); git -C orchestra status --porcelain | grep -v ' fleet/' -> empty; git -C orchestra diff --quiet -- fleet/README.md -> exit 0. HUMAN-READ: the owner reads git -C orchestra status and the rendered agent files before committing in orchestra (a separate step, outside this run).",
+        "risk": "high",
+        "risk_reason": "First write of umbrella-derived content into a sibling repo with a GitHub remote; if s1's leak gate missed something, this is where it lands. Outside the run's app, so the human read is the last barrier."
+      }
+    ],
+    "edges": [
+      "s1 -> s2: s2's done_when runs sync.py --verify-upstream and --check --scope md, which s1 builds",
+      "s1 -> s3: same artifact, plus s3 appends leak_allow entries to s1's payload.json",
+      "s2 -> s3: s3's --check --scope all re-checks the md payload (prose refs, leak gate over every file), so it can only go green after s2",
+      "s3 -> (graph_agents commit by integrator/orchestrator) -> s4: sync refuses a dirty upstream and SOURCE records HEAD"
+    ],
+    "rationale": "SINGLE-LOOP, forced and also chosen. Forced: s2 edits graph_agents/.claude/agents/** and skills/** (feature-graph step 0.5 item 2) - start a FRESH SESSION before the next fleet run. Chosen: the slices are a real sequence, not parallel work - s2 and s3 can only prove done with s1's tool, s3's full check consumes s2's output, s4 needs a commit of all three; s1 and s3 share payload.json (sequential, append-only for s3). Otherwise file sets are disjoint (tool / prose / code+json / target), so each slice still reviews alone. Every slice is risk high, each for a stated reason that is not size: s1 is the sensitive-data barrier, s2 rewrites the definitions this fleet spawns from with prose no check can judge, s3 edits the live scope guard, s4 writes into a repo with a public remote. Scope decision is option (c), see scope_decision. 'Refuse on uncommitted changes' is interpreted as: the SOURCE hash manifest is the authority, so the sync's own uncommitted output does not block an idempotent re-run, while any hand-edit (committed or not) does - see design_notes.",
+    "not_doing": [
+      "No edits to orchestra/ source, orchestra/CLAUDE.md or orchestra/fleet/README.md. s4 writes orchestra/fleet/ only as sync.py's output and commits nothing in orchestra.",
+      "No force flag. A refusal is resolved by fixing upstream or reverting the hand-edit in orchestra.",
+      "No test_*.py in the payload. ORCHESTRA LATER: decide whether fleet tests ship (they would need their own marking and fixtures).",
+      "No reverse sync (orchestra -> graph_agents), no automation, no CI, no scheduled sync. The owner runs it.",
+      "No version/tag scheme. SOURCE records the commit; tags beyond v1.0.0 are a separate decision.",
+      "No changes to CURRENT-STATE.md / HISTORY.md by any slice; that is close-run's job (flag-stale-state will fire on s2/s3 edits; expected).",
+      "No conventions/ or decisions/ in the payload. ORCHESTRA LATER: end users lose the mobile-first and native-* bars; decide whether Orchestra ships its own copies.",
+      "ORCHESTRA LATER: the install step - choose <fleet-dir>, render '@FLEET@', copy into <project>/<fleet-dir>/, merge the payload's hook entries into the user's project .claude/settings.json, put agents/skills where Claude Code discovers them (<project>/.claude/, not <project>/<fleet-dir>/.claude/ - junction or copy, Orchestra's call), and gitignore .graph/CURRENT, runs/*/activity.jsonl.lock and worktrees/ in the user's project.",
+      "ORCHESTRA LATER: whether run state stays inside <project>/<fleet-dir>/.graph/runs/ (works as-is) or moves to the desktop app's data dir (would need upstream changes to every __file__-relative constant - a separate upstream run).",
+      "ORCHESTRA LATER: record-activity.py and check-return-cap.py mirror ~/.claude/projects/<encoded cwd>/ (undocumented harness layout); Orchestra's tracking should not rely on it unchecked.",
+      "ORCHESTRA LATER: rlm spends haiku on the end user's account; surface the cost.",
+      "Not shipping postmortem, guard-commit-trailers, flag-stale-state, flag-cross-app-import, verify-invariant, audit-fleet, new-app, fleetview, measure_bash_corpus.py.",
+      "Not writing full end-user rewrites of marked prose (Reading 1). Only dangling instructions get a minimal generic replacement."
+    ],
+    "human_gate": [
+      "Approve option (c) and its standing tax: marker lines in agent/skill/GRAPH/hook files the umbrella reads, and a sync that refuses until any newly introduced umbrella concept is marked.",
+      "Approve Reading 2 for alternates (drop by default, minimal generic replacement where dangling).",
+      "Approve payload membership: rlm IN; postmortem and guard-commit-trailers OUT; flag-stale-state OUT (overrides the scout's candidate list).",
+      "Approve the refusal interpretation (SOURCE hashes are the authority; the sync's own uncommitted output may be re-synced).",
+      "Approve s4 writing into orchestra/fleet/ (uncommitted) after s1-s3 are committed in graph_agents - or cut s4 and run it yourself."
+    ]
+  },
+  "approved_by_human": true,
+  "scope_exceptions": [
+    {
+      "path": "graph_agents/.graph/orchestra-sync/test_sync.py",
+      "slice": "s3",
+      "why": "orchestrator asked s3 to put the shipped-guard worktree regression check where done_when runs it; test_sync.py is s1's file. Add-only: one function + one call.",
+      "granted_by": "orchestrator"
+    }
+  ],
+  "builders": {
+    "s1": {
+      "written_by": "builder",
+      "status": "done",
+      "branch": "orchestra-sync-s1",
+      "changed": [
+        "graph_agents/.graph/orchestra-sync/sync.py",
+        "graph_agents/.graph/orchestra-sync/test_sync.py",
+        "graph_agents/.graph/orchestra-sync/payload.json",
+        "graph_agents/.graph/orchestra-sync/README.md",
+        "graph_agents/.graph/orchestra-sync/alternates/prose.md",
+        "graph_agents/.graph/orchestra-sync/alternates/code.md",
+        "graph_agents/.graph/orchestra-sync/alternates/json.json"
+      ],
+      "notes": "edits under .graph/ trip flag-stale-state: CURRENT-STATE.md/HISTORY.md untouched (outside file set); real-tree --check refuses until s2/s3 mark spans, as designed.",
+      "gate_results": {
+        "python graph_agents/.graph/orchestra-sync/test_sync.py": "exit 0\n  ok   marker without alternate refuses\n  ok   orphan alternate refuses\n  ok   pin mismatch refuses\n  ok   pin mismatch prints the new hash to re-pin\n  ok   nested marker refuses\n  ok   mid-line marker refuses\n  ok   leak hit refuses\n  ok   registry-app-id leak refuses\n  ok   registry absent refuses\n  ok   leak_allow with a reason lets a hit through\n  ok   leak_allow without a reason refuses\n  ok   settings hook pointing at an unshipped script refuses (|| true present)\n  ok   missing sibling import refuses (bash_write_targets-shaped fixture)\n  ok   dangling prose path refuses\n  ok   py_compile failure refuses\n  ok   smoke: a hook that exits non-zero refuses\n  ok   dirty upstream refuses\n  ok   --check does not require a clean upstream\n  ok   first sync into README-only target succeeds\n  ok   README byte-identical after sync\n  ok   span dropped by its empty alternate\n  ok   path token rendered\n  ok   SOURCE names HEAD and every file\n  ok   second run reports no changes\n  ok   second run leaves target bytes identical\n  ok   --verify-source passes after a sync\n  ok   CRLF-only change is not a hand-edit (LF-normalized hashing)\n  ok   --dry-run prints a plan and writes nothing\n  ok   --check writes nothing\n  ok   --check --scope md checks only the md payload\n  ok   --verify-source fails when SOURCE is behind HEAD\n  ok   a tuned upstream file syncs through\n  ok   hand-edited target file refuses\n  ok   --verify-source fails after a hand-edit\n  ok   extra file in target refuses\n  ok   file dropped from the allowlist is deleted\n  ok   first sync refuses a target holding more than README\n  ok   pinned json patch removes the hook entry\n  ok   json patch pin mismatch refuses\n  ok   json patch on a non-JSON file refuses\n  ok   umbrella render identity holds for a marked fixture\n  ok   umbrella render identity fails when marking changed real text\n\nall checks passed\n",
+        "git -C orchestra status --porcelain": "(empty) ''",
+        "all existing test_*.py (hooks 7 + graph 8)": "15 of 15 exit 0"
+      },
+      "fix_attempt_1": {
+        "commit": "c724e80",
+        "changes": [
+          "1 abs-path-windows regex rebuilt as [A-Za-z]:[\\/]+Users[\\/]+ (matches single, doubled backslash, slash); tests added",
+          "2 added abs-path-gitbash (/c/Users/), claude-project-slug (C--Users-name), owner-username denylist entries; tests added. Real payload now hits record-activity.py:82,83 and check-return-cap.py:97,98",
+          "3 sibling_terms(): every sibling dir of graph_agents under the umbrella root read live (fail-closed if unreadable), minus graph_agents and target repo dir; plus stems>=5 chars not in payload stem_stoplist [tracker, archive, personal]. Real payload now hits feature-graph SKILL.md:197 (whoop), brief.py:322, close-run.py:78 (personal-archive), scout-facts.py:17 (thrml, whoop-med-tracker)",
+          "4 include entries refused if absolute, '..', backslash, drive letter, empty segment; write targets must resolve inside target dir; symlinks under target refuse; default target resolved beside upstream; registry id/path terms deduped"
+        ],
+        "unverified": "symlink test is skipped on this machine (cannot create symlinks); the code path is untested here",
+        "gate_results": "test_sync.py exit 0, 63 ok, last line 'all checks passed'; git -C orchestra status --porcelain empty; 15 of 15 existing test_*.py ok"
+      }
+    },
+    "s2": {
+      "written_by": "builder",
+      "status": "done",
+      "branch": "orchestra-sync-s2",
+      "commit": "1bda28a",
+      "changed": [
+        "graph_agents/.claude/agents/architect.md",
+        "graph_agents/.claude/agents/builder.md",
+        "graph_agents/.claude/agents/integrator.md",
+        "graph_agents/.claude/agents/ops.md",
+        "graph_agents/.claude/agents/reviewer.md",
+        "graph_agents/.claude/agents/scout.md",
+        "graph_agents/.claude/skills/feature-graph/SKILL.md",
+        "graph_agents/.claude/skills/close-run/SKILL.md",
+        "graph_agents/.claude/skills/rlm/SKILL.md",
+        "graph_agents/GRAPH.md",
+        "graph_agents/.graph/orchestra-sync/alternates/prose.md"
+      ],
+      "notes": "",
+      "markers": "47 (15 empty/dropped, 32 non-empty); no leak_allow used; payload.json untouched; dated changelog notes (Added/closed/superseded 2026-08-26 etc) left as-is, only incident anecdotes dropped",
+      "empty_alternates_dropped": [
+        "architect-ui-planning",
+        "architect-invariant",
+        "builder-umbrella-bullets",
+        "builder-attribution",
+        "integrator-attribution",
+        "ops-one-app",
+        "ops-attribution",
+        "reviewer-invariant",
+        "reviewer-ui-checklists",
+        "fg-s2-anecdote",
+        "fg-close-anecdote",
+        "fg-audit-fleet",
+        "graph-activity-gap",
+        "graph-commit-attribution",
+        "graph-cache-anecdote"
+      ],
+      "non_empty_replacements": {
+        "architect-rlm-ref": "architect rlm bullet: same text minus the decisions/0002 pointer",
+        "builder-board-name": "builder notes bullet line: FleetView -> the board",
+        "integrator-rlm-ref": "integrator rlm bullet: same text minus the decisions/0002 pointer",
+        "ops-native-intro": "ops Native apps intro: applies to a native Expo/Tauri app, one pipeline per app, secrets in the app repo CI secret store (drops ui field, Inert clause, org name, conventions pointers)",
+        "reviewer-rlm-ref": "reviewer rlm paragraph: same text minus the decisions/0002 pointer",
+        "scout-registry": "scout step 1: identify which app the task belongs to (the project you are in), say so if none; replaces registry read + repos/ launch rule",
+        "scout-example-stack": "scout step 0 rationale: huntstack -> the project",
+        "fg-desc": "feature-graph frontmatter description: 'on an app under the umbrella' -> 'on an app'",
+        "fg-launch": "feature-graph launch rule: run from project root, fleet files under @FLEET@/",
+        "fg-collector-anecdote": "feature-graph step 0.5: keeps 'never carry it over', drops the 2026-08-28 anecdote",
+        "fg-repos-not-a-repo": "feature-graph degraded-mode: any non-repo target is degraded (drops repos/ not-a-repo claim)",
+        "fg-app-registry": "feature-graph state fill: app = the project name (was registry lookup)",
+        "fg-merge-history": "feature-graph single-loop merge: same ruling, drops the 'until 2026-08-26' history",
+        "fg-risk-anecdote": "feature-graph risk:high brief: drops the leaked-health-data anecdote",
+        "cr-intro-anecdote": "close-run intro: drops the fleet-hardening anecdote, keeps the why-it-gets-a-script point",
+        "cr-parked-anecdote": "close-run: parked/blocked is the honest status (drops refuge-freshness anecdote)",
+        "cr-recheck": "close-run --recheck sentence minus postmortem and fleet-hardening",
+        "rlm-desc": "rlm frontmatter description minus CURRENT-STATE.md and postmortem",
+        "rlm-never-refs": "rlm do-not-use bullets minus decisions/0002 and ADR 0001 pointers",
+        "rlm-live-run": "rlm step 4: generic 'sub-models add items the source never had' (drops CURRENT-STATE.md anecdote)",
+        "graph-portfolio": "GRAPH.md section 1 replaced by a 2-line intro noting numbering starts at 2 (sections are cited by number elsewhere)",
+        "graph-agents-path": "GRAPH.md section 2 intro: drops the repos/ reachability parenthetical",
+        "graph-degraded-repos": "GRAPH.md degraded mode: drops repos/ not-a-repo sentence",
+        "graph-state-path": "GRAPH.md state path comment: relative to the project root",
+        "graph-activity-render": "GRAPH.md activity log: FleetView clause dropped",
+        "graph-board-gaps": "GRAPH.md dispatch board: drops CURRENT-STATE gap pointers",
+        "graph-board-fleetview": "GRAPH.md board sentence: FleetView clause dropped",
+        "graph-builder-footnote": "GRAPH.md dagger note: drops the 2026-08-25 closure anecdote",
+        "graph-architect-example": "GRAPH.md architect bullet: generic example instead of the huntstack run",
+        "graph-rlm-inputs": "GRAPH.md recursive reading: drops postmortem/CURRENT-STATE inputs",
+        "graph-rlm-fence": "GRAPH.md diagram line: cwd outside the project",
+        "graph-rlm-decision": "GRAPH.md rlm scope pointer: now the rlm.py docstring"
+      },
+      "gate_results": {
+        "python graph_agents/.graph/orchestra-sync/sync.py --verify-upstream 0adbe2a": "exit 0\numbrella render identical: .claude/agents/architect.md\numbrella render identical: .claude/agents/builder.md\numbrella render identical: .claude/agents/integrator.md\numbrella render identical: .claude/agents/ops.md\numbrella render identical: .claude/agents/reviewer.md\numbrella render identical: .claude/agents/scout.md\numbrella render identical: .claude/skills/feature-graph/SKILL.md\numbrella render identical: .claude/skills/close-run/SKILL.md\numbrella render identical: .claude/skills/rlm/SKILL.md\numbrella render identical: .claude/hooks/guard-builder-scope.py\numbrella render identical: .claude/hooks/bash_write_targets.py\numbrella render identical: .claude/hooks/record-activity.py\numbrella render identical: .claude/hooks/show-board.py\numbrella render identical: .claude/hooks/flag-state-gap.py\numbrella render identical: .claude/settings.json\numbrella render identical: .graph/verify-state.py\numbrella render identical: .graph/brief.py\numbrella render identical: .graph/close-run.py\numbrella render identical: .graph/check-return-cap.py\numbrella render identical: .graph/scout-facts.py\numbrella render identical: .graph/rlm.py\numbrella render identical: .graph/runs/_schema.json\numbrella render identical: GRAPH.md\numbrella render identical for all 23 payload files",
+        "python graph_agents/.graph/orchestra-sync/sync.py --check --scope md": "exit 0\nleak hits: 0\nalternates: all pinned, 0 orphans\nprose refs: all resolved\ncheck ok: 10 files rendered, nothing written",
+        "for t in hooks/test_*.py .graph/test_*.py .graph/orchestra-sync/test_*.py": "printed nothing (no FAIL); 16 of 16 exit 0"
+      },
+      "fix_attempt_1": {
+        "commit": "see git log orchestra-sync-s2 (second s2 commit)",
+        "changes": [
+          "scout-native-rule (scout.md Native apps rule): keyed on the scout-facts native: line, ui gate dropped",
+          "scout-collector-output (scout.md step 0): collector contract per orchestrator ruling, no registry/--all/claimed stack/--json/entry docs",
+          "graph-facts-script (GRAPH.md): same contract, no app-id",
+          "scout-facts-cmd, fg-facts-cmd: <app-id> dropped from the command (in-fence markers use the # form)",
+          "fg-brief-app: 'the app id' -> 'the project'",
+          "graph-new-app-gate: human-gate item 'before creating a new app' dropped (empty alternate)"
+        ],
+        "frontmatter": "Cannot restructure: --- must be line 1, so markers cannot wrap frontmatter from outside. Verified with stdlib: for feature-graph and rlm SKILL.md line 1 is ---, a closing --- follows 4 lines later, non-comment frontmatter keys are exactly name and description, description line intact (>100 chars). Marker lines are # YAML comments. Not verified in a live Claude Code session.",
+        "gate_results": {
+          "--verify-upstream 0adbe2a": "umbrella render identical for all 23 payload files (exit 0)",
+          "--check --scope md": "leak hits: 0 / alternates: all pinned, 0 orphans / prose refs: all resolved / check ok: 10 files rendered, nothing written",
+          "all test_*.py (hooks, .graph, orchestra-sync)": "printed nothing but tests-done (no FAIL)"
+        }
+      }
+    },
+    "s3": {
+      "written_by": "builder",
+      "status": "done",
+      "branch": "orchestra-sync-s3",
+      "changed": [
+        ".claude/hooks/guard-builder-scope.py",
+        ".claude/hooks/bash_write_targets.py",
+        ".claude/hooks/record-activity.py",
+        ".claude/hooks/flag-state-gap.py",
+        ".graph/verify-state.py",
+        ".graph/brief.py",
+        ".graph/close-run.py",
+        ".graph/check-return-cap.py",
+        ".graph/scout-facts.py",
+        ".graph/rlm.py",
+        ".graph/orchestra-sync/alternates/code.md",
+        ".graph/orchestra-sync/alternates/json.json",
+        ".graph/orchestra-sync/payload.json"
+      ],
+      "notes": "edits trip flag-stale-state: CURRENT-STATE.md/HISTORY.md untouched (outside file set); show-board.py needed no marks; payload.json change is dropped_hooks names only (no leak_allow).",
+      "gate_results": {
+        "sync.py --verify-upstream 0adbe2a": "exit 0; umbrella render identical for all 23 payload files",
+        "sync.py --check --scope all": "exit 0\nleak hits: 0\nalternates: all pinned, 0 orphans\nprose refs: all resolved\nhooks: 6 of 6 resolve\nsibling imports: resolved\npy_compile: ok\nsmoke: 6 of 6 hooks exit 0\nscout-facts registry-less: ok\ncheck ok: 23 files rendered, nothing written",
+        "test loop over hooks/test_*.py graph/test_*.py orchestra-sync/test_sync.py": "16 of 16 exit 0, no FAIL printed (test_sync: all checks passed)",
+        "rendered scout-facts, expo repo (git init, package.json dep expo)": "PROJECT: <tmp>\n  git:         master @ edaa30f, clean\n  identity:    Tester <t@example.com>\n  stack:       observed=['node']\n  native:      native-mobile at . (package.json dep expo ~51.0.0)   rc=0",
+        "rendered scout-facts, subdir of that repo + src-tauri + ignored args --all someapp": "git: master @ edaa30f, 1 uncommitted file(s); native:      native-mobile at . (...); native-desktop at . (src-tauri/ dir)   rc=0",
+        "rendered scout-facts, non-repo dir with unparseable package.json": "PROJECT: <tmp>\nNOT A GIT REPO -> diamond forced to single-loop\n  stack:       observed=['node']\n  ! package.json unparseable at .   rc=0",
+        "rendered scout-facts, empty git repo, no registry": "git:         HEAD @ no commits yet, clean   rc=0"
+      },
+      "commit": "ea69beb",
+      "fix_attempt_1": {
+        "commit": "95677f2",
+        "changes": [
+          "BLOCKER: guard-builder-scope.py rel_map span gbs-rel-map (replaces gbs-repo-segment); shipped alternate keys root=project root and rel=whole entry path, single-segment entries included; umbrella text untouched",
+          "regression check: test_sync.py shipped_guard_worktree() renders the real payload into a temp git project (fleet at proj/fleet, CURRENT->r1, plan src/a.py + src/new/**, git worktree add .claude/worktrees/s1, TEMP/TMP/TMPDIR pointed away): worktree Write approved allow, glob allow, Bash redirect approved allow, Write unapproved deny, Bash unapproved deny, main-tree approved allow / unapproved deny. 7 cases, all ok; runs in done_when via test_sync.py. sync.py and test_sync.py are in the run's approved union set but not s3's own list (coordinator asked for it there)",
+          "run ids and incident dates marked in guard, record-activity, verify-state, brief, close-run (also date-accuracy / invariant-check / fleet-hardening names); payload.json denylist ADD: run-id regex (?<![A-Za-z0-9])20\\d\\d-\\d\\d-\\d\\d-[a-z0-9-]+",
+          "scout-facts alternate: empty repo branch via git symbolic-ref --short HEAD (prints 'master @ no commits yet')"
+        ],
+        "gate_results": {
+          "sync.py --verify-upstream 0adbe2a": "umbrella render identical for all 23 payload files",
+          "sync.py --check --scope all": "leak hits: 0 / alternates: all pinned, 0 orphans / prose refs: all resolved / hooks: 6 of 6 resolve / sibling imports: resolved / py_compile: ok / smoke: 6 of 6 hooks exit 0 / scout-facts registry-less: ok / check ok: 23 files rendered, nothing written",
+          "test loop (hooks 7 + graph 8 + test_sync)": "16 of 16 ok, no FAIL; test_sync ends 'all checks passed' incl. 7 'shipped guard:' cases",
+          "run-id gate bites": "regex matches '2026-08-25-fleet-hardening', not '2026-09-19,'"
+        }
+      },
+      "deviation_from_approved_plan": "Edited graph_agents/.graph/orchestra-sync/test_sync.py (s1's file, not in s3's list). Add-only: the shipped_guard_worktree() function plus its single call in main(); no existing line changed. Why: the reviewer's blocker needed a regression check on the rendered payload that runs inside s3's done_when, and test_sync.py is the only runner there. Coordinator recorded the path in scope_exceptions.",
+      "fix_attempt_2": {
+        "branch": "orchestra-sync-s3-fix",
+        "commit": "e0e7897",
+        "changes": [
+          "verify-state.py: span vs-fanin-origin drops run name archive-adapters ('Found by an early run, the first to reach fan-in.')",
+          "brief.py: span brief-example-goal replaces the real huntstack run goal with 'Fix the date shown on the settings page'",
+          "guard-builder-scope.py: gbs-doc-worktree alternate rewritten: repo is the project root, plan entry is a path inside it, UMBRELLA = dirname(FLEET) assumes the fleet dir sits directly under the project root",
+          "sync.py not touched"
+        ],
+        "sweep": "rendered payload (all 23 files) to scratch, case-insensitive substring grep: every slug under .graph/runs (fleet-hardening, refuge-freshness, transclusion-external-previews, archive-adapters, invariant-check, mobile-first-criteria, huntstack-mobile, date-accuracy, fleetview-payload, payload-split, review-attempts, bash-write-guard, fleetview-followups, fleet-gaps, native-app-expertise, native-followups, orchestra-fleet-sync) = 0 hits each; sibling names and stems incl. stoplisted (archive, tracker, personal, whoop, podcraft, thrml, roamex, koenrane, telosrg, fleetview, huntstack, refuge, transclusion, regulation, orchestra) = 0 hits each (only whole-word 'site' in two generic comments)",
+        "gate_results": {
+          "sync.py --verify-upstream 0adbe2a": "umbrella render identical for all 23 payload files",
+          "sync.py --check --scope all": "leak hits: 0 / alternates: all pinned, 0 orphans / prose refs: all resolved / hooks: 6 of 6 resolve / sibling imports: resolved / py_compile: ok / smoke: 6 of 6 hooks exit 0 / scout-facts registry-less: ok / check ok: 23 files rendered, nothing written",
+          "test loop": "16 of 16 ok, no FAIL (test_sync incl. 7 shipped guard worktree cases: all checks passed)"
+        }
+      }
+    },
+    "s4": {
+      "status": "done",
+      "written_by": "builder",
+      "branch": "",
+      "branch_note": "orchestra is a sibling repo the owner commits; nothing staged or committed, working tree left dirty by design",
+      "changed": [
+        "orchestra/fleet/SOURCE",
+        "orchestra/fleet/GRAPH.md",
+        "orchestra/fleet/.claude/**",
+        "orchestra/fleet/.graph/**"
+      ],
+      "notes": "",
+      "gate_results": {
+        "upstream_status": "empty",
+        "dry_run": "24 changes planned, all under fleet/ and equal to payload include list + SOURCE",
+        "sync_1": "wrote 24 files, deleted 0 (rc 0)",
+        "sync_2": "no changes (rc 0)",
+        "verify_source": "SOURCE matches HEAD (rc 0); upstream_commit 0fca600e4444685067efbc16e4818095f7ab7ec0",
+        "orchestra_head": "cd6e591",
+        "non_fleet_status": "empty",
+        "readme_diff_quiet_rc": 0,
+        "orchestra_status": "?? fleet/.claude/ ; ?? fleet/.graph/ ; ?? fleet/GRAPH.md ; ?? fleet/SOURCE",
+        "leak_sweep_hits": [
+          "guard-builder-scope.py:78 UMBRELLA = os.path.dirname(FLEET)  # the project root",
+          "guard-builder-scope.py:104 Windows `realpath` reads `/c/Users` as rooted-on-the-current-drive, i.e. `C:/c/Users`,",
+          "guard-builder-scope.py:262 ...os.path.join(UMBRELLA, entry_path))] = entry",
+          "guard-builder-scope.py:269 root = norm(UMBRELLA)",
+          "guard-builder-scope.py:440 base = UMBRELLA",
+          "brief.py:64 UMBRELLA = os.path.dirname(os.path.dirname(HERE))",
+          "brief.py:299 rel = os.path.relpath(path, UMBRELLA)",
+          "close-run.py:40 UMBRELLA = os.path.dirname(FLEET)",
+          "close-run.py:67 return UMBRELLA",
+          "close-run.py:164 os.path.relpath(target, UMBRELLA)...",
+          "close-run.py:169 os.path.relpath(target, UMBRELLA)... head))"
+        ]
+      },
+      "sweep_ruling": "Orchestrator ruling: all 11 sweep hits accepted as non-leaks; 10 are the code identifier UMBRELLA, 1 is the generic '/c/Users' MSYS example with no username.",
+      "fix_attempt_1": {
+        "written_by": "builder",
+        "status": "done",
+        "upstream_commit": "506afe9571a1b438db99c7fd34c762c3fd882220",
+        "upstream_status": "empty",
+        "dry_run": "4 changes: guard-builder-scope.py, brief.py, verify-state.py, SOURCE; leak hits: 0",
+        "sync_1": "wrote 4 files, deleted 0",
+        "sync_2": "no changes",
+        "verify_source": "SOURCE matches HEAD (506afe9)",
+        "orchestra": "HEAD cd6e591; status only ?? fleet/.claude/, fleet/.graph/, fleet/GRAPH.md, fleet/SOURCE; fleet/README.md unchanged (rc 0)",
+        "sweep_hits": "12, all prior-ruled kinds: UMBRELLA identifier x11 (incl. new comment guard-builder-scope.py:23 'UMBRELLA = dirname(FLEET) assumes the fleet...') + '/c/Users' MSYS example at :105; no username, email, sibling names, TelosRG, repos/, registry, dated run ids",
+        "extra_sweep": "archive, adapters, season, regulation: 0 hits each (rc 1)"
+      }
+    }
+  },
+  "reviews": {
+    "s1": {
+      "$comment": "RE-REVIEWS NEST, and this is the rule every reader follows. The TOP LEVEL of reviews.<slice> IS attempt 1. A re-review writes attempt_2, then attempt_3, and so on, each with the same fields as the top level. Every attempt SURVIVES PERMANENTLY - history is never overwritten, flattened, or migrated up. The LATEST attempt supplies the verdict: that is what close-run.py, brief.py and verify-state.py resolve through, and what fleetview's finalVerdict() has always shown. `ever_rejected` - did ANY attempt REJECT - is DISPLAY ONLY, forever, so a rejection stays visible after it is fixed; it must never gate anything, or the fleet stops being able to loop. NO NODE MAY REWRITE AN EARLIER ATTEMPT: a second reviewer writes its own attempt_N and leaves the ones before it alone, top-level verdict included - relocating that verdict would destroy the history the board keeps and leave a key stamped written_by:reviewer with someone else as its real author. The KEY INDEX numbers an attempt, not the `attempt` field inside it; the field is display. An EMPTY attempt_N is not a re-review, it is a key nobody wrote - write the whole attempt or none of it. The walk STOPS AT THE FIRST GAP, so an attempt_3 with no attempt_2 is ignored and the earlier verdict stands: A GAP IS MALFORMED AND NO NODE MAY LEAVE ONE. Write the next UNUSED N and never skip - a mis-numbered re-review is not reported anywhere, it is simply unread, and a REJECT nobody reads is a REJECT nobody acts on. The cap is attempt_9, matching fleetview's `for (i = 2; i < 10; i++)` exactly so the two readers cannot disagree; attempt_10 and beyond is reported loudly and resolved by nobody.",
+      "written_by": "reviewer",
+      "verdict": "REJECT",
+      "attempt": 1,
+      "summary": "Re-ran done_when myself: test_sync.py exits 0 (42 ok), git -C orchestra status is empty before and after, HEAD cd6e591, and 15/15 existing test_*.py pass. The diff covers only the 7 approved files, uses only the stdlib, and the commit is the owner's with no trailers. Refusal tests check the exit code and the reason. The SOURCE rule, deletion and README handling held in my fixtures. REJECT, because the leak gate misses the owner's own paths. abs-path-windows uses the class [/] (the JSON escape lost the backslash), so C:-backslash-Users-backslash-natha gets 0 hits. abs-path-unix's lookbehind lets /c/Users/natha through, and nothing matches the C--Users-natha-Desktop-repos slug. I ran leak_scan on the real payload: record-activity.py:82-83 and check-return-cap.py:97-98 carry the home path and get 0 hits, and s3 does not list those lines. A fixture sync with a backslash path in a .py file exited 0 and shipped it. Also: names of the deliberately unregistered personal repos (whoop, personal-archive, thrml) are in the payload and on no denylist. And include '../escape.md' is read from outside upstream and written outside fleet/.",
+      "findings": [
+        {
+          "file": "graph_agents/.graph/orchestra-sync/payload.json",
+          "line": 112,
+          "severity": "blocker",
+          "origin": "builder",
+          "issue": "abs-path-windows regex decodes to [A-Za-z]:[<backslash>/]+Users[<backslash>/], whose class holds only '/'. Input with backslashes (C:<backslash>Users<backslash>natha<backslash>Desktop, or the doubled form inside a docstring or JSON string) -> 0 leak hits. Real payload lines that pass the gate today: .claude/hooks/record-activity.py:82 and .graph/check-return-cap.py:97 (the owner's Windows home path). Reproduced: a fixture sync with that string in .graph/brief.py exits 0 and writes it to the target. Fix: make the class match backslash or slash (the JSON source needs four backslashes before the slash so the regex class holds an escaped backslash and a slash), and add a test with a backslash path."
+        },
+        {
+          "file": "graph_agents/.graph/orchestra-sync/payload.json",
+          "line": 116,
+          "severity": "blocker",
+          "origin": "builder",
+          "issue": "abs-path-unix lookbehind (?<![A-Za-z0-9_.]) rejects the Git Bash form: '/c/Users/natha/Desktop' -> 0 hits, because 'c' comes before '/Users'. Nothing on the denylist matches the harness project-dir slug 'C--Users-natha-Desktop-repos' either. Both are in the real payload (record-activity.py:83, check-return-cap.py:98), and s3's plan does not name those lines, so only this gate stands between them and orchestra. Add a /<drive>/Users/ form and a term that hits the Users-slug / owner username."
+        },
+        {
+          "file": "graph_agents/.graph/orchestra-sync/payload.json",
+          "line": 31,
+          "severity": "major",
+          "origin": "architect",
+          "issue": "The live registry terms cannot catch the five repos deliberately left out of the registry (personal and vendor names, one of them a health tracker), and only njcurtis3 is on the denylist. In the real payload, 's1-whoop' at feature-graph/SKILL.md:197 and brief.py:322, and 'personal-archive' at close-run.py:78, get 0 hits. 'thrml' and 'whoop-med-tracker' at scout-facts.py:17 do too (podcraft-ai on that line is caught). The architect's denylist names njcurtis3 but not its siblings. Add them to the denylist, or to a gitignored local deny file read the same fail-closed way."
+        },
+        {
+          "file": "graph_agents/.graph/orchestra-sync/sync.py",
+          "line": 297,
+          "severity": "major",
+          "origin": "builder",
+          "issue": "Include entries are never validated. An include '../escape.md' is read from outside the upstream repo, so the dirty-upstream check never sees it, and it is written to <target>/../escape.md, outside fleet/. Reproduced: a fixture sync exits 0, prints 'add ../escape.md', and the file lands next to fleet/. Every later run then refuses, because SOURCE lists a path check_target can never find. Refuse any include that is absolute or contains '..' or a backslash."
+        },
+        {
+          "file": "graph_agents/.graph/orchestra-sync/sync.py",
+          "line": 611,
+          "severity": "note",
+          "origin": "",
+          "issue": "target_files uses os.walk with followlinks=False, so a symlinked directory under fleet/ is neither listed (the extra-file check cannot see it) nor refused, and write_text would follow it if it shadows a payload dir. Cheap to refuse on os.path.islink."
+        },
+        {
+          "file": "graph_agents/.graph/orchestra-sync/sync.py",
+          "line": 37,
+          "severity": "note",
+          "origin": "",
+          "issue": "DEFAULT_TARGET is relative to cwd and a missing target counts as a first sync. Run from graph_agents/, it would create graph_agents/orchestra/fleet/ instead of refusing. Consider resolving it against DEFAULT_UPSTREAM's parent."
+        },
+        {
+          "file": "graph_agents/.graph/orchestra-sync/sync.py",
+          "line": 369,
+          "severity": "note",
+          "origin": "",
+          "issue": "registry_terms adds both id and path, and they are equal for every current app, so each app-id hit is reported twice and 'leak hits: N' double-counts. Cosmetic."
+        },
+        {
+          "file": "graph_agents/.graph/runs/2026-10-09-orchestra-fleet-sync/state.json",
+          "line": 0,
+          "severity": "note",
+          "origin": "",
+          "issue": "reviews.s1 held the schema template stub (top level plus an attempt_2 whose verdict was literally 'PASS|REJECT'), written by no node. This review replaces the stub as attempt 1 and drops the template attempt_2, which readers would otherwise have resolved as the latest verdict."
+        }
+      ],
+      "attempt_2": {
+        "written_by": "reviewer",
+        "verdict": "PASS",
+        "attempt": 2,
+        "summary": "PASS. I re-ran done_when: test_sync.py exits 0 with 63 ok and 1 skip (symlink), and the last line is 'all checks passed'. git -C orchestra status is empty before and after, and 15/15 existing test_*.py exit 0. The diff vs master is the 7 approved files, owner-authored, no trailers. I reproduced all four attempt-1 failures end to end in fixtures, and each now refuses with nothing written: a doubled-backslash home path in a .py, /c/Users/natha, the C--Users slug, s1-whoop, personal-archive and thrml (sibling dirs present), and include '../escape.md'. The real-tree --check refuses with 181 leak hits across 22 files. Those include record-activity.py:82-83, check-return-cap.py:97-98, brief.py:295/322, close-run.py:78, scout-facts.py:17 and feature-graph SKILL.md:197. sibling_terms reads repos/ and skips graph_agents and orchestra. Its terms are fleetview, huntstack, koenrane(.xyz), njcurtis3, personal-archive, podcraft(-ai), roamex, telosrg(-site), thrml, whoop(-med-tracker). Not over-broad for s2/s3. The owner email is caught by njcurtis3. Shipping payload.json self-trips the gate. Junctions are walked (contents count as extra files) or caught by the realpath write check. Notes only.",
+        "findings": [
+          {
+            "file": "graph_agents/.graph/orchestra-sync/sync.py",
+            "line": 410,
+            "severity": "minor",
+            "origin": "",
+            "issue": "Sibling whole-name terms match the literal dir name only. 'Personal_Archive' and 'personal archive' (space) ship: a fixture sync exits 0 and writes SOURCE. 'WhoopMedTracker' also slips past the whoop stem, because an alphanumeric char follows it. No real payload line uses these forms today, so this is a note. A cheap tightening: when building terms, treat '-', '_', '.' and a space as one separator class."
+          },
+          {
+            "file": "graph_agents/.graph/orchestra-sync/sync.py",
+            "line": 422,
+            "severity": "note",
+            "origin": "",
+            "issue": "leak_scan scans file contents only, not the rel paths in include. SOURCE is never scanned: it carries upstream_repo 'graph_agents', the file list and the commit date with a UTC offset. Today's include names are clean, and the payload $comment freezes include for later slices. Scanning rel would close the hole for good."
+          },
+          {
+            "file": "graph_agents/.graph/orchestra-sync/sync.py",
+            "line": 433,
+            "severity": "note",
+            "origin": "architect",
+            "issue": "A leak_allow entry with no 'match' allows every hit of that pattern in that file. s3 could allow owner-username wholesale for record-activity.py rather than mark the span. Consider requiring 'match' for the personal-data patterns (owner-username, abs-path-*, claude-project-slug, sibling-*)."
+          },
+          {
+            "file": "graph_agents/.graph/orchestra-sync/sync.py",
+            "line": 654,
+            "severity": "note",
+            "origin": "",
+            "issue": "Symlink test is skipped on this machine. Read the code: islink is checked on the target and on every dirs+files entry before any write, and os.walk lists symlinked dirs in dirnames, so a POSIX symlink refuses. Windows junctions are NOT islink on Python 3.13. I tested with mklink /J. A junction that holds files is walked, and its contents refuse as 'extra file in target'. A junction that shadows a payload dir refuses through the realpath write check. Only an empty junction passes silently, which is harmless."
+          },
+          {
+            "file": "graph_agents/.graph/orchestra-sync/sync.py",
+            "line": 396,
+            "severity": "note",
+            "origin": "",
+            "issue": "Sibling terms come from whatever is on disk beside graph_agents. Run from a clone outside repos/, they silently weaken to that dir's siblings: only an OSError refuses. Going the other way, a new generic-named dir under repos/ (e.g. 'notes') would trip every mention in the payload. Both are acceptable for a local-only tool, but README should say so."
+          },
+          {
+            "file": "graph_agents/.graph/orchestra-sync/sync.py",
+            "line": 713,
+            "severity": "note",
+            "origin": "",
+            "issue": "target_repo_name uses os.path.relpath, which raises ValueError when --target is on a different drive. The result is a traceback, not REFUSED (still exit 1, before any write). Cosmetic."
+          },
+          {
+            "file": "graph_agents/.graph/orchestra-sync/sync.py",
+            "line": 422,
+            "severity": "note",
+            "origin": "",
+            "issue": "fleetview is counted three times per occurrence: denylist, app-id and sibling-repo. 'leak hits: 181' overstates the number of distinct spans s2/s3 must handle. Cosmetic."
+          }
+        ]
+      }
+    },
+    "s2": {
+      "written_by": "reviewer",
+      "verdict": "REJECT",
+      "attempt": 1,
+      "summary": "Re-ran done_when on 1bda28a: --verify-upstream 0adbe2a exit 0 (23/23 identical), --check --scope md exit 0 (0 leaks, all pinned, 0 orphans, refs resolved), 16/16 test_*.py green. Diff is insertions-only (229) inside the 11 approved files; no .py, payload.json or leak_allow touched; commit is njcurtis3 with no trailers. I rendered the md payload via sync.render_all into a scratch dir and read all 10 files as an end user. 31 of 32 replacements are correct and self-consistent (scout-registry, ops-native-intro, graph-portfolio, fg-launch and cr-intro-anecdote included). REJECT on the deferred spans. scout.md:19-24 and GRAPH.md:278-281 still say the collector prints 'the registry entry' and 'the stack the registry claims'. scout.md:45-49 gates native-fact collection on 'the app's `ui`', a registry field Orchestra lacks. s3's approved files hold no .md, so the 'depends on s3' deferral cannot happen and s4 would ship these lines. The builder dropped `ui` from ops-native-intro, so it knew `ui` was umbrella-only. Notes: GRAPH.md:332 new-app gate; the dated changelog lines are harmless; YAML-comment markers in the frontmatter need a fresh-session check.",
+      "findings": [
+        {
+          "severity": "blocker",
+          "origin": "builder",
+          "file": "graph_agents/.claude/agents/scout.md",
+          "line": "45-49",
+          "issue": "Native-apps rule still gated on `the app's `ui` includes native-mobile or native-desktop`. `ui` is a portfolio registry field (scout-facts.py:227 derives the native line from registry ui); Orchestra ships no registry. Input: an Orchestra user's Expo project. Result: the scout finds no `ui` anywhere, so the rule never fires and runtimeVersion/eas.json/channel facts are never collected. Every other native bar (architect, builder, reviewer) was dropped, and ops.md's Native apps section is now unconditional, so nothing upstream of ops gathers those facts. The builder rewrote ops-native-intro to remove exactly this `ui` gate, so leaving the scout copy is inconsistent, not a dependency.",
+          "fix": "Mark 45-49. Pin an alternate that keys on what is on disk, e.g. 'When the project is an Expo app (app.json/app.config.*, eas.json) or a Tauri app (src-tauri/), collect ...', and drop the trailing 'Inert for any other `ui` value'."
+        },
+        {
+          "severity": "blocker",
+          "origin": "builder",
+          "file": "graph_agents/.claude/agents/scout.md",
+          "line": "19-24",
+          "issue": "Step 0 tells the scout the collector returns 'the registry entry' and 'the stack observed on disk versus the one the registry claims', that 'anything it prints is established', and that '`--all` covers every app'. s3's approved alternate for scout-facts is 'no registry, report repo facts for the project root', so in Orchestra none of that output exists. A haiku scout told to treat a nonexistent registry comparison as established will report it missing, or hunt for it. builders.s2.notes defers this to s3, but s3's approved file set has no .md, and guard-builder-scope would deny s3 the edit. s4 syncs after s3, so this text ships permanently. The semantics were fixed at the gate, so s2 had what it needed to write the alternate now.",
+          "fix": "Mark 19-24. Pin an alternate listing only the repo facts: git repo or not, branch/HEAD/dirty, commit identity, entry docs present, stack observed on disk. Drop the registry and --all clauses."
+        },
+        {
+          "severity": "blocker",
+          "origin": "builder",
+          "file": "graph_agents/GRAPH.md",
+          "line": "278-281",
+          "issue": "Same as scout.md:19-24: the scout-facts description lists 'registry entry' and 'stack on disk vs. stack claimed'. Same reason it cannot wait for s3.",
+          "fix": "Mark it and pin an alternate without the registry entry or the 'claimed' comparison."
+        },
+        {
+          "severity": "note",
+          "origin": "architect",
+          "file": "graph_agents/.claude/agents/scout.md:16, graph_agents/.claude/skills/feature-graph/SKILL.md:26,93",
+          "issue": "`scout-facts.py <app-id>` and 'the app id' stay in the prose, and fg-app-registry redefines app as 'the project's name'. Whether Orchestra's scout-facts accepts an argument is s3's CLI decision, which s2 could not see. The plan split prose and code across slices without pinning the CLI contract between them.",
+          "fix": "When s3 lands, confirm the rendered scout-facts accepts (or ignores) one positional argument. If it does not, these three lines need markers, which only an s2-scoped re-attempt can add."
+        },
+        {
+          "severity": "note",
+          "origin": "",
+          "file": "graph_agents/GRAPH.md",
+          "line": "332",
+          "issue": "Human-gate list keeps 'before creating a new app — a new repo is a long-term maintenance commitment'. That is the portfolio/new-app meaning, and it has no referent in a single-project install. It is harmless as advice, but it is umbrella meaning the denylist cannot see.",
+          "fix": "Optional: mark it and drop it."
+        },
+        {
+          "severity": "note",
+          "origin": "",
+          "file": "graph_agents/.claude/skills/feature-graph/SKILL.md",
+          "line": "122,242,272,276,285,303,319; GRAPH.md 126,205,264",
+          "issue": "Dated changelog notes (Added/closed/superseded 2026-08-26, since 2026-09-09, observed/Measured 2026-09-03) ship. Each is a true statement about when a mechanism arrived, and none is an instruction, so they are noise, not misdirection. The only one an end user might act on is 'Runs opened before 2026-08-26 carry no stamps … not retro-fitted'. It cannot apply to a fresh install, and it is still true of the code.",
+          "fix": "None required. Optionally strip them in a later prose pass."
+        },
+        {
+          "severity": "note",
+          "origin": "",
+          "file": "graph_agents/.claude/skills/feature-graph/SKILL.md:2-4, graph_agents/.claude/skills/rlm/SKILL.md:2-4",
+          "issue": "`# umbrella:begin/end` lines now sit inside the YAML frontmatter the umbrella loads live. They are valid YAML comments, and --verify-upstream only proves the marker-stripped text. Nothing here verified that Claude Code's frontmatter parser still yields the description.",
+          "fix": "In the fresh session after this run, confirm /feature-graph and /rlm still list with their descriptions."
+        },
+        {
+          "severity": "note",
+          "origin": "",
+          "file": "graph_agents/.claude/skills/rlm/SKILL.md",
+          "line": "3",
+          "issue": "rlm-desc keeps 'a scout or audit'. Read generically it is fine, but in the umbrella it meant audit-fleet. Harmless.",
+          "fix": "None required."
+        }
+      ],
+      "attempt_2": {
+        "written_by": "reviewer",
+        "verdict": "PASS",
+        "attempt": 2,
+        "summary": "Re-ran done_when on 55049a1: --verify-upstream 0adbe2a exit 0 (23/23 identical), --check --scope md exit 0 (0 leaks, all pinned, 0 orphans, refs resolved), 16/16 test_*.py green. Diff master...s2 is 275 insertions, 0 deletions, in the 11 approved files; no .py, payload.json or leak_allow; both commits njcurtis3, no trailers. I rendered the md payload with sync.render_all into scratch and grepped it for registry, `ui`, app id, app-id, --all, claimed and portfolio. The only hits are the bare `python @FLEET@/.graph/scout-facts.py` invocations, and they match the no-arg contract. All three attempt-1 blockers are fixed. Scout step 0 and GRAPH.md 278 describe exactly branch/HEAD/dirty/identity/observed stack/native-on-disk, with no registry, entry docs, --all or --json. The scout native rule is keyed on the `native:` line, and fg-brief-app and the new-app gate are resolved. PyYAML parses the frontmatter of both umbrella SKILL.md files (markers as comments) and of all 9 rendered files, and each yields name plus the full description. PASS. Two notes are left for s3 to keep the prose true.",
+        "findings": [
+          {
+            "severity": "note",
+            "origin": "",
+            "file": "graph_agents/.claude/agents/scout.md",
+            "line": "26-27",
+            "issue": "Shipped scout step 0 still says 'see the script's own docstring for the two scout facts that were checked and had rotted'. The umbrella scout-facts.py docstring (lines 10-30) tells that story in terms of graph_agents/ and repos/, which the leak gate will force s3 to rewrite. If s3 drops the anecdote, this pointer dangles.",
+            "fix": "s3: keep a generic 'why a script, not a cache' passage with the two-rotted-facts point in the shipped docstring, or a later slice marks this sentence."
+          },
+          {
+            "severity": "note",
+            "origin": "",
+            "file": "graph_agents/.claude/skills/feature-graph/SKILL.md",
+            "line": "30-31",
+            "issue": "Shipped prose quotes the collector's exact output `NOT A GIT REPO -> diamond forced to single-loop` (umbrella scout-facts.py:287) and says 'per-repo commit identity'. The quoted string is now a contract s3's code must print verbatim. 'per-repo' is harmless wording for a single-project install.",
+            "fix": "s3: preserve the exact NOT A GIT REPO line."
+          },
+          {
+            "severity": "note",
+            "origin": "",
+            "file": "graph_agents/.claude/skills/rlm/SKILL.md",
+            "line": "3",
+            "issue": "Carried over from attempt 1: the rendered description keeps 'a scout or audit'. It reads generically for end users. Harmless."
+          }
+        ]
+      }
+    },
+    "s3": {
+      "written_by": "reviewer",
+      "verdict": "REJECT",
+      "attempt": 1,
+      "summary": "I re-ran done_when on ea69beb. --verify-upstream 0adbe2a exits 0 (23/23), --check --scope all exits 0 with every gate green, and 16/16 test_*.py pass. The diff is 401+/2- in 13 approved files, the code changes are marker lines only, payload.json only fills dropped_hooks, leak_allow is empty, and the commit is njcurtis3 with no trailers. The live umbrella guard still denies out-of-scope Write and Bash (cd) in this run, and record-activity is logging. I rendered the payload to scratch. My own grep found no username, home path, email, registry or repo names. settings.json is valid and its 6 hooks all ship. Shipped scout-facts matched the contract in Expo, Tauri, subdir, non-repo and stray-arg cases. Shipped close-run resolved `.` as the project root. Shipped guard denies outside writes and its fallback base is the project root. REJECT: in a temp git project the shipped guard DENIES a builder's Write and Bash to an APPROVED `src/a.py` from a linked worktree. The cause is the umbrella rule that a plan entry's first segment is the repo. Diamond mode, the default for a git project, would block every builder in orchestra. The fix belongs in s3's own file.",
+      "findings": [
+        {
+          "severity": "blocker",
+          "origin": "architect",
+          "file": "graph_agents/.claude/hooks/guard-builder-scope.py",
+          "line": "276-288 (rel_map build), 373-377 (in_scope diamond branch)",
+          "issue": "The shipped guard denies every approved builder write from a git worktree, so diamond mode is dead in any single-repo project. I reproduced it on the rendered payload: temp git project proj/ with the fleet at proj/fleet, CURRENT -> r1, approved_by_human true, plan files ['src/a.py','src/new/**'], and `git worktree add .claude/worktrees/s1`. A builder Write to proj/.claude/worktrees/s1/src/a.py gets permissionDecision deny, and so does a Bash `echo x > src/a.py` with cwd at the worktree. The same Write in the main tree is allowed. The cause: approved_paths keys rel_map by UMBRELLA/<first segment> ('proj/src', rel 'a.py'), because in the umbrella every first segment is its own repo. worktree_context returns the real main repo root ('proj', rel 'src/a.py') and never matches. A one-segment entry like 'README.md' gets no rel_map entry at all. The s3 alternates gbs-repo-segment and gbs-doc-worktree only reword the comment ('when each top-level directory owns its own repo'). That writes down an assumption that is false in every project the payload ships to, and leaves the code that depends on it unchanged. The architect's intent listed only scout-facts and close-run as behavioural swaps and missed this third place where the umbrella layout dangles.",
+          "fix": "Mark the rel_map construction (lines 284-288) and give it a code alternate. For the shipped project, the repo is the project root: root = norm(UMBRELLA), rel = the whole entry_path, and a single-segment entry is included. Keep the umbrella render identical. Add a shipped-render check (in test_sync or the smoke) that a worktree Write to an approved path is allowed and an unapproved one is denied. Note: run it with TEMP/TMP/TMPDIR pointed away from the fixture, because transient_roots() exempts anything under the system temp dir, which otherwise hides Bash results."
+        },
+        {
+          "severity": "note",
+          "origin": "",
+          "file": "graph_agents/.graph/scout-facts.py",
+          "line": "_dir_native (src-tauri check)",
+          "issue": "The ruling names src-tauri/tauri.conf.json as the evidence. The shipped code fires native-desktop on a bare `src-tauri/` dir: an empty src-tauri/ in a fresh repo printed `native-desktop at . (src-tauri/ dir)`. A real Tauri app prints the same evidence string, because the walk skips src-tauri and never names the conf file. This was already the umbrella's behaviour, a bare src-tauri is near-certain evidence, and the scout then reads tauri.conf.json anyway, so it is acceptable. If the contract wording is meant strictly, check src-tauri/tauri.conf.json (and .json5/Tauri.toml)."
+        },
+        {
+          "severity": "note",
+          "origin": "",
+          "file": "graph_agents/.graph/scout-facts.py",
+          "line": "render() git line",
+          "issue": "In a repo with no commits the branch reads `HEAD` (`git: HEAD @ no commits yet`), because `rev-parse --abbrev-ref HEAD` fails there. `git symbolic-ref --short HEAD` would give the real branch name. Cosmetic."
+        },
+        {
+          "severity": "note",
+          "origin": "",
+          "file": "graph_agents/.claude/hooks/guard-builder-scope.py, graph_agents/.graph/verify-state.py, graph_agents/.graph/close-run.py, graph_agents/.graph/brief.py, graph_agents/.claude/hooks/record-activity.py",
+          "line": "rendered: gbs 82/159, vs 114-115/345/353, cr 10/74/120, brief 9/17/390, ra 233/285",
+          "issue": "The rendered payload still carries umbrella run ids and incident dates: 2026-08-26-archive-adapters, 2026-08-25-refuge-freshness, 2026-08-25-fleet-hardening, 2026-09-04-payload-split, 2026-09-06-bash-write-guard, 2026-09-02-date-accuracy. None hits the denylist ('archive' is stoplisted), and none names the owner, a path or a repo. 'archive-adapters' does point at the personal-archive work in meaning, but only to a reader who already knows. These are below the bar the slice set (denylist-driven). They are listed in case the owner wants the shipped history fully anonymous."
+        }
+      ],
+      "attempt_2": {
+        "written_by": "reviewer",
+        "verdict": "PASS",
+        "attempt": 2,
+        "summary": "PASS. I rendered the payload to scratch and reproduced the attempt-1 case: a git project with the fleet at proj/fleet, plan src/a.py, src/new/** and README.md, and a .claude/worktrees/s1 worktree. Worktree Write, glob, one-segment entry and Bash redirect to approved paths are all allowed. src/b.py is denied in the worktree and the main tree. Nothing I tried opened the guard: a worktree outside the project behaves correctly, another repo's worktree is denied, src/../b.py and a Bash ../ redirect are denied, SRC/A.py is allowed on Windows while SRC/B.py is denied, and src2/ is denied. 22 cases, 0 wrong. I restored the old first-segment mapping in a scratch clone and test_sync failed exactly the 3 approved-worktree cases (rc=1), so the test discriminates. The test_sync.py diff only adds lines, matching scope_exceptions. Umbrella code changes are marker-only and --verify-upstream 0adbe2a is identical 23/23. --check --scope all exit 0, 16/16 tests pass. The live guard denies out-of-scope Write and Bash. The render has 0 dated run ids. Empty-repo scout-facts prints the real branch. No leak_allow, no attribution. Notes only.",
+        "findings": [
+          {
+            "severity": "note",
+            "origin": "builder",
+            "file": "graph_agents/.claude/hooks/guard-builder-scope.py",
+            "line": "module docstring, span gbs-doc-worktree (rendered ~23)",
+            "issue": "The shipped docstring still says 'The repo is taken to be a plan entry's first path segment, which holds where each top-level directory is its own repo'. The shipped code (alternate gbs-rel-map) now keys the project root and uses the whole entry. The prose contradicts the code and describes the exact rule that was the attempt-1 blocker. Behaviour is unaffected.",
+            "fix": "Reword the gbs-doc-worktree alternate: the repo is the project root and the whole plan entry is the repo-relative path. The pin is unchanged because the umbrella span is unchanged."
+          },
+          {
+            "severity": "note",
+            "origin": "",
+            "file": "graph_agents/.graph/orchestra-sync/payload.json",
+            "line": "denylist run-id",
+            "issue": "The run-id pattern also matches a hyphenated ISO date range: leak_scan reports [run-id] for '2026-09-19-2026-09-20'. Bare dates, '2026-09-19,', 'T10:00' datetimes, 'v2026-01-01-1' and semver do not match. A false positive fails closed, so the sync refuses. No shipped text contains such a range today.",
+            "fix": "Optional: require a letter after the date, e.g. 20\\d\\d-\\d\\d-\\d\\d-[a-z][a-z0-9-]*."
+          },
+          {
+            "severity": "note",
+            "origin": "",
+            "file": "graph_agents/.graph/verify-state.py",
+            "line": "rendered ~345",
+            "issue": "The rendered text still reads 'Found 2026-08-26 by run `archive-adapters`'. That is an undated run name, so the run-id regex misses it, and 'archive' is stoplisted. This is the same class of leak attempt 1 noted. Only the dated forms were removed.",
+            "fix": "Optional: mark that line too if the shipped history should be fully anonymous."
+          },
+          {
+            "severity": "note",
+            "origin": "",
+            "file": "graph_agents/.graph/orchestra-sync/test_sync.py",
+            "line": "shipped_guard_worktree.verdict",
+            "issue": "verdict() treats any stdout without '\"deny\"' as allow, so a hook that crashed silently would pass the allow cases. The guard fails closed with a printed deny, so this misses nothing today.",
+            "fix": "Optional: also assert returncode == 0."
+          }
+        ]
+      },
+      "attempt_3": {
+        "verdict": "PASS",
+        "attempt": 3,
+        "written_by": "reviewer",
+        "commit": "e0e7897",
+        "summary": "PASS. Diff master...orchestra-sync-s3-fix is 13+/2-, all in brief.py, verify-state.py and alternates/code.md. The only deletions are the two reworded alternate lines. Umbrella code gains marker lines only and sync.py is untouched. I re-ran: --verify-upstream 0adbe2a identical 23/23, --check --scope all exit 0 with every gate green, and 16/16 test_*.py pass. I rendered to scratch, not orchestra/. The render has no 'archive' or 'adapters'. verify-state reads 'Found by an early run'. brief.py's example is '<run-id> | myapp' with goal 'Fix the date shown on the settings page'. The guard docstring now says the repo is the project root, which matches the shipped rel_map at 263-272 and in_scope. My own case-insensitive sweep covered 17 run slugs, their words of 5+ letters, 12 sibling dirs plus stems, and domain terms. Zero hits on any slug, sibling name or stem, or season, regulation, refuge, podcast, whoop, health, medication or readwise. The remaining hits are fleet vocabulary: orchestrator, review, write, stack, 'hunting'. Two hits match by text and are cleared by meaning (notes). Author njcurtis3, no attribution.",
+        "findings": [
+          {
+            "severity": "note",
+            "origin": "",
+            "where": "graph_agents/.claude/hooks/bash_write_targets.py:rendered 1287 (_looks_like_a_path docstring)",
+            "what": "`feat/bash-write-guard` appears as an example branch name, and the text matches umbrella run slug 2026-09-06-bash-write-guard. Not a leak: it names a fleet feature that ships in the payload and says nothing about any sibling app, the owner or a path. Listed only because the sweep matched it."
+          },
+          {
+            "severity": "note",
+            "origin": "",
+            "where": "rendered SOURCE:2",
+            "what": "\"upstream_repo\": \"graph_agents\" is a sibling-dir name in the render. It is intended provenance for the vendored fleet (s1's manifest). It is not app information, so it is not a leak."
+          },
+          {
+            "severity": "note",
+            "origin": "",
+            "where": "rendered: guard-builder-scope.py 37/66/286/621, record-activity.py 30/39/49/242/284, verify-state.py 11/108/217/237/262/412/442/542, feature-graph SKILL.md, GRAPH.md, rlm.py, check-return-cap.py",
+            "what": "35 bare incident dates and 'gap #N' references remain. None is a run id and none carries an app or domain word, so they are not leaks under the denylist or by meaning. Attempt 2 already accepted this. Listed so the owner can see they remain."
+          },
+          {
+            "severity": "note",
+            "origin": "",
+            "where": "graph_agents/.claude/hooks/guard-builder-scope.py:rendered 237/244",
+            "what": "The example `myapp/apps/mobile/**` is a generic monorepo layout with a placeholder app name. It does not hint at a sibling. Not a leak."
+          },
+          {
+            "severity": "note",
+            "origin": "",
+            "where": "graph_agents/.claude/hooks/guard-builder-scope.py:rendered 23-26",
+            "what": "The docstring is now accurate. One cosmetic issue: the alternate leaves a short line, 'If that ever stops being true the', before the original wrap continues. Behaviour is unaffected."
+          }
+        ]
+      }
+    },
+    "s4": {
+      "written_by": "reviewer",
+      "verdict": "REJECT",
+      "attempt": 1,
+      "summary": "REJECT. Re-ran done_when myself: graph_agents clean for the payload paths at 0fca600; sync --dry-run and --check both 'no changes'/'nothing written' with leak 0, 6/6 hooks resolve, py_compile ok; --verify-source 'SOURCE matches HEAD'; orchestra HEAD cd6e591, nothing staged, status -uall shows only the 23 payload files + SOURCE under fleet/, README.md diff-quiet. Re-hashed every landed file against SOURCE (all 23 match, no extras). Read all 24 files in full. Blocker: fleet/.graph/verify-state.py:345 still says 'Found 2026-08-26 by run `archive-adapters`' - the personal-archive run (whoop/github/readwise adapters) that this same sync scrubbed from guard-builder-scope, brief.py and close-run; the leak gate misses it because the run-id regex needs a date prefix and 'archive' is stoplisted. Note: brief.py:10 example goal is the huntstack date-accuracy goal verbatim (season dates / regulation) though its run line was scrubbed. SOURCE's -05:00 offset and upstream_repo graph_agents are notes, not blockers: git commit metadata already carries the tz, and Orchestra's committed README/CLAUDE.md already name graph_agents. Fix upstream (alternate), re-sync.",
+      "findings": [
+        {
+          "file": "orchestra/fleet/.graph/verify-state.py",
+          "line": 345,
+          "issue": "Run name `archive-adapters` (upstream run 2026-08-26-archive-adapters, app personal-archive: whoop/github/readwise adapters) lands verbatim in a file bound for the public Orchestra repo. The same identifier was deliberately scrubbed by alternates in guard-builder-scope.py (gbs-gap14-origin), brief.py (brief-old-reviews) and close-run.py (cr-target-repo), so this is an inconsistent scrub, not a policy choice. Upstream graph_agents/.graph/verify-state.py:358 has no umbrella marker around it. Fix: wrap that docstring line in an umbrella marker with a generic alternate ('Found by the first run to reach fan-in.'), commit upstream, re-run sync.",
+          "severity": "blocker",
+          "origin": "builder"
+        },
+        {
+          "file": "graph_agents/.graph/orchestra-sync/payload.json",
+          "line": 0,
+          "issue": "Why the leak gate reported 0 hits on the above: the `run-id` denylist regex requires a yyyy-mm-dd- prefix, so an undated run slug passes, and `archive` is in stem_stoplist, so the personal-archive stem is never a term. Suggest the gate also derive terms from the slugs of graph_agents/.graph/runs/* (read live, like sibling names), which would have caught this and any future undated run reference. Not required to clear this REJECT; the verify-state alternate is.",
+          "severity": "medium",
+          "origin": "architect"
+        },
+        {
+          "file": "orchestra/fleet/.graph/brief.py",
+          "line": 10,
+          "issue": "Example board's goal line is the real huntstack run 2026-09-02-date-accuracy goal, near-verbatim ('Fix the UTC off-by-one so season dates render the day the regulation says'), while the line above it was scrubbed to '<run-id> | myapp'. Meaning-level hint at a sibling app's domain (hunting-season regulations); low information, but the scrub was evidently intended. Recommend a neutral example goal in the same fix pass.",
+          "severity": "low",
+          "origin": "builder"
+        },
+        {
+          "file": "orchestra/fleet/SOURCE",
+          "line": 4,
+          "issue": "upstream_commit_date carries -05:00 and upstream_repo is 'graph_agents'. Not a blocker: every commit the owner pushes to Orchestra already exposes the same tz offset in git author/committer dates, and Orchestra's committed fleet/README.md and CLAUDE.md already name graph_agents (and ../graph_agents) publicly. If the owner wants no tz in tracked content, normalise to UTC (Z) in sync.py.",
+          "severity": "note",
+          "origin": ""
+        },
+        {
+          "file": "orchestra/fleet/.claude/hooks/guard-builder-scope.py",
+          "line": 22,
+          "issue": "Docstring still says 'The repo is taken to be a plan entry's first path segment, which holds where each top-level directory is its own repo', but the rendered rel_map code (lines 264-271) now treats the whole entry as project-relative. Stale prose, behaviour is correct for a single-repo project. Also: UMBRELLA = dirname(FLEET) assumes @FLEET@ is exactly one level below the project root; true for orchestra/fleet, worth stating at install time. Ruled-acceptable identifiers `UMBRELLA` and the '/c/Users' MSYS example (line 104) are present as expected.",
+          "severity": "note",
+          "origin": ""
+        },
+        {
+          "file": "orchestra/fleet/.graph/rlm.py",
+          "line": 94,
+          "issue": "Prose references a test suite not shipped in the payload (rlm.py 'The test suite runs entirely under it'; bash_write_targets.py 'the spelling sweep in the suite'). Harmless; noted only because done_when included 'no file references a path that isn't shipped' and these are references to things, not paths.",
+          "severity": "note",
+          "origin": ""
+        },
+        {
+          "file": "orchestra/fleet/README.md",
+          "line": 20,
+          "issue": "Untouched as required (diff --quiet rc 0), but its last line 'Empty until the first sync. The sync tool is being built separately, upstream.' becomes false the moment this lands. The owner may want to edit it in the same Orchestra commit; README.md is unmanaged so the sync will not.",
+          "severity": "note",
+          "origin": ""
+        }
+      ],
+      "attempt_2": {
+        "written_by": "reviewer",
+        "verdict": "PASS",
+        "attempt": 2,
+        "summary": "PASS. Re-ran done_when myself: graph_agents payload paths clean at 506afe9; sync --dry-run 'no changes' (leak 0, 6/6 hooks, sibling imports, py_compile, smoke all ok); --verify-source 'SOURCE matches HEAD' (506afe9); orchestra HEAD cd6e591, nothing staged, status -uall = the 23 payload files + SOURCE only; README diff-quiet rc 0. Re-hashed every file against SOURCE: all match, no extras, no missing. Attempt-1 blocker gone (verify-state.py:345 now 'Found by an early run, the first to reach fan-in.'); brief.py example goal now neutral; guard docstring (lines 20-27) matches the project-root rel_map at 262-271. Read all 24 files and swept by term and meaning for owner identity, home paths, sibling names/stems, every run slug and its words, sibling-domain hints, TelosRG/LLC, umbrella concept, dated run ids, incident anecdotes: no leak; anecdotes are de-identified ('one run'), dates are bare changelog dates. No umbrella markers survive. Notes only. CAUTION: my own py_compile check left two untracked __pycache__ dirs in orchestra/fleet (relative paths only); they must be removed before the next sync, which now REFUSES on them.",
+        "findings": [
+          {
+            "file": "orchestra/fleet/.claude/hooks/__pycache__/ and orchestra/fleet/.graph/__pycache__/",
+            "line": 0,
+            "severity": "action-required (reviewer artifact, not a defect in the slice)",
+            "issue": "Created by THIS review's `python -m py_compile` loop at 2026-10-09 17:15:29-30 (11 .pyc files). Not git-ignored in orchestra (no root .gitignore), so they sit under the untracked fleet/ dirs, and `sync.py --dry-run` now REFUSES with 'extra file in target not in SOURCE' for each. co_filename in each is relative ('./.graph/brief.py' etc.), so no home path is embedded. Reviewer was forbidden to delete in orchestra/; the orchestrator or owner must `rm -rf orchestra/fleet/.claude/hooks/__pycache__ orchestra/fleet/.graph/__pycache__` before the owner's `git add fleet/` and before any re-sync.",
+            "origin": ""
+          },
+          {
+            "file": "graph_agents/.graph/orchestra-sync/sync.py",
+            "line": 680,
+            "severity": "note",
+            "issue": "Seam: check_target refuses on ANY extra file under the target, and the shipped scripts load siblings via import/spec_from_file_location, which writes __pycache__ beside them. Running any shipped script in place under orchestra/fleet (a py_compile check, an Orchestra test, a hook) therefore breaks the next sync and drops untracked .pyc into the public repo's status; in normal use the .pyc co_filename is absolute (verified in scratchpad: C:/Users/<user>/...), i.e. a home path if ever committed. Same for .graph/CURRENT and .graph/runs/<id>/ (verified: sync --dry-run --target <copy> REFUSED on both). Not a REJECT: the architect's design_notes declare orchestra/fleet a template that is never run in place, with run state written to the installed copy. Cheap hardening: ship a fleet/.graph/.gitignore and .claude/hooks/.gitignore for __pycache__/, or have target_files skip __pycache__.",
+            "origin": "architect"
+          },
+          {
+            "file": "orchestra/fleet/.claude/hooks/bash_write_targets.py",
+            "line": 1287,
+            "severity": "note",
+            "issue": "Example branch name `feat/bash-write-guard` matches the fleet's own run slug 2026-09-06-bash-write-guard. Fleet-internal and generic-reading; no sibling or owner information. Leave or genericise at the owner's taste.",
+            "origin": ""
+          },
+          {
+            "file": "orchestra/fleet/.claude/hooks/record-activity.py",
+            "line": 233,
+            "severity": "note",
+            "issue": "De-identification left 'That is not hypothetical here. one run's log line 1225 reads' with a lowercase sentence start (also close-run.py:80, record-activity.py:285 'one run'). Cosmetic only; content carries no identifying detail.",
+            "origin": ""
+          },
+          {
+            "file": "orchestra/fleet/SOURCE",
+            "line": 4,
+            "severity": "note",
+            "issue": "Carried from attempt 1 and unchanged by ruling: -05:00 offset in upstream_commit_date and upstream_repo 'graph_agents'. Also accepted per ruling: `UMBRELLA` identifier in guard-builder-scope/brief/close-run (incl. guard docstring line 23) and the '/c/Users' MSYS example at guard-builder-scope.py:105.",
+            "origin": ""
+          },
+          {
+            "file": "orchestra/fleet/README.md",
+            "line": 20,
+            "severity": "note",
+            "issue": "Still says the fleet is empty until the first sync (unmanaged, untouched as required). Owner may want to edit it in the same Orchestra commit.",
+            "origin": ""
+          }
+        ]
+      }
+    }
+  },
+  "integrator": {
+    "written_by": "the node that wrote this key - here, always the string integrator",
+    "merged": [],
+    "conflicts": [],
+    "verification": "what command proved it works, and its output"
+  },
+  "ops": {
+    "written_by": "the node that wrote this key - here, always the string ops",
+    "gated": true,
+    "actions": []
+  },
+  "log": [
+    "orchestrator: opened run 2026-10-09. Pre-flight: graph_agents is a git repo (clean, HEAD 0adbe2a). Target is a one-way sync tool graph_agents -> orchestra/fleet/; if the plan edits .claude/agents/** or .claude/skills/**, shape is forced single-loop.",
+    "orchestrator: scout verified (15 facts, 15/15 self-tests green). Read facts: prose is not path-only (feature-graph 21 path refs/13 incidents), run state lives in the fleet tree, hooks resolve via CLAUDE_PROJECT_DIR. Goal survives but sync needs a portability layer, not a path rewrite. Spawning architect.",
+    "orchestrator: architect verified. single-loop (forced: s2 edits agents/skills), 4 slices all high, option (c) markers+pinned alternates+leak check+@FLEET@ token. Presenting at human gate.",
+    "orchestrator: HUMAN GATE passed 2026-10-09 - owner said 'approve' to all five points (option c, Reading 2, payload in/out, refusal reading, s4 uncommitted write into orchestra/fleet). Starting s1.",
+    "orchestrator: reviews.s1 attempt 1 REJECT (2 blockers windows/gitbash path leaks, 2 majors unregistered repo names + include traversal). Sent back to s1 builder; denylist directed to read sibling dir names live. Re-review will be a fresh reviewer writing attempt_2.",
+    "orchestrator: reviews.s1 attempt_2 PASS (1 minor: case/space variants of sibling names; notes: leak_allow without match is wholesale). Merged orchestra-sync-s1 into master at 76e5cae (no-ff, clean). Starting s2; s2/s3 builders told never to leak_allow personal-data patterns wholesale.",
+    "orchestrator: reviews.s2 attempt 1 REJECT (3 blockers: scout.md native gate on registry ui, scout.md + GRAPH.md describe registry output). Root cause architect: prose/code split without a pinned CLI contract. Orchestrator ruling recorded and sent to s2 and to be given to s3: shipped scout-facts takes no app id, reports project-root facts, prints `native:` only from on-disk evidence (expo in package.json/app.json; src-tauri/tauri.conf.json); no registry, no --all.",
+    "orchestrator: reviews.s2 attempt_2 PASS (notes: scout.md points to scout-facts docstring which s3 must keep valid; feature-graph quotes 'NOT A GIT REPO -> diamond forced to single-loop' which s3 must print verbatim). Merged orchestra-sync-s2 into master at d3dbd62. Starting s3 with the CLI contract + those two constraints.",
+    "orchestrator: reviews.s3 attempt 1 REJECT (blocker, origin architect: shipped guard maps plan's first segment to a repo -> denies all worktree builder writes in a single-repo project). Sent back with: fix rel_map to project-root keying + regression check; drop umbrella run-ids from shipped comments and add a run-id leak pattern; symbolic-ref fallback. src-tauri bare-dir accepted.",
+    "orchestrator: s3 fix_attempt_1 committed 95677f2. Recorded scope_exception for s3 touching s1's test_sync.py (add-only, at orchestrator's request). Spawning fresh reviewer attempt_2.",
+    "orchestrator: reviews.s3 attempt_2 PASS (22/22 guard cases; regression test proven to discriminate; note: shipped guard docstring span gbs-doc-worktree still describes first-segment rule). Merged orchestra-sync-s3 into master at 0fca600. Payload paths clean, orchestra clean. Starting s4.",
+    "orchestrator: builders.s4 stopped on 11 leak-sweep hits. Orchestrator ruling: all 11 accepted as non-leaks - 10 are the code identifier UMBRELLA (now the project-root variable), 1 is a generic '/c/Users' MSYS example with no username. No personal data, no sibling names, no paths. Owner can overrule at commit time. Asked s4 builder to record ruling and set status done.",
+    "orchestrator: reviews.s4 attempt 1 REJECT (blocker: undated run slug 'archive-adapters' in shipped verify-state.py; gate misses undated slugs + stoplisted 'archive'). Fix belongs to s3's files, so s3 reopened on branch orchestra-sync-s3-fix (also: neutral brief.py example goal, guard docstring, manual sweep of all run slugs + stoplisted stems). Gate improvement (live run-slug terms in sync.py) deferred as follow-up. Plan: s3-fix -> fresh reviewer reviews.s3.attempt_3 -> merge -> s4 re-sync -> fresh reviewer reviews.s4.attempt_2.",
+    "orchestrator: reviews.s3 attempt_3 PASS. Merged orchestra-sync-s3-fix into master at 506afe9. Sending s4 builder to re-sync orchestra/fleet from the new HEAD.",
+    "orchestrator: reviews.s4 attempt_2 PASS. Reviewer's py_compile left 11 untracked .pyc in orchestra/fleet/{.claude/hooks,.graph}/__pycache__ (sync refused on them); orchestrator inspected (only .pyc, untracked, created by this run) and removed both dirs. sync --dry-run: no changes; --verify-source: SOURCE matches HEAD 506afe9. orchestra/fleet left uncommitted for owner. Proceeding to /close-run.",
+    "orchestrator: CLOSED 2026-10-09. close-run.py exit 0. Shape single-loop (forced: s2 edited agents/skills). s1 sync tool (merge 76e5cae), s2 prose markers (d3dbd62), s3 code markers (0fca600) + s3-fix reopened after s4 review found 'archive-adapters' leak (506afe9). s4 synced 24 files into orchestra/fleet at upstream 506afe9, UNCOMMITTED for owner review. Every slice looped once (s3 twice). Deferred, not dropped: leak gate does not derive terms from undated run slugs (caught by human-style review only); SOURCE carries -05:00 tz; sync refuses on __pycache__ under target (no .gitignore shipped); identifier UMBRELLA kept by orchestrator ruling; orchestra/fleet/README.md 'empty until first sync' line is stale (owner edits). Fresh session required before the next fleet run (agents/skills changed)."
+  ]
+}
