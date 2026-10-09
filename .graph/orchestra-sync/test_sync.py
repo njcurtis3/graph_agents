@@ -104,7 +104,7 @@ class Fx:
         pl = {"include": include if include is not None else sorted(files),
               "token": {"graph_agents": "@FLEET@"}, "denylist": REAL_PAYLOAD["denylist"],
               "leak_allow": leak_allow or [], "prose_ok_prefixes": [".graph/CURRENT", ".graph/runs/"],
-              "dropped_hooks": []}
+              "dropped_hooks": [], "stem_stoplist": REAL_PAYLOAD["stem_stoplist"]}
         put(self.up, ".graph/orchestra-sync/payload.json", json.dumps(pl, indent=2))
         put(self.up, ".graph/orchestra-sync/alternates/prose.md", prose)
         put(self.up, ".graph/orchestra-sync/alternates/code.md", code)
@@ -206,6 +206,64 @@ def main():
 
     fx = Fx(prose=GOOD_PROSE, leak_allow=[{"file": "x", "pattern": "umbrella", "reason": " "}])
     refuses("leak_allow without a reason refuses", fx, [], "non-empty reason")
+    fx.done()
+
+    # ---- path-shaped leaks (the owner's own home path, in every spelling it takes)
+    BS = chr(92)
+    for label, text in (
+            ("single-backslash Windows path", "C:" + BS + "Users" + BS + "someone" + BS + "Desktop"),
+            ("doubled-backslash Windows path (as inside a Python string or JSON)",
+             "C:" + BS * 2 + "Users" + BS * 2 + "someone" + BS * 2 + "Desktop"),
+            ("forward-slash Windows path", "C:/Users/someone/Desktop"),
+            ("Git Bash /<drive>/Users path", "/c/Users/someone/Desktop"),
+            ("unix home path", "/home/someone/code"),
+            ("Claude project-slug path", "C--Users-someone-Desktop-repos"),
+            ("owner username", "natha")):
+        fx = Fx(files=dict(BASE, **{".graph/brief.py": "# " + text + "\nprint('brief')\n"}), prose=GOOD_PROSE)
+        refuses("leak: %s refuses" % label, fx, [], "REFUSED: leak: .graph/brief.py:1")
+        fx.done()
+
+    # ---- sibling repos under the umbrella root (unregistered ones included)
+    for label, text, needle in (
+            ("unregistered sibling repo name", "see whoop-med-tracker", "sibling-repo:whoop-med-tracker"),
+            ("distinctive stem of a sibling name (s1-whoop)", "the s1-whoop slice", "sibling-stem:whoop"),
+            ("dotted sibling name", "koenrane.xyz", "sibling-repo:koenrane.xyz")):
+        fx = Fx(files=dict(BASE, **{".graph/brief.py": "# " + text + "\nprint('brief')\n"}), prose=GOOD_PROSE)
+        os.makedirs(os.path.join(fx.tmp, "whoop-med-tracker"))
+        os.makedirs(os.path.join(fx.tmp, "koenrane.xyz"))
+        refuses("leak: %s refuses" % label, fx, [], needle)
+        fx.done()
+
+    fx = Fx(files=dict(BASE, **{".graph/brief.py": "# a tracker and an archive; orch is the target\nprint('brief')\n"}),
+            prose=GOOD_PROSE)
+    os.makedirs(os.path.join(fx.tmp, "whoop-med-tracker"))
+    os.makedirs(os.path.join(fx.tmp, "personal-archive"))
+    rc, out = fx.run("--check")
+    check("common-word stems and the target's own repo name are not leaks", rc == 0, out)
+    fx.done()
+
+    # ---- paths in the payload and under the target
+    for bad in ("../escape.md", "/abs.md", "a" + BS + "b.md", "C:/x.md", "a/../b.md"):
+        fx = Fx(prose=GOOD_PROSE)
+        pl = json.load(open(os.path.join(fx.up, ".graph/orchestra-sync/payload.json")))
+        pl["include"].append(bad)
+        fx.edit(".graph/orchestra-sync/payload.json", json.dumps(pl))
+        put(fx.tmp, "escape.md", "outside\n")
+        refuses("include %r refuses" % bad, fx, [], "payload include entry")
+        check("include %r wrote nothing outside fleet/" % bad, not os.path.exists(os.path.join(fx.tgt, "..", "escape.md")))
+        fx.done()
+
+    fx = Fx(prose=GOOD_PROSE)
+    link = os.path.join(fx.tgt, "link")
+    try:
+        os.symlink(fx.up, link, target_is_directory=True)
+        made = True
+    except (OSError, NotImplementedError):
+        made = False
+    if made:
+        refuses("symlink under the target refuses", fx, [], "symlink under target")
+    else:
+        print("  skip symlink under the target refuses (cannot create symlinks here)")
     fx.done()
 
     # ---- self-consistency

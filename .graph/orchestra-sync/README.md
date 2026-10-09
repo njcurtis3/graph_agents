@@ -9,7 +9,7 @@ edit surface: a hand-edit in `orchestra/fleet/` makes the next sync refuse.
 ## Usage
 
 ```
-python graph_agents/.graph/orchestra-sync/sync.py                  # write orchestra/fleet
+python graph_agents/.graph/orchestra-sync/sync.py                  # write orchestra/fleet (default target sits beside graph_agents)
 python graph_agents/.graph/orchestra-sync/sync.py --dry-run        # plan + refusals, write nothing
 python graph_agents/.graph/orchestra-sync/sync.py --check          # every gate, write nothing
 python graph_agents/.graph/orchestra-sync/sync.py --check --scope md
@@ -33,7 +33,11 @@ python graph_agents/.graph/orchestra-sync/sync.py --target <dir>   # default orc
 every literal `graph_agents` to `@FLEET@` (rendered by Orchestra at install time).
 `denylist` + the app ids read live from `portfolio/registry.json` form the leak gate: any
 hit not covered by a `leak_allow` entry (file + pattern name + a reason) refuses. A missing
-registry refuses. Files dropped from `include` are deleted from the target on the next sync.
+registry refuses. The gate also reads the name of every sibling directory of graph_agents under
+the umbrella root live from disk (minus graph_agents and the target's own repo), plus their
+hyphen/dot stems of 5+ letters not in `stem_stoplist`, so unregistered repos are covered; an
+unreadable root refuses. Include entries must be relative forward-slash paths (no `..`,
+backslash, drive letter); symlinks under the target refuse. Files dropped from `include` are deleted from the target on the next sync.
 `README.md` in the target is Orchestra's: never read as payload, never written.
 
 ## Marking umbrella-only spans

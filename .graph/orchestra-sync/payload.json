@@ -1,5 +1,5 @@
 {
-  "$comment": "Allowlist for the graph_agents -> orchestra/fleet sync. Anything not in include never travels. token and denylist are fixed by s1; later slices may only ADD leak_allow entries (file + pattern name + reason) and dropped_hooks names. App ids are NOT here: sync.py reads them live from portfolio/registry.json and refuses without it.",
+  "$comment": "Allowlist for the graph_agents -> orchestra/fleet sync. Anything not in include never travels. token and denylist are fixed by s1 (and its fix pass); later slices may only ADD leak_allow entries (file + pattern name + reason) and dropped_hooks names. App ids are NOT here: sync.py reads them live from portfolio/registry.json and refuses without it. Sibling-repo names under the umbrella root are read live from disk by sync.py; stem_stoplist lists common words that are NOT turned into stem terms.",
   "include": [
     ".claude/agents/architect.md",
     ".claude/agents/builder.md",
@@ -109,11 +109,24 @@
     },
     {
       "name": "abs-path-windows",
-      "regex": "[A-Za-z]:[\\/]+Users[\\/]"
+      "regex": "[A-Za-z]:[\\x5c/]+Users[\\x5c/]+"
+    },
+    {
+      "name": "abs-path-gitbash",
+      "regex": "(?<![A-Za-z0-9_.])/[A-Za-z]/Users/"
     },
     {
       "name": "abs-path-unix",
       "regex": "(?<![A-Za-z0-9_.])/(?:Users|home)/[A-Za-z0-9_.-]+"
+    },
+    {
+      "name": "claude-project-slug",
+      "regex": "(?<![A-Za-z0-9])[A-Za-z]--Users-[A-Za-z0-9_.]+"
+    },
+    {
+      "name": "owner-username",
+      "regex": "(?<![A-Za-z0-9])natha(?![A-Za-z0-9])",
+      "ignore_case": true
     }
   ],
   "leak_allow": [],
@@ -122,5 +135,10 @@
     ".graph/runs/",
     ".graph/worktrees/"
   ],
-  "dropped_hooks": []
+  "dropped_hooks": [],
+  "stem_stoplist": [
+    "tracker",
+    "archive",
+    "personal"
+  ]
 }

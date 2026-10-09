@@ -6,7 +6,7 @@
     python graph_agents/.graph/orchestra-sync/sync.py --check [--scope md|all]
     python graph_agents/.graph/orchestra-sync/sync.py --verify-upstream <commit>
     python graph_agents/.graph/orchestra-sync/sync.py --verify-source <target>
-    python graph_agents/.graph/orchestra-sync/sync.py --target <dir>  default orchestra/fleet
+    python graph_agents/.graph/orchestra-sync/sync.py --target <dir>  default orchestra/fleet beside graph_agents
 
 Run from `repos/`. Stdlib only. README.md in this directory carries the marker grammar and
 the workflow; this docstring is only the shape of the thing.
@@ -34,7 +34,7 @@ import tempfile
 TOOL_VERSION = "1"
 HERE = os.path.dirname(os.path.realpath(__file__))
 DEFAULT_UPSTREAM = os.path.normpath(os.path.join(HERE, "..", ".."))
-DEFAULT_TARGET = os.path.join("orchestra", "fleet")
+DEFAULT_TARGET_REL = os.path.join("orchestra", "fleet")  # beside the upstream, not under the cwd
 SYNC_DIR_REL = ".graph/orchestra-sync"
 UNMANAGED = ["README.md"]
 
@@ -118,6 +118,12 @@ def load_payload(up):
         raise Refusal("payload.json token map must hold exactly one entry")
     p.setdefault("prose_ok_prefixes", [])
     p.setdefault("dropped_hooks", [])
+    p.setdefault("stem_stoplist", [])
+    for rel in p["include"]:
+        if (not isinstance(rel, str) or not rel or rel.startswith("/") or "\\" in rel or re.match(r"^[A-Za-z]:", rel)
+                or ".." in rel.split("/") or "" in rel.split("/") or os.path.isabs(rel)):
+            raise Refusal("payload include entry %r must be a relative forward-slash path with no '..', "
+                          "backslash or drive letter" % (rel,))
     if len(set(p["include"])) != len(p["include"]):
         raise Refusal("payload.json include has duplicates")
     for a in p["leak_allow"]:
@@ -364,11 +370,12 @@ def registry_terms(up):
     apps = reg.get("apps") if isinstance(reg, dict) else None
     if not isinstance(apps, list) or not apps:
         raise Refusal("registry has no apps list: refusing, the denylist would be empty")
-    terms = []
+    terms, seen = [], set()
     for a in apps:
         for key in ("id", "path"):
             v = a.get(key)
-            if isinstance(v, str) and len(v) >= 2:
+            if isinstance(v, str) and len(v) >= 2 and v.lower() not in seen:
+                seen.add(v.lower())
                 terms.append(("app-id:%s" % v, re.compile(
                     r"(?<![A-Za-z0-9_-])%s(?![A-Za-z0-9_-])" % re.escape(v), re.I)))
     for key in ("org", "org_domain", "org_github"):
@@ -378,10 +385,46 @@ def registry_terms(up):
     return terms
 
 
-def leak_scan(up, payload, orch):
-    terms = registry_terms(up)
+def sibling_terms(up, payload, exclude):
+    """Names of every sibling directory of the upstream under the umbrella root, read live.
+
+    The registry omits repos on purpose (personal, vendor), so it cannot be the only source of
+    names. Excludes the upstream itself and the sync target's own repo (`exclude`). Each whole
+    name is a term, plus hyphen/dot/underscore stems of length >= 5 that are not in the
+    payload's stem_stoplist (so 's1-whoop' is caught by 'whoop', 'tracker' is not a term).
+    """
+    root = os.path.dirname(os.path.abspath(up))
+    try:
+        names = sorted(os.listdir(root))
+        dirs = [n for n in names if os.path.isdir(os.path.join(root, n))]
+    except OSError as e:
+        raise Refusal("cannot read the umbrella root %s (%s): the sibling-name denylist would be silently weaker" % (root, e))
+    skip = {os.path.basename(os.path.abspath(up)).lower()} | {e.lower() for e in exclude}
+    stop = {w.lower() for w in payload.get("stem_stoplist", [])}
+    terms, seen = [], set()
+
+    def add(label, word, loose):
+        if word.lower() in seen:
+            return
+        seen.add(word.lower())
+        b = r"(?<![A-Za-z0-9])%s(?![A-Za-z0-9])" if loose else r"(?<![A-Za-z0-9_-])%s(?![A-Za-z0-9_-])"
+        terms.append((label, re.compile(b % re.escape(word), re.I)))
+    for n in dirs:
+        if n.startswith(".") or len(n) < 3 or n.lower() in skip:
+            continue
+        add("sibling-repo:%s" % n, n, False)
+        for stem in re.split(r"[-_.]", n):
+            if len(stem) >= 5 and stem.lower() not in stop and stem.lower() not in skip:
+                add("sibling-stem:%s" % stem, stem, True)
+    return terms
+
+
+def leak_scan(up, payload, orch, exclude=()):
+    terms = []
     for d in payload["denylist"]:
         terms.append((d["name"], re.compile(d["regex"], re.I if d.get("ignore_case") else 0)))
+    terms += registry_terms(up)
+    terms += sibling_terms(up, payload, exclude)
     hits, allowed = [], 0
     for rel, text in orch.items():
         for n, ln in enumerate(text.split("\n"), 1):
@@ -551,10 +594,10 @@ def run_smoke(orch, payload, tmp):
     return problems, ok, total, sf_ok
 
 
-def run_gates(up, payload, orch, scope):
+def run_gates(up, payload, orch, scope, exclude=()):
     """Print one line per gate; raise Refusal listing everything that failed."""
     problems = []
-    hits, allowed = leak_scan(up, payload, orch)
+    hits, allowed = leak_scan(up, payload, orch, exclude)
     print("leak hits: %d%s" % (len(hits), " (%d allowed with a reason)" % allowed if allowed else ""))
     problems += ["leak: " + h for h in hits]
     print("alternates: all pinned, 0 orphans")  # render_all already refused otherwise
@@ -608,8 +651,13 @@ def refuse_dirty_upstream(up, payload):
 
 def target_files(target):
     out = {}
+    if os.path.islink(target):
+        raise Refusal("target %s is a symlink" % target)
     for root, dirs, files in os.walk(target):
         dirs[:] = [d for d in dirs if d != ".git"]
+        links = [os.path.join(root, n) for n in dirs + files if os.path.islink(os.path.join(root, n))]
+        if links:
+            raise Refusal("symlink under target (never followed, never written through): " + ", ".join(links))
         for f in files:
             full = os.path.join(root, f)
             rel = os.path.relpath(full, target).replace(os.sep, "/")
@@ -660,12 +708,19 @@ def build_source(up, payload, orch):
 
 # ---------------------------------------------------------------- modes
 
-def mode_check(up, scope):
+def target_repo_name(up, target):
+    """First path component of the target below the umbrella root (e.g. 'orchestra'), else ''."""
+    rel = os.path.relpath(os.path.abspath(target), os.path.dirname(os.path.abspath(up)))
+    first = rel.replace(os.sep, "/").split("/")[0]
+    return "" if first in ("", ".", "..") else first
+
+
+def mode_check(up, scope, target):
     payload = load_payload(up)
     alts = load_alternates(up)
     files = select_files(payload, scope)
     orch, _ = render_all(up, payload, alts, files, scope == "all")
-    run_gates(up, payload, orch, scope)
+    run_gates(up, payload, orch, scope, [target_repo_name(up, target)])
     print("check ok: %d files rendered, nothing written" % len(orch))
 
 
@@ -675,7 +730,11 @@ def mode_sync(up, target, dry):
     refuse_dirty_upstream(up, payload)
     old_src = check_target(target)
     orch, _ = render_all(up, payload, alts, select_files(payload, "all"), True)
-    run_gates(up, payload, orch, "all")
+    base = os.path.realpath(target)
+    for rel in orch:
+        if os.path.commonpath([base, os.path.realpath(os.path.join(target, *rel.split("/")))]) != base:
+            raise Refusal("write target for %s resolves outside the target dir" % rel)
+    run_gates(up, payload, orch, "all", [target_repo_name(up, target)])
     new_src = build_source(up, payload, orch)
     plan = []  # (verb, rel, text|None)
     for rel in sorted(orch):
@@ -764,17 +823,19 @@ def main(argv):
     ap.add_argument("--scope", choices=("md", "all"), default="all")
     ap.add_argument("--verify-upstream", metavar="COMMIT")
     ap.add_argument("--verify-source", metavar="TARGET")
-    ap.add_argument("--target", default=DEFAULT_TARGET)
+    ap.add_argument("--target", default=None, help="default: orchestra/fleet beside the upstream")
     ap.add_argument("--upstream", default=DEFAULT_UPSTREAM, help=argparse.SUPPRESS)  # fixtures only
     a = ap.parse_args(argv)
     up = os.path.abspath(a.upstream)
+    if a.target is None:
+        a.target = os.path.join(os.path.dirname(up), DEFAULT_TARGET_REL)
     try:
         if a.verify_upstream:
             mode_verify_upstream(up, a.verify_upstream)
         elif a.verify_source:
             mode_verify_source(up, a.verify_source)
         elif a.check:
-            mode_check(up, a.scope)
+            mode_check(up, a.scope, a.target)
         else:
             mode_sync(up, a.target, a.dry_run)
     except Refusal as r:
