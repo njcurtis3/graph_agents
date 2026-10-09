@@ -82,9 +82,11 @@ UMBRELLA = os.path.dirname(FLEET)                             # repos/
 # umbrella:end gbs-umbrella-comment
 CURRENT = os.path.join(FLEET, ".graph", "CURRENT")
 SCHEMA = os.path.join(FLEET, ".graph", "runs", "_schema.json")
+# umbrella:begin gbs-closed-note
 # `parked` added 2026-09-19, matching `show-board.py`. A pointer left on a parked run --
 # `2026-08-25-refuge-freshness` has been parked since it opened -- must no more constrain
 # a later builder than a pointer left on a closed one.
+# umbrella:end gbs-closed-note
 CLOSED = ("done", "blocked", "parked")
 
 # How much of a command to quote back in a denial. Enough to recognise it, not enough to
@@ -162,8 +164,10 @@ def schema_placeholders():
     so the "a space and no separator means prose" heuristic below reads it as a path:
     it became a bogus approved entry and a bogus `rel_map` root, and the `Approved:` list
     a denied builder was shown carried a paragraph of schema documentation in it (gap
+    # umbrella:begin gbs-gap14-origin
     #14, found in `2026-08-26-archive-adapters` and worked around there by setting that
     one run's `scope_exceptions` to `[]`).
+    # umbrella:end gbs-gap14-origin
 
     Identity against the schema is used rather than a smarter prose heuristic because it
     is exact: the question "is this the untouched template?" has a correct answer on disk,
@@ -273,11 +277,10 @@ def approved_paths(state, run_dir):
         allowed[norm(entry_path if os.path.isabs(entry_path)
                      else os.path.join(UMBRELLA, entry_path))] = entry
 
+        # umbrella:begin gbs-rel-map
         # Same entry, expressed as (repo root, path within that repo). A plan entry's
-        # umbrella:begin gbs-repo-segment
         # first segment IS the repo, because every node under the umbrella owns its own
         # repo -- see CLAUDE.md. This is what lets a builder in a linked worktree be
-        # umbrella:end gbs-repo-segment
         # matched: same repo-relative path, different root. If the assumption is ever
         # wrong the entry simply fails to match here and the absolute rule above still
         # applies, so the guard degrades to its previous behaviour rather than opening up.
@@ -286,6 +289,7 @@ def approved_paths(state, run_dir):
             root = norm(os.path.join(UMBRELLA, parts[0]))
             rel = "/".join(parts[1:])
             rel_map.setdefault(root, {})[rel.lower() if os.name == "nt" else rel] = entry
+        # umbrella:end gbs-rel-map
 
         planned = True
 

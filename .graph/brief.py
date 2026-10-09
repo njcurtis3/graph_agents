@@ -16,7 +16,9 @@
       s2  build done       review .. waiting
       s3  build --         review --
       now  builder | 7m | 88 tools | last Edit
+      # umbrella:begin brief-detail-example
       detail  graph_agents/.graph/runs/2026-09-02-date-accuracy/state.json
+      # umbrella:end brief-detail-example
 
 Why this exists. `GRAPH.md` §3 splits a run into two channels and this fills the second
 one. `state.json` is the MACHINE channel -- the edge between nodes that cannot see each
@@ -392,8 +394,10 @@ def slice_row(reader, state, sid, plan, g, width):
         if str(entry.get("risk") or "").strip().lower() == "high":
             tail = "  [high risk]"
     elif built or reviewed:
+        # umbrella:begin brief-off-plan
         # A slice no approved plan contains. `builders.closing_fix` in
         # 2026-08-25-fleet-hardening is the case: real work, off the gate.
+        # umbrella:end brief-off-plan
         tail = "  [off-plan]"
 
     return "  %-*s  build %-13s review %s%s" % (width, sid, build, review, tail)

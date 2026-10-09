@@ -111,8 +111,10 @@ def die(message):
 # re-review as `attempt_2` (`attempt_3`, ...). Every attempt survives; the LATEST one
 # supplies the verdict. Two reviewers invented that shape independently and nothing in the
 # fleet read it, so a slice that was rejected and then fixed reported as failed -- which is
+# umbrella:begin vs-payload-split
 # why `close-run.py` could not close 2026-09-04-payload-split and why the audit had been
 # misreporting 2026-08-25-fleet-hardening since the day it closed.
+# umbrella:end vs-payload-split
 #
 # The rule lives HERE, once, because `close-run.py` and `brief.py` already import this
 # module: four readers with four rules is how this defect comes back. `resolve()` above is
@@ -361,7 +363,9 @@ def real_slices(state, template):
       - planned-but-unwritten must stay in, or `status: done` with a slice never built
         stops being detectable -- the check that catches a dropped slice.
       - written-but-unplanned must stay in, or a slice a node invented off-plan goes
+        # umbrella:begin vs-closing-fix
         unaudited. That is exactly `builders.closing_fix` in 2026-08-25-fleet-hardening,
+        # umbrella:end vs-closing-fix
         the defect this audit was built to catch.
 
     Only the intersection of neither -- unplanned AND unwritten -- is template noise.

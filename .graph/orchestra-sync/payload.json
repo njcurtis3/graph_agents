@@ -124,6 +124,10 @@
       "regex": "(?<![A-Za-z0-9])[A-Za-z]--Users-[A-Za-z0-9_.]+"
     },
     {
+      "name": "run-id",
+      "regex": "(?<![A-Za-z0-9])20\\d\\d-\\d\\d-\\d\\d-[a-z0-9-]+"
+    },
+    {
       "name": "owner-username",
       "regex": "(?<![A-Za-z0-9])natha(?![A-Za-z0-9])",
       "ignore_case": true

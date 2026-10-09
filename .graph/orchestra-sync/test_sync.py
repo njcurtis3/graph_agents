@@ -158,6 +158,67 @@ def refuses(label, fx, args, needle):
     return out
 
 
+def shipped_guard_worktree():
+    """The REAL payload, rendered: a builder in a linked worktree of a single-repo project.
+
+    Regression for the first-segment-is-the-repo rule, which is true under the umbrella and
+    false in every project the payload ships to: it denied every approved worktree write.
+    TEMP/TMP/TMPDIR point away from the project because transient_roots() exempts the
+    system temp dir, which would hide a wrong Bash answer.
+    """
+    up = os.path.normpath(os.path.join(HERE, "..", ".."))
+    payload = S.load_payload(up)
+    alts = S.load_alternates(up)
+    orch, _ = S.render_all(up, payload, alts, S.select_files(payload, "all"), True)
+    base = tempfile.mkdtemp(prefix="orchestra-wt-")
+    try:
+        proj = os.path.join(base, "proj")
+        fleet = os.path.join(proj, "fleet")
+        for rel, text in orch.items():
+            put(fleet, rel, text.replace("@FLEET@", "fleet"))
+
+        def git(*a):
+            subprocess.run(["git", *a], cwd=proj, check=True, capture_output=True)
+        git("init", "-q")
+        git("config", "user.name", "t")
+        git("config", "user.email", "t@example.com")
+        git("config", "core.autocrlf", "false")
+        put(proj, "src/a.py", "x\n")
+        put(proj, ".gitignore", "fleet/\n.claude/worktrees/\n")
+        git("add", ".")
+        git("commit", "-qm", "init")
+        git("worktree", "add", "-q", ".claude/worktrees/s1", "-b", "s1")
+        put(fleet, ".graph/runs/r1/state.json", json.dumps({
+            "status": "building", "approved_by_human": True,
+            "architect": {"plan": [{"slice": "s1", "files": ["src/a.py", "src/new/**"]}]}}))
+        put(fleet, ".graph/CURRENT", "r1\n")
+        other = os.path.join(base, "tmp-elsewhere")
+        os.makedirs(other)
+        env = dict(os.environ, CLAUDE_PROJECT_DIR=proj, TMPDIR=other, TEMP=other, TMP=other)
+        wt = os.path.join(proj, ".claude", "worktrees", "s1")
+        hook = os.path.join(fleet, ".claude", "hooks", "guard-builder-scope.py")
+
+        def verdict(tool_input, cwd):
+            r = subprocess.run([sys.executable, hook], capture_output=True, text=True, env=env, cwd=proj,
+                               input=json.dumps({"agent_type": "builder", "tool_input": tool_input, "cwd": cwd}))
+            return "deny" if '"deny"' in r.stdout else "allow"
+        cases = [
+            ("worktree Write of an approved file is allowed", {"file_path": os.path.join(wt, "src", "a.py")}, wt, "allow"),
+            ("worktree Write under an approved glob is allowed", {"file_path": os.path.join(wt, "src", "new", "n.py")}, wt, "allow"),
+            ("worktree Bash redirect to an approved file is allowed", {"command": "echo x > src/a.py"}, wt, "allow"),
+            ("worktree Write of an unapproved file is denied", {"file_path": os.path.join(wt, "src", "b.py")}, wt, "deny"),
+            ("worktree Bash redirect to an unapproved file is denied", {"command": "echo x > src/b.py"}, wt, "deny"),
+            ("main-tree Write of an approved file is allowed", {"file_path": os.path.join(proj, "src", "a.py")}, proj, "allow"),
+            ("main-tree Write of an unapproved file is denied", {"file_path": os.path.join(proj, "src", "b.py")}, proj, "deny"),
+        ]
+        for label, ti, cwd, want in cases:
+            got = verdict(ti, cwd)
+            check("shipped guard: " + label, got == want, "got %s" % got)
+    finally:
+        subprocess.run(["git", "-C", os.path.join(base, "proj"), "worktree", "prune"], capture_output=True)
+        shutil.rmtree(base, ignore_errors=True)
+
+
 def main():
     # ---- the refusals that guard marking and pinning
     fx = Fx()
@@ -410,6 +471,8 @@ def main():
     rc, out = fx.run("--verify-upstream", unmarked)
     check("umbrella render identity fails when marking changed real text", rc == 1 and "differs" in out, out)
     fx.done()
+
+    shipped_guard_worktree()
 
     if FAILURES:
         print("\n%d FAILED: %s" % (len(FAILURES), ", ".join(FAILURES)))

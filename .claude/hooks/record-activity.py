@@ -234,7 +234,9 @@ def append_line(path, text):
     NOT make that safe: the handle carries its own file position and its own buffer, so
     two interleaved appends can land on top of each other.
 
+    # umbrella:begin ra-torn-example
     That is not hypothetical here. `2026-09-06-bash-write-guard`'s log line 1225 reads
+    # umbrella:end ra-torn-example
     `"Bash"}` -- the tail of an event whose head was overwritten by another process's
     append. The event it recorded is gone, not merely mangled. Readers (`brief.py`,
     # umbrella:begin ra-readers-1
@@ -290,7 +292,9 @@ FLEET = os.path.normpath(os.path.join(HERE, "..", ".."))
 CURRENT = os.path.join(FLEET, ".graph", "CURRENT")
 # Aligned with `guard-builder-scope.py` and `show-board.py`, which have always carried
 # all three. `parked` was missing here until 2026-09-19, so a pointer left on a parked
+# umbrella:begin ra-parked-example
 # run -- `2026-08-25-refuge-freshness` has sat parked since the day it opened -- kept
+# umbrella:end ra-parked-example
 # collecting events from unrelated later sessions into a run that had stopped, while the
 # board stayed correctly silent about it.
 CLOSED = ("done", "blocked", "parked")

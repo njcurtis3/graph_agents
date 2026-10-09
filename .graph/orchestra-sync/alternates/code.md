@@ -10,10 +10,6 @@
 @@@ alt gbs-diamond-path pin=0af57281305f
     # somewhere else entirely and can never equal the plan's project-relative path. Match
 @@@ end
-@@@ alt gbs-repo-segment pin=8a5bd45af62b
-        # first segment IS the repo, when each top-level directory owns its own
-        # repo. This is what lets a builder in a linked worktree be
-@@@ end
 @@@ alt gbs-glob-incident pin=6fe91b80a6fa
         # EVERY write under an approved directory. That happened once: three
         # slices of one run had `myapp/apps/mobile/**` as their
@@ -93,7 +89,7 @@ What that turns from convention into machinery:
     outside the project.
 @@@ end
 @@@ alt brief-example-app pin=b4699ce6fc17
-    2026-09-02-date-accuracy | myapp | building | gate ok
+    <run-id> | myapp | building | gate ok
 @@@ end
 @@@ alt cr-target-repo pin=59642a012fa8
 def target_repo(app):
@@ -160,11 +156,14 @@ def render(root: Path, is_repo: bool) -> str:
         lines.append("NOT A GIT REPO -> diamond forced to single-loop")
     else:
         g = repo_facts(root)
-        head = g["head"]
+        head, branch = g["head"], g["branch"]
         if not head or head.lower().startswith("fatal"):
             head = "no commits yet"
+            code, name = git(["symbolic-ref", "--short", "HEAD"], root)
+            if code == 0 and name:
+                branch = name
         state = "clean" if g["clean"] else f"{g['dirty_files']} uncommitted file(s)"
-        lines.append(f"  git:         {g['branch']} @ {head}, {state}")
+        lines.append(f"  git:         {branch} @ {head}, {state}")
         lines.append(f"  identity:    {g['commit_identity']}")
         if g["remote"] and not g["remote"].lower().startswith(("error", "fatal")):
             lines.append(f"  remote:      {g['remote']}")
@@ -263,4 +262,56 @@ $0.001 a call. The test suite runs entirely under it.
 @@@ end
 @@@ alt crc-copy-rule pin=f577c3c34bf9
 The path derivation below is COPIED
+@@@ end
+@@@ alt gbs-rel-map pin=d3c745e48f33
+        # Same entry, expressed as (repo root, path within that repo). In a project the
+        # repo is the project root, so the whole entry is the path within it. This is what
+        # lets a builder in a linked worktree be matched: same repo-relative path, different
+        # root. A write that matches no entry here is still judged by the absolute rule above.
+        if not os.path.isabs(entry_path):
+            root = norm(UMBRELLA)
+            rel = entry_path.strip("/")
+            rel_map.setdefault(root, {})[rel.lower() if os.name == "nt" else rel] = entry
+@@@ end
+@@@ alt gbs-gap14-origin pin=fafee5d37a54
+    #14, worked around once by setting that run's `scope_exceptions` to `[]`).
+@@@ end
+@@@ alt gbs-closed-note pin=813d006a0953
+# `parked` added to match `show-board.py`. A pointer left on a parked run must no more
+# constrain a later builder than a pointer left on a closed one.
+@@@ end
+@@@ alt ra-parked-example pin=b3a685fa6dda
+# run -- one run has sat parked since the day it opened -- kept
+@@@ end
+@@@ alt ra-torn-example pin=6242e93b46bf
+    That is not hypothetical here. one run's log line 1225 reads
+@@@ end
+@@@ alt vs-closing-fix pin=9479d4efc201
+        unaudited. That is exactly `builders.closing_fix` in an early run,
+@@@ end
+@@@ alt vs-payload-split pin=e6e1545963df
+# why `close-run.py` could not close such a run and why the audit had been
+# misreporting it since the day it closed.
+@@@ end
+@@@ alt brief-off-plan pin=170cda3bd57c
+        # A slice no approved plan contains. `builders.closing_fix` in an early run
+        # is the case: real work, off the gate.
+@@@ end
+@@@ alt brief-detail-example pin=cf40bc0a814f
+      detail  graph_agents/.graph/runs/<run-id>/state.json
+@@@ end
+@@@ alt cr-payload-split pin=eb2857490ad6
+    #    an early run could not close. The rule is imported from
+@@@ end
+@@@ alt cr-fleet-hardening pin=9956d0fd1474
+    #    point: `builders.closing_fix` in an early run was real work with no reviewer.
+@@@ end
+@@@ alt cr-prose-branch pin=82b10585b155
+        # written prose into this field -- one run's s1 records
+@@@ end
+@@@ alt cr-commit-field pin=812924bb9f87
+    fall back to the commit the builder recorded; a past run wrote that field as
+@@@ end
+@@@ alt cr-why-exists pin=00adb20cca1d
+**Why this exists.** An early run closed with its `log` reading
 @@@ end
