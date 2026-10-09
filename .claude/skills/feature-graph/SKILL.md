@@ -1,13 +1,17 @@
 ---
 name: feature-graph
+# umbrella:begin fg-desc
 description: Run a task through the work graph — scout, architect, human gate, then either a single loop or a parallel diamond of builders and independent reviewers converging on one integrator. Use when starting any non-trivial piece of work on an app under the umbrella. Also use when asked to "run the graph" or "fan this out".
+# umbrella:end fg-desc
 ---
 
 # feature-graph
 
 You are the **orchestrator**. You do not implement. You own the state file and the edges.
 
+<!-- umbrella:begin fg-launch -->
 Run this from `repos/`. Apps live at `<id>/`; the fleet's files live under `graph_agents/`.
+<!-- umbrella:end fg-launch -->
 
 ## Step 0 — the stop rule
 
@@ -23,16 +27,20 @@ numbered `0.5` on purpose: nothing downstream may renumber.
 **1. Is the target a git repo?**
 
 ```bash
+# umbrella:begin fg-facts-cmd
 python graph_agents/.graph/scout-facts.py <app-id>     # answers this and more
+# umbrella:end fg-facts-cmd
 git -C <target> rev-parse --is-inside-work-tree        # or the bare check
 ```
 
 The collector prints `NOT A GIT REPO -> diamond forced to single-loop` when it applies,
 along with the branch, HEAD and per-repo commit identity you will want anyway. Compute
+<!-- umbrella:begin fg-collector-anecdote -->
 this every run — never carry it over from a previous one. On 2026-08-28 a scout fact
 reading "graph_agents/ is NOT a git repository" was checked and had become false; had
 that been trusted, it would have forced a single-loop that was no longer necessary, and
 the inverse error would have fanned builders out with no isolation at all.
+<!-- umbrella:end fg-collector-anecdote -->
 
 A worktree requires a git repo. If that exits non-zero there is **no isolation and no
 rollback** — parallel builders write into one tree and collide (`GRAPH.md` § the stop
@@ -44,8 +52,10 @@ allowed responses, never a third:
 - make the target a repo first (`git init` in that directory alone, one baseline commit),
   then the diamond is on the table again.
 
+<!-- umbrella:begin fg-repos-not-a-repo -->
 `repos/` is deliberately not a repo (`CLAUDE.md`), so a run whose target is `repos/` — or
 any directory that is not itself a repo — is always in degraded mode.
+<!-- umbrella:end fg-repos-not-a-repo -->
 
 **What degraded mode costs, stated plainly:** no `isolation: "worktree"`, so no parallel
 builders. No branch per slice, so `builders.<slice>.branch` is the empty string. No
@@ -76,7 +86,9 @@ orchestrator can find the run's state — it is what makes `guard-builder-scope.
 5) possible at all. It is untracked and disposable: a stale pointer to a closed run is
 ignored, so there is nothing to clean up.
 
+<!-- umbrella:begin fg-app-registry -->
 Fill `run_id`, `goal` (the user's own words), and `app` (from `graph_agents/portfolio/registry.json`).
+<!-- umbrella:end fg-app-registry -->
 If the goal spans two apps, it is two runs. Split it.
 
 ## Step 2 — scout
@@ -94,7 +106,9 @@ python graph_agents/.graph/verify-state.py $RUN scout
 **Write the brief tightly.** `scout` runs on haiku (see GRAPH.md § Model tiering), which
 is cheap but does not self-scope well. Hand it:
 
+<!-- umbrella:begin fg-brief-app -->
 - the app id and the two entry docs to start from
+<!-- umbrella:end fg-brief-app -->
 - a numbered list of the specific questions it must answer
 - your *unverified guess* at which files are involved, explicitly marked as a guess to
   confirm or correct
@@ -148,14 +162,18 @@ reflex-widen:
   `deviation_from_approved_plan` on its slice. Do **not** edit `architect.plan` to widen
   the set — that is rewriting another node's key, and `--audit` now catches it.
 
+<!-- umbrella:begin fg-s2-anecdote -->
 This is exactly the `2026-08-25-fleet-hardening` `s2` situation, which was handled well by
 hand and is now handled by the machine.
 
+<!-- umbrella:end fg-s2-anecdote -->
 **If `single-loop`:** spawn one `builder`, then one `reviewer`.
 
+<!-- umbrella:begin fg-merge-history -->
 **Then merge it — this step is yours.** A single-loop run still leaves a branch behind, and
 until 2026-08-26 nothing here said who lands it. The ruling: on `PASS`, and only on `PASS`,
 the orchestrator merges the one reviewed branch itself.
+<!-- umbrella:end fg-merge-history -->
 
 ```bash
 git -C <target> merge --no-ff <branch-from-builders.<slice>.branch>
@@ -193,8 +211,10 @@ finished in 2 minutes should be under review while a slow slice is still buildin
 **Brief the reviewer to the slice's `risk` tag — this is a token lever, not a formality.**
 `risk: high` (real/sensitive data, a shared file, or logic a test can't see through) gets
 the full adversarial brief: re-derive everything from scratch, do not trust the builder's
+<!-- umbrella:begin fg-risk-anecdote -->
 self-report, re-walk by hand what the test cannot check (this is what caught the leaked
 health-data value in `2026-08-26-archive-adapters` s1-whoop). `risk: low` gets a lighter
+<!-- umbrella:end fg-risk-anecdote -->
 brief: re-run `done_when` on the branch alone, confirm the diff stays inside the approved
 file set, read the diff once for correctness. Do not spend adversarial-depth review on a
 slice the architect tagged `low` — that is the exact overhead this tagging exists to cut.
@@ -356,15 +376,19 @@ can approve a headline.
   slice — off-plan ones included — was built and `PASS`ed, and then proves in **git** that
   the work actually merged, which no reading of `state.json` can do. Only when it exits 0
   do you write `status: done` and the closing `log` entry yourself.
+<!-- umbrella:begin fg-close-anecdote -->
   `2026-08-25-fleet-hardening` is the cautionary case that skill exists for: its log says
   "5/5 slices PASS" while its `reviews.s4`/`s5` keys still record attempt 1's `REJECT` and
   `builders.closing_fix` has no reviewer at all. Nothing caught it for a day, because
   nothing was looking. It still reports 8 blockers under `close-run.py --recheck`.
+<!-- umbrella:end fg-close-anecdote -->
+<!-- umbrella:begin fg-audit-fleet -->
 - **After the close, run `/audit-fleet`.** A finished run is the one event that changes what
   the fleet has *done*, and `CURRENT-STATE.md` is where that is recorded. Three runs closed
   between 2026-08-31 and 2026-09-03 and none of them reached its Runs table until a script
   went looking — the same drift that had this file claiming zero product code eleven hours
   after the first product code merged.
+<!-- umbrella:end fg-audit-fleet -->
 - Report faithfully. If a slice was skipped, a test failed, or you dropped scope, say so
   explicitly in the final summary.
 

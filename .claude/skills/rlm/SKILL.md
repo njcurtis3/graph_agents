@@ -1,6 +1,8 @@
 ---
 name: rlm
+# umbrella:begin rlm-desc
 description: Read an input too large to hold in context — a long file, a run's activity.jsonl, CURRENT-STATE.md, a big log — as a Recursive Language Model, by loading it into a REPL and mapping cheap haiku sub-calls over pieces of it, instead of reading it whole. Use when a scout, postmortem or audit would otherwise read more than ~50KB, or when asked to "RLM this", "map over this file" or "read this without loading it".
+# umbrella:end rlm-desc
 ---
 
 # rlm
@@ -28,8 +30,10 @@ are still open"). Those are the tasks where reading it whole either does not fit
   is for *semantic* questions over a piece, not for finding a string.
 - **As `reviewer`, `architect` or `integrator`.** Never. RLM hands the reading to haiku,
   and those are the nodes `GRAPH.md` § Model tiering says are never downgraded. A review
+<!-- umbrella:begin rlm-never-refs -->
   done through haiku summaries is a laundered review. `decisions/0002-rlm-scope.md`.
 - **From a hook.** A sub-call is a network call (ADR 0001 § 4).
+<!-- umbrella:end rlm-never-refs -->
 
 ## The protocol
 
@@ -61,8 +65,10 @@ them with code rather than by reading them.
 
 **4. Combine in code, verify against `context`.** Parse the answers, de-duplicate, then
 check each claim in the source before you rely on it. **A sub-model answer is a lead, not
+<!-- umbrella:begin rlm-live-run -->
 a fact.** In the first live run (12 open gaps in `CURRENT-STATE.md`) haiku found all 12
 and added a 13th that is struck through as closed — one `grep` against `context` catches
+<!-- umbrella:end rlm-live-run -->
 that. For a scout this is not optional: a FACT still needs a `file:line` you confirmed,
 not one a sub-model reported.
 

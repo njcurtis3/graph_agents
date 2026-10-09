@@ -42,6 +42,7 @@ you cannot name the disjoint file sets, it is not a diamond — it is a sequence
   disk-verifiable condition (`grep`, `jq`, an exit code). If it is genuinely unverifiable by
   any command, label it `human-read` and name what the human has to read. Do not invent a
   fake check that proves nothing.
+<!-- umbrella:begin architect-ui-planning -->
 - **Plan mobile and desktop in the same slice.** When the target app `ui` includes `responsive-web` (string or array)
   in the registry, every UI slice plans the mobile layout as the base case and desktop as the
   additive case — one slice, not two. Never write a follow-on "make it responsive" slice:
@@ -64,10 +65,13 @@ you cannot name the disjoint file sets, it is not a diamond — it is a sequence
     `src-tauri`, `cargo tauri build` for the Windows target), or is labelled `ci` (name the
     workflow and runner, e.g. `macos-latest`) or `human-read` (name the device check).
     Never a `done_when` that needs a Mac, a simulator, or `eas build`.
+<!-- umbrella:end architect-ui-planning -->
 - **Delete fake edges.** If slice B does not consume an artifact slice A produced, they are
   parallel. Order them only where a real artifact flows.
+<!-- umbrella:begin architect-invariant -->
 - Respect the umbrella invariant: no cross-app imports. If the plan needs shared code,
   the answer is copy-into-each-app, or the task is two tasks.
+<!-- umbrella:end architect-invariant -->
 
 ## Rules
 
@@ -84,7 +88,9 @@ you cannot name the disjoint file sets, it is not a diamond — it is a sequence
   recommend one. Do not build both.
 - Do not read through `/rlm` (`.graph/rlm.py`). Shape errors are the expensive ones, and a
   plan built on haiku's summary of the code is built on sand. A file too large to read is
+<!-- umbrella:begin architect-rlm-ref -->
   the scout's to reduce, not yours to skim (`decisions/0002-rlm-scope.md`).
+<!-- umbrella:end architect-rlm-ref -->
 
 ## Return
 

@@ -6,12 +6,14 @@ description: Close an open work-graph run — prove every slice was built, revie
 # close-run
 
 You are the **orchestrator**. This is the last thing you do to a run, and it is the step
+<!-- umbrella:begin cr-intro-anecdote -->
 this fleet has already got wrong once.
 
 `2026-08-25-fleet-hardening` closed with its `log` reading "5/5 slices PASS" while
 `reviews.s4` and `reviews.s5` still recorded the REJECT they had been fixed for, and
 `builders.closing_fix` had no reviewer at all. Nothing caught it for a day. The close is
 where attention is lowest and the record is most likely to be wrong, so it gets a script.
+<!-- umbrella:end cr-intro-anecdote -->
 
 ## Step 1 — check
 
@@ -51,8 +53,10 @@ Do not paper over one. Each maps to a real action:
 | `approved_by_human` not true | the gate was skipped, or recorded wrongly |
 
 A run that cannot close is not a run to close quietly. If the work is genuinely abandoned,
+<!-- umbrella:begin cr-parked-anecdote -->
 `parked` or `blocked` is the honest status — `2026-08-25-refuge-freshness` has sat
 `parked` since the day it was opened, and that record is correct.
+<!-- umbrella:end cr-parked-anecdote -->
 
 ## Step 3 — write the close yourself
 
@@ -84,6 +88,8 @@ The board goes quiet after this — `brief.py` shows no live lane for a closed r
 - **Not for `ops`.** Deploying is step 7, behind its own gate, and a closed run does not
   authorize it.
 
+<!-- umbrella:begin cr-recheck -->
 To re-examine a run that is already closed — a postmortem, or checking whether an old run
 would pass today — use `--recheck`. `fleet-hardening` still reports its 8 blockers, which
 is the correct answer about it.
+<!-- umbrella:end cr-recheck -->

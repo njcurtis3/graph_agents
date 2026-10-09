@@ -1,5 +1,6 @@
 # The agent graph
 
+<!-- umbrella:begin graph-portfolio -->
 Two graphs. Keeping them separate is the whole design.
 
 ---
@@ -35,11 +36,14 @@ allowed to drift. There are **no app↔app edges**. Ever. See `CLAUDE.md`.
 The `graph_agents/portfolio/registry.json` file is the **index** over this graph. It is what lets an
 agent answer "where does this work go?" without reading five repos.
 
+<!-- umbrella:end graph-portfolio -->
 ---
 
 ## 2. The work graph (dynamic, per task)
 
+<!-- umbrella:begin graph-agents-path -->
 Nodes are **subagents** in `graph_agents/.claude/agents/` (reached as `.claude/agents/` from `repos/`). A new work graph is generated for each
+<!-- umbrella:end graph-agents-path -->
 task. The canonical shape is the **diamond**:
 
 ```
@@ -103,9 +107,11 @@ If that exits non-zero, `isolation: "worktree"` is unexecutable — a worktree r
 git repo — so the fan-out above has **no isolation and no rollback**. Builders write into
 one tree and collide, `builders.<slice>.branch` is the empty string because there is no
 branch, and a corrupted file cannot be restored because there is nothing to restore from.
+<!-- umbrella:begin graph-degraded-repos -->
 Force **`single-loop`**, or make the target its own repo first. `repos/` is deliberately
 not a repo (`CLAUDE.md`), so anything targeting it is permanently in degraded mode. Full
 pre-flight: `feature-graph` step 0.5.
+<!-- umbrella:end graph-degraded-repos -->
 
 One case forces `single-loop` even *with* a repo: a run that edits
 `graph_agents/.claude/agents/**` or `.claude/skills/**` is rewriting the definitions it
@@ -128,7 +134,9 @@ text**. They cannot see each other's work. So "shared state travelling along edg
 not a metaphor here — it is a file:
 
 ```
+<!-- umbrella:begin graph-state-path -->
 graph_agents/.graph/runs/<run-id>/state.json      # relative to repos/
+<!-- umbrella:end graph-state-path -->
 ```
 
 Contract for every node:
@@ -192,7 +200,9 @@ it moves while a node is working, so a run in flight is invisible.
 `.claude/hooks/record-activity.py` fills that in. On `SubagentStart`, `SubagentStop` and
 every `PostToolUse` it appends one compact line to
 `.graph/runs/<run-id>/activity.jsonl` — timestamp, event, `agent_type`, `agent_id`, tool
+<!-- umbrella:begin graph-activity-render -->
 name. FleetView renders it as a live lane; it is also the evidence base for four things
+<!-- umbrella:end graph-activity-render -->
 this fleet has never been able to answer with data rather than assertion:
 
 - **model tiering** — §"Model tiering" argues cost hard and has never measured it. Tool
@@ -203,10 +213,12 @@ this fleet has never been able to answer with data rather than assertion:
   prove the builders ran concurrently rather than merely being spawned together.
 - **stalls** — the same tool repeating with no progress is visible in the tail.
 
+<!-- umbrella:begin graph-activity-gap -->
 ⚠️ **Two of those four read `start`/`stop` pairs, and the `stop` half is currently
 polluted** — 471 of 503 recorded stops are phantoms that never had a matching start. Node
 durations measured naively from this file are wrong. See `CURRENT-STATE.md` gap #20.
 
+<!-- umbrella:end graph-activity-gap -->
 **Note what this is not: an overseer agent.** One was considered and rejected. A subagent
 is spawned, runs, returns text and ends — there is no loop for it to observe from, no
 channel to its siblings, and a node consuming nothing and producing nothing is exactly
@@ -242,8 +254,10 @@ for the `Agent` tool — the spawn call — and hands the board back as `systemM
 **observed reaching the main tab 2026-09-03**. Not `SubagentStop`, which looks like the
 right event and is not: it is a *display* event, so both its stdout and its `systemMessage`
 go to Claude's context "instead of being shown in the transcript", reaching the orchestrator
+<!-- umbrella:begin graph-board-gaps -->
 and never the human. `CURRENT-STATE.md` gap #19 carries the quotes and gap #20 the second
 reason.
+<!-- umbrella:end graph-board-gaps -->
 
 **The hook fires when a node starts, not when it finishes** — measured, not assumed: all 32
 `Agent` events in the heartbeat land within 0.2s of a `SubagentStart`, never near a node's
@@ -254,12 +268,15 @@ the event that fires then is `SubagentStop`, which cannot address a human.
 So there are two boards per node, from two actors. The hook prints the dispatch board for
 free. The orchestrator prints the **return** board itself, and the boards at the transitions
 no node marks at all — after the gate, after a merge, at the close (`feature-graph` § the
+<!-- umbrella:begin graph-board-fleetview -->
 board). FleetView renders the same two files with more room.
+<!-- umbrella:end graph-board-fleetview -->
 
 Schema in `graph_agents/.graph/runs/_schema.json`. Because state is on disk, a run survives a
 crashed session, a `/clear`, or you walking away — pick it back up by pointing a fresh
 orchestrator at the run directory.
 
+<!-- umbrella:begin graph-commit-attribution -->
 ### Commit attribution — a rule the harness argues with
 
 Every session in this fleet, orchestrator and subagent alike, is handed a system message
@@ -286,6 +303,7 @@ which is how you audit for the thing. Tested by
 What it cannot see: a PR body, a release note, a tag message, and a message typed into an
 editor. Those are `ops`'s to keep, and `ops.md` says so.
 
+<!-- umbrella:end graph-commit-attribution -->
 ---
 
 ## 4. Node roster
@@ -301,9 +319,11 @@ editor. Those are `ops`'s to keep, and `ops.md` says so.
 
 † **Only where the target is a git repo.** In degraded mode the builder runs in the main
 tree with no isolation and no rollback, which is why that case is `single-loop` and one
+<!-- umbrella:begin graph-builder-footnote -->
 builder. `builder.md`'s frontmatter says the same thing in the same words — that gap was
 closed 2026-08-25 (`6630dc1`), and this row and that file are no longer two sources of
 truth.
+<!-- umbrella:end graph-builder-footnote -->
 
 **Reviewer independence is non-negotiable.** A builder reviewing its own work is not a
 verification edge, it's a fake edge. Always a separate agent invocation.
@@ -324,10 +344,12 @@ must never be downgraded:
 - **`reviewer`** — its entire value is catching what the builder missed. A verifier that
   misses the bug is *worse* than no verifier, because it launders a bad diff as reviewed.
   Cheapening this node doesn't save money, it removes the reason the graph exists.
+<!-- umbrella:begin graph-architect-example -->
 - **`architect`** — it decides the shape, and shape errors are the expensive ones. In the
   2026-08-25 huntstack run it was the architect that caught `survey_type` having five live
   values with a wrong schema comment; a flat-threshold badge built from the ticket text
   would have shipped broken.
+<!-- umbrella:end graph-architect-example -->
 
 **`builder` is sonnet** (changed 2026-09-09), and this is not the same argument as the
 scout downgrade. A builder does not decide anything a human hasn't already approved — it
@@ -343,11 +365,14 @@ be tighter. Tell it exactly which questions to answer and which files to start f
 Don't hand it "go look at the app." A vague scout brief is where the savings evaporate —
 it reads everything, returns mush, and the architect plans on sand.
 
+<!-- umbrella:begin graph-facts-script -->
 **The mechanical half of that brief is now a script.** `graph_agents/.graph/scout-facts.py
 <app-id>` computes what every scout was re-deriving by hand — git repo or not, branch,
 HEAD, dirty state, per-repo commit identity, registry entry, which entry docs exist, stack
 on disk vs. stack claimed — and `scout.md` step 0 runs it before anything else.
+<!-- umbrella:end graph-facts-script -->
 
+<!-- umbrella:begin graph-cache-anecdote -->
 A per-app fact **cache** was designed first and rejected on evidence (2026-08-28). Past
 scout keys were checked against reality: "graph_agents/ is NOT a git repository" had become
 false, and "6 app directories" had become eight. The facts scouts repeat most are the ones
@@ -356,6 +381,7 @@ repo, no diamond". A cache would have served a confident wrong answer to exactly
 question that must not be wrong. The script stores nothing, so it cannot go stale; the cost
 of recomputing a `git rev-parse` is far below the cost of trusting a stale one.
 
+<!-- umbrella:end graph-cache-anecdote -->
 **Before reaching for a cheaper provider:** model tier is the second-biggest lever, not
 the first. The stop rule is the first. One `single-loop` instead of an unjustified
 six-node diamond saves more than downgrading every node in the fleet would.
@@ -364,8 +390,10 @@ Reference cost per MTok (in/out): haiku 4.5 $1/$5 · sonnet 5 $3/$15 · opus 5 $
 
 ### Recursive reading — the same rule, applied inside one node
 
+<!-- umbrella:begin graph-rlm-inputs -->
 The same rule also applies *inside* a node. When a scout, a postmortem or an audit must read
 an input too large to hold — `CURRENT-STATE.md` at ~135KB, a diamond's `activity.jsonl`
+<!-- umbrella:end graph-rlm-inputs -->
 at 110KB — it does not read it. It loads it into `graph_agents/.graph/rlm.py`, a
 Recursive Language Model REPL (Zhang, Kraska & Khattab, arXiv:2512.24601): the input
 sits in a variable, the node writes code to peek, grep and partition it, and maps haiku
@@ -376,7 +404,9 @@ skill is `/rlm`.
  node (root) ──code──▶ rlm.py REPL ── context = <135KB file>
                           │  peek · grep · chunks          (free, exact)
                           └─ llm_map ──▶ claude -p haiku ×4 concurrent
+<!-- umbrella:begin graph-rlm-fence -->
                                           no tools, no settings, cwd outside repos/
+<!-- umbrella:end graph-rlm-fence -->
                           ◀── answers, combined in code, confirmed by grep
 ```
 
@@ -384,8 +414,10 @@ It is **retrieval moved to the cheap tier**, which is why its scope stops where 
 section's protected nodes start: `reviewer`, `architect` and `integrator` never read
 through it. A review done through haiku summaries is the downgrade the reviewer bullet
 above forbids, done one level down. Sub-call output is a lead to confirm, never a FACT.
+<!-- umbrella:begin graph-rlm-decision -->
 The scope, the measurements behind each default, and what would widen it are in
 `decisions/0002-rlm-scope.md`.
+<!-- umbrella:end graph-rlm-decision -->
 
 
 ---
@@ -406,6 +438,8 @@ Place them exactly where a mistake gets expensive to undo:
   not as a sandbox. Widening it after the fact is possible, deliberate and recorded —
   `scope_exceptions` plus the slice's `deviation_from_approved_plan` — never silent.
 - before `ops` — deploys, DB migrations, anything that costs money or touches prod
+<!-- umbrella:begin graph-new-app-gate -->
 - before creating a new app — a new repo is a long-term maintenance commitment
+<!-- umbrella:end graph-new-app-gate -->
 
 Everywhere else, let it run.

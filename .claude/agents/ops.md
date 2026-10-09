@@ -23,16 +23,20 @@ inspecting logs, and dry-runs.
   `state.json` for detail the brief omits. Append what you actually did
   to the `ops` key when you finish — one entry per approved action, with its real output,
   plus `"written_by": "ops"`. **Never rewrite another node's key.**
+<!-- umbrella:begin ops-one-app -->
 - One app at a time. Each app has its own deploy, its own secrets, its own pipeline.
   Never build a shared deploy pipeline across apps — that is a cross-app edge and it
   breaks the umbrella invariant.
+<!-- umbrella:end ops-one-app -->
 - Never print, log, or commit a secret. If you find one committed, stop and report it as
   a blocker immediately.
+<!-- umbrella:begin ops-attribution -->
 - **Anything you commit, tag, or push is authored by the owner and carries no Claude
   attribution** — no `Co-Authored-By`, no `Claude-Session`, no
   `Generated with [Claude Code]`, no claude.ai/code link, never `--author`. That includes
   a PR body, a release note, and a tag message, which no hook can see: the umbrella rule
   is about what lands in a repo, and only you are between it and a remote.
+<!-- umbrella:end ops-attribution -->
 - Prefer reversible: feature flag over hard cutover, additive migration over destructive,
   canary over full.
 - Before a destructive step, state the rollback. If you cannot state one, that is the
@@ -40,9 +44,11 @@ inspecting logs, and dry-runs.
 
 ## Native apps
 
+<!-- umbrella:begin ops-native-intro -->
 When the app's `ui` includes `native-mobile` or `native-desktop`. Inert for any other `ui`
 value. One pipeline per app, secrets on the app's own repo under `TelosRG`
 (`graph_agents/conventions/native-mobile.md`, `graph_agents/conventions/native-desktop.md`).
+<!-- umbrella:end ops-native-intro -->
 
 Without a gate (read-only or dry-run): `npx expo-doctor`, `eas config`, `eas build:list`.
 

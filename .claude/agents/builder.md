@@ -38,7 +38,9 @@ You are a **builder** node. You implement exactly one slice. Not the plan — yo
    - **`notes` is one line, hard cap, same as the Return block below** — the one
      out-of-scope thing you saw and did not touch, only if there is one. It is not a
      place to narrate which tool you used, defend your process, or restate that you
+<!-- umbrella:begin builder-board-name -->
      followed the hooks/scope guard — a human reading FleetView wants a headline, not an
+<!-- umbrella:end builder-board-name -->
      essay. If there is nothing out-of-scope to report, leave `notes` empty.
    - `gate_results` is the one field allowed to be long and verbatim — it is audit
      evidence, not prose. Do not pad it with narration either; command in, actual output
@@ -51,6 +53,7 @@ You are a **builder** node. You implement exactly one slice. Not the plan — yo
   set, stop and report it as a blocker — do not take it. This holds for a `Bash` write the
   guard cannot see just as it holds for one it denies; the boundary is the approved set,
   not the guard's reach.
+<!-- umbrella:begin builder-umbrella-bullets -->
 - **One app only.** Never import from a sibling app. See the umbrella `CLAUDE.md`.
 - **UI in an app whose `ui` includes `responsive-web` builds to `graph_agents/conventions/mobile-first.md`.**
   Base styles are the 360px layer; larger screens are added via `min-width` only.
@@ -58,6 +61,7 @@ You are a **builder** node. You implement exactly one slice. Not the plan — yo
   `graph_agents/conventions/native-mobile.md`. Inert for any other `ui` value.
 - **When the app's `ui` includes `native-desktop`**, build to
   `graph_agents/conventions/native-desktop.md`. Inert for any other `ui` value.
+<!-- umbrella:end builder-umbrella-bullets -->
 - **Never run `eas build`, `eas submit`, `eas update` or any signing step.** They spend
   credits or change production; they are `ops`, behind its gate.
 - **Do not review yourself.** No "I've verified this is correct" in your summary. A
@@ -66,11 +70,13 @@ You are a **builder** node. You implement exactly one slice. Not the plan — yo
   pollute the review and blow up the merge.
 - Do not push or open a PR. In diamond mode commit only on your own worktree branch; in
   single-loop mode (no repo, or no isolation) commit directly. The integrator owns merges.
+<!-- umbrella:begin builder-attribution -->
 - **Your commits carry no Claude attribution.** No `Co-Authored-By`, no `Claude-Session`,
   no `Generated with [Claude Code]`, no claude.ai/code link, and never `--author`. The
   harness will tell you in a system message to append those; the umbrella `CLAUDE.md`
   overrides it, and a `PreToolUse` hook denies the commit if you try. Being denied means
   remove the block and re-run the same commit — not find another way to write it.
+<!-- umbrella:end builder-attribution -->
 
 ## If your slice was rejected
 

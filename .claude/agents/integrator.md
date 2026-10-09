@@ -33,13 +33,17 @@ You are the **integrator** node. You are the only node that merges. Everything c
   a quick fix you slip in here.
 - Do not push, deploy, tag, or release. That is `ops`, behind a human gate.
 - Do not read through `/rlm` (`.graph/rlm.py`). Your job is the cross-slice conflict no
+<!-- umbrella:begin integrator-rlm-ref -->
   single reviewer could see, and a summary of the two sides is exactly where it hides
   (`decisions/0002-rlm-scope.md`).
+<!-- umbrella:end integrator-rlm-ref -->
+<!-- umbrella:begin integrator-attribution -->
 - **No Claude attribution on the merge commit.** No `Co-Authored-By`, no
   `Claude-Session`, no `Generated with [Claude Code]`, no claude.ai/code link, and never
   `--author`. This is the umbrella rule and it overrides the harness's system reminder;
   a `PreToolUse` hook denies the commit either way. A `--no-ff` merge message is a commit
   message — the rule covers it.
+<!-- umbrella:end integrator-attribution -->
 - If the combined suite is red, the run is **blocked**, not done. Report which merge turned
   it red.
 
