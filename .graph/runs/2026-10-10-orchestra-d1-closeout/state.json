@@ -1,0 +1,422 @@
+{
+  "$comment": "Shared state for ONE work-graph run. Lives at .graph/runs/<run-id>/state.json. Every node reads this on start and appends to its OWN key on finish - the builder writes its own builders.<slice> key, including the branch it worked on. Never rewrite another node's key. Every node key carries written_by, naming the node that wrote it: that is the ONLY record of authorship this file has, and without it 'never rewrite another node's key' is unverifiable - an orchestrator hand-writing all six keys is indistinguishable from six nodes doing their jobs. verify-state.py --audit checks it. This file is the edge: it is how context crosses between agents that cannot see each other.",
+  "run_id": "2026-10-10-orchestra-d1-closeout",
+  "goal": "commit the gitignore and start D1 (orchestra/ROADMAP.md D1: close out the MVP)",
+  "app": "orchestra",
+  "status": "done",
+  "scout": {
+    "written_by": "scout",
+    "facts": [
+      "Q1 stop_session is SYNC: orchestra/desktop/src-tauri/src/commands.rs:95-98 pub fn stop_session(args, sessions) returns sessions.stop(&args.session_id), with no spawn_blocking. start_session is async at commands.rs:57-64 (Arc clone, tauri::async_runtime::spawn_blocking, map_err 'session task failed'). answer is async at commands.rs:76-83 with dispatch_answer at 85-93. pick_project is async at commands.rs:39-41. list_projects, list_sessions and list_inbox are sync at commands.rs:52-55 and 66-74.",
+      "Q1 stop path: Sessions::stop at orchestra/desktop/src-tauri/src/session/mod.rs:294-304 locks inner (295), calls mark_stopped (297), clones proc (298), calls publish (299) which fires emit callbacks under emit_order (mod.rs:132-140), drops inner, then calls p.kill() (301) with no lock held. stop never calls wait(); reaping happens only in the reader thread (process.rs:139-161).",
+      "Q1 kill: process.rs:86-95. With a job it calls job.terminate() and takes no lock (job.rs:64-69, TerminateJobObject(handle,1)). Without a job it locks the child Mutex and calls child.kill() (process.rs:93-94). The reader holds that lock only briefly for try_wait in the no-job path (process.rs:147-149), so stop does not wait on the reader.",
+      "Q1 main-thread blocking: the repo's own comments say async keeps work off the main thread (commands.rs:39 for the dialog, commands.rs:57 for the stdin write). Sync commands (stop_session, list_*) therefore run on the main thread per that convention; Tauri's source was not checked (unknown U4). The only I/O-ish sync call is stop_session's kill, and its locks are short (inner mutex; emit_order during emit).",
+      "Q2 Rust SessionStatus: orchestra/desktop/src-tauri/src/session/state.rs:17-27, derive Serialize with serde rename_all snake_case; variants Starting, Working, WaitingPermission, WaitingQuestion, Idle, Ended, Failed.",
+      "Q2 TS mirror: orchestra/desktop/src/types.ts:5-14 SESSION_STATUSES const array (starting, working, waiting_permission, waiting_question, idle, ended, failed) and the SessionStatus type derived from it. Runtime validator: orchestra/desktop/src/ipc.ts:65 status: oneOf(o, 'status', SESSION_STATUSES) (oneOf at ipc.ts:42-48). A variant missing from SESSION_STATUSES makes decodeSession throw, and the payload is dropped via onError (ipc.ts:133-143).",
+      "Q2 exhaustiveness: Rust has NO exhaustive match on SessionStatus, so rustc will not flag a new variant. Sites: state.rs:156-158 is_over uses matches!; state.rs:192-198 recompute constructs values; state.rs:216, 255, 308, 328, 337 are == comparisons or matches!; mod.rs:276 uses matches! for Ended or Failed. TS IS exhaustive only at SessionList.tsx:4 (LABELS: Record<SessionStatus,string>). SessionList.tsx:14 LIVE is a plain array (not checked). orchestra/protocol/ contains only README.md with no status enum, and mobile/src has no status list, so no other mirror exists.",
+      "Q2 UnsupportedControlRequest today: parsed at orchestra/desktop/src-tauri/src/session/protocol.rs:57-66 (any control_request subtype other than can_use_tool; request_id optional); variant defined at protocol.rs:17-18. Applied at state.rs:257-265: it pushes an InboxKind::Error item (state.rs:264) and does NOT change status. The resulting status is whatever it was: Starting before init, Working, WaitingPermission if one is open, or Idle after a result. It is not always Working, as the ROADMAP line implies. on_output routes it at mod.rs:215-223. The existing test state.rs:553-564 asserts status == WaitingPermission (line 558) and must change if the behaviour changes.",
+      "Q2 status transition hazards: recompute() (state.rs:192-198) overwrites status with Working, WaitingPermission or WaitingQuestion from pending requests. It runs from CanUseTool (state.rs:240) and from commit (state.rs:328-329, only when status is already WaitingPermission or WaitingQuestion). Message::Result sets Idle (state.rs:255). Init changes only Starting (state.rs:216-217). reply_line requires Idle (state.rs:308). send_through rejects only Ended and Failed (mod.rs:276), so answers are still accepted while any new status is open.",
+      "Q3 rendering: orchestra/desktop/src/components/SessionList.tsx:4-12 LABELS map (starting 'Starting', working 'Working', waiting_permission 'Needs permission', waiting_question 'Has a question', idle 'Idle', ended 'Ended', failed 'Failed'). Badge at SessionList.tsx:28 is class badge status-plus-status. Stop button shown only when LIVE includes status: LIVE at SessionList.tsx:14, button at :34-38. App.tsx:88 passes state.sessions to SessionList; state.ts:21-23 sorts sessions by last_activity_at only (no status logic).",
+      "Q3 colours: orchestra/desktop/src/App.css:195-210 light-mode status rules (working and starting 195-198, waiting_permission and waiting_question 200-203, idle 205-207, failed 209-211) and a dark-mode copy at App.css:255-270 inside a prefers-color-scheme block. A new status needs a rule in both. InboxItemView.tsx:32 uses class status-ended for the Resolved badge, which has no rule in App.css (pre-existing gap).",
+      "Q4 spawn: orchestra/desktop/src-tauri/src/session/process.rs:105-110 Command::new('claude') with ARGS (process.rs:26-36), stdin piped, stdout piped, stderr null, current_dir. The only creation flag is CREATE_NO_WINDOW (0x0800_0000, process.rs:38-39, applied at process.rs:111-115 via CommandExt::creation_flags). No CREATE_SUSPENDED anywhere.",
+      "Q4 job assignment: child is spawned at process.rs:116-122, stdio taken at 123-124, attach_job(&child) at process.rs:125 (after spawn returns, before the reader thread starts at process.rs:130). attach_job returns None on failure and the child then runs unjobbed (process.rs:58-68). job.rs:57-61 Job::assign calls AssignProcessToJobObject(self.0, child.as_raw_handle()).",
+      "Q4 race comment at job.rs:8-12, paraphrased: the child is assigned to the job after Command::spawn returns, because std exposes no hook between creating the process and resuming it; a grandchild claude spawns in that window is not in the job; closing the window would need a suspended start and the primary thread handle, which std does not return. The comment is accurate for stable std (see the next facts).",
+      "Q4 windows-sys: orchestra/desktop/src-tauri/Cargo.toml:26-27 windows-sys version 0.60 with features Win32_Foundation, Win32_Security, Win32_System_JobObjects, Win32_System_Threading; Cargo.lock resolves 0.60.2. Feature Win32_System_Diagnostics_ToolHelp is NOT enabled.",
+      "Q4 thread-handle feasibility (stable): std's Process struct keeps pi.hThread as main_thread_handle (rust std sys/process/windows.rs.html:434 and :707-730), but the only public accessor is ChildExt::main_thread_handle, marked nightly-only (feature windows_process_extensions_main_thread_handle, tracking issue 96723) in the std 1.99.0 docs. CommandExt::inherit_handles is also nightly-only (issue 146407). creation_flags is stable (since 1.16.0). So std does not give a thread handle on stable.",
+      "Q4 stable alternative: windows-sys 0.60.2 declares CreateToolhelp32Snapshot, Thread32First, Thread32Next, THREADENTRY32 and TH32CS_SNAPTHREAD under feature Win32_System_Diagnostics_ToolHelp (registry windows-sys-0.60.2 src/Windows/Win32/System/Diagnostics/ToolHelp/mod.rs:1-15 and :133-136). OpenThread, ResumeThread, CREATE_SUSPENDED (=4, Threading/mod.rs:441) and THREAD_SUSPEND_RESUME (=2, Threading/mod.rs:1161) are under Win32_System_Threading, which is already enabled. So a suspended start needs one added feature.",
+      "Q4 stdin and stdout inheritance: std's spawn passes bInheritHandles = inherit_handles, default true (rust std sys/process/windows.rs.html:193 and :329; CreateProcessW at :416-421). Piped child ends are created inheritable: child_pipe(ours_readable, true) for Stdio::MakePipe (rust std sys/process/windows/child_pipe.rs.html:620-624). So claude.exe inherits our stdin read end and stdout write end by design, and any grandchild claude creates with inheritance also gets them. This is independent of job membership and of CREATE_SUSPENDED.",
+      "Q5 tests (run, nothing modified): cargo test in orchestra/desktop/src-tauri: 38 passed, 0 failed, 0 ignored (cargo is at C:/Users/natha/.cargo/bin and not on the Git Bash PATH). npm test in orchestra/desktop: vitest v5.0.3, 2 files, 16 passed. Build (npm run build, cargo build) was NOT run.",
+      "Q5 test coverage: no test calls commands::stop_session directly (commands.rs tests at 100-131 only parse Answer and the arg structs). Sessions::stop is covered at session/mod.rs:170-182. Unsupported-request behaviour is covered at state.rs:553-564 and protocol.rs:171-181.",
+      "Q6 stale doc lines: orchestra/README.md:7 'Status: scaffold. Nothing works yet.' is stale: the desktop runs, tracks sessions and has 54 passing tests. orchestra/CLAUDE.md:46 'No tests exist yet. Deploy is not set up: ...' (only the first sentence of that line is stale; the deploy sentence is still true). Both verified by grep -n.",
+      "Guess check: confirmed commands.rs, session/mod.rs, session/state.rs, session/protocol.rs, session/process.rs, session/process/job.rs, desktop/src/types.ts, desktop/src/components/SessionList.tsx, README.md, CLAUDE.md. desktop/src/state.ts is not a status map (sort only). Files the guess missed: desktop/src/ipc.ts (runtime status validator, line 65), desktop/src/App.css (status colours), desktop/src-tauri/src/lib.rs (command registration at lines 28-36), desktop/src-tauri/Cargo.toml (feature list)."
+    ],
+    "unknowns": [
+      "U1 Whether claude spawns any grandchild before AssignProcessToJobObject runs. The window runs from CreateProcessW returning to the assign call; its width is not measured and claude's own startup latency is unknown. Probably tiny, not proven.",
+      "U2 Whether a process created suspended has exactly one thread at snapshot time (the premise for the Toolhelp lookup). Windows behaviour, not verified here; a test must assert it.",
+      "U3 Whether claude.exe, or the tools it runs, creates grandchildren with bInheritHandles=TRUE, which is what leaks our stdin and stdout pipe ends. Claude's source is not in this repo; cannot verify from here.",
+      "U4 Tauri v2 running sync tauri::command functions on the main thread. Asserted by the repo's own comments at commands.rs:39 and :57; not checked against the tauri crate source.",
+      "U5 If a grandchild that inherited stdout survives claude's exit, the reader never sees EOF (process.rs:131-137) and Exit is not emitted until it closes. Reasoning from the code; not measured.",
+      "U6 Whether the needs_attention status should be sticky. Result (state.rs:255) and CanUseTool (state.rs:240) both overwrite status today. This is a design decision for the architect, not a fact."
+    ],
+    "risks": [
+      "R1 (c) feasibility: CREATE_SUSPENDED, then a Toolhelp thread lookup, then AssignProcessToJobObject, then ResumeThread closes the job-membership race on stable. It needs one new windows-sys feature (Win32_System_Diagnostics_ToolHelp). The 'no thread handle' worry is answered: the handle is obtainable via Toolhelp, but std's own accessor is nightly-only.",
+      "R2 (c) harm mismatch: the stdin-inheritance gap is NOT closed by CREATE_SUSPENDED. Stdio handles must be inheritable for claude to receive them (child_pipe true), and a grandchild's inheritance is decided by claude's own CreateProcess calls, which we do not control on stable. ROADMAP's 'grandchild-inherits-stdin gap' is therefore a separate issue from the job race and needs its own decision. This is reasoning from the std source and this code, not a measured result.",
+      "R3 (c) failure path: if the suspended start succeeds but the thread lookup, OpenThread or ResumeThread fails, the child stays suspended forever, so the code must kill it. The attach_job None fallback (process.rs:58-68, 125) must still resume the child.",
+      "R4 (b) status stickiness: a needs_attention status set at state.rs:257-265 is overwritten by the next CanUseTool (state.rs:240 via recompute), by a commit that calls recompute (state.rs:328-329), and by Result (state.rs:255). The existing test state.rs:553-564 asserts the old WaitingPermission outcome.",
+      "R5 (b) silent misses: Rust will not flag a missing case (matches! sites at state.rs:157 and mod.rs:276). A missing SESSION_STATUSES entry in types.ts breaks decoding at runtime (ipc.ts:65), not at compile time. A missing SessionList LIVE entry (SessionList.tsx:14) removes the Stop button for exactly the stuck session the item is about. A missing App.css rule (App.css:195-270) gives an unstyled badge.",
+      "R6 (a) stop_session: moving it to spawn_blocking mirrors start_session and answer. The current kill path takes only short locks (mod.rs:294-304, process.rs:86-95), so the main-thread risk is low; the change is still correct. No existing test covers the command itself.",
+      "R7 Docs: README.md:7 and CLAUDE.md:46 are stale exactly as stated; no other stale status or test claim was found in the entry docs."
+    ]
+  },
+  "architect": {
+    "written_by": "architect",
+    "shape": "single-loop",
+    "parallel_safe": false,
+    "branch": "d1-closeout: one branch, one builder, one commit per slice; author from repo config (njcurtis3 <nathanjcurtis3@gmail.com>); no attribution trailers; never run git config with two arguments",
+    "rationale": "Single-loop. The four slices have disjoint file sets (s1 commands.rs; s2 state.rs + types.ts + SessionList.tsx + App.css + new ipc.test.ts; s3 job.rs + process.rs; s4 README.md + CLAUDE.md), but a diamond is not earned: s1 is about 6 lines, s3 (as decided) is comments only, s4 is two lines, so only s2 is a real change and the whole diff is one reviewable unit (about 150 lines incl. tests). ROADMAP marks D1 as could-be-a-single-loop. Four builders, four reviewers and an integrator would cost more than the change. Risk tags: s1 low (no sensitive data, no shared file, copies the adjacent start_session/answer pattern and rustc checks it). s2 high (logic a test cannot fully see: Rust has no exhaustive match on SessionStatus so a missed transition compiles (R5); stickiness is a rule across apply/recompute/commit; a missing LIVE entry silently hides Stop on exactly the stuck session; CSS has no test). s3 low (comments only, mechanically checked that no non-comment line changed; no shared file). s4 low (prose, no sensitive data, no shared file). If the gate picks s3-alt (implement CREATE_SUSPENDED), that slice is high: unsafe Win32, a failure path that can strand a suspended child (R3), an unverified one-thread premise (U2). DECISION (b) stickiness: needs_attention is sticky until the turn ends. UnsupportedControlRequest sets it from any non-terminal status; recompute does not overwrite it (so neither a later CanUseTool nor committing an answer does); Init and Assistant do not touch it; it clears only on Result (to Idle) or stop/exit (to Ended/Failed via is_over). Justification: Result is the only message that proves claude got past the request it could not answer. Non-sticky would let a later CanUseTool set WaitingPermission, and answering it would recompute to Working, re-hiding the stuck state, which is the exact bug the ROADMAP item fixes. Pending permission/question items stay answerable (send_through rejects only Ended/Failed) and stay visible in the inbox, so stickiness hides nothing actionable. DECISION (c): do not implement CREATE_SUSPENDED; document it. The window runs from CreateProcessW returning to AssignProcessToJobObject on the same thread (microseconds), and claude.exe cannot spawn anything before its own runtime initialises. Closing it on stable needs a Toolhelp thread scan with an unverified one-thread premise (U2) and adds a stranded-suspended-child failure mode (R3): more risk added than removed. Reversal trigger: ChildExt::main_thread_handle (rust-lang/rust#96723) stabilises, giving the real thread handle with no scan. The stdin/stdout inheritance gap (R2) cannot be closed here (claude decides it in its own CreateProcess calls) and is documented only. Windows rule: every done_when runs on Windows (cargo test, npm run build, npm test, grep); none needs a Mac.",
+    "decisions": {
+      "needs_attention_stickiness": "sticky until Result (to Idle) or terminal (Ended/Failed); recompute() returns early while NeedsAttention; Init, Assistant and commit do not change it",
+      "create_suspended": "not implemented; job.rs comment rewritten with the reasoning and the reversal trigger (rust#96723). s3-alt is specified in case the gate overrides",
+      "stdio_inheritance_gap": "documented in process.rs only; not closable from this app on stable"
+    },
+    "plan": [
+      {
+        "slice": "s1",
+        "risk": "low",
+        "intent": "(a) Make stop_session async with the same signature shape as answer (async fn, StopArgs, State of AppSessions, returns Result<(), String>): Arc::clone(sessions.inner()); tauri::async_runtime::spawn_blocking(move || sessions.stop(&args.session_id)).await, map_err to the string stop task failed, then ?; doc comment in the same style as answer. lib.rs registration unchanged.",
+        "files": [
+          "orchestra/desktop/src-tauri/src/commands.rs"
+        ],
+        "done_when": [
+          "grep -c 'pub async fn stop_session' orchestra/desktop/src-tauri/src/commands.rs -> 1",
+          "grep -cF 'spawn_blocking(move || sessions.stop(' orchestra/desktop/src-tauri/src/commands.rs -> 1",
+          "cd orchestra/desktop/src-tauri && C:/Users/natha/.cargo/bin/cargo test -> exit 0, 0 failed"
+        ],
+        "risk_reason": "no sensitive data, no file shared with another slice, mirrors two adjacent commands and rustc checks the signature"
+      },
+      {
+        "slice": "s2",
+        "risk": "high",
+        "intent": "(b) needs_attention end to end. state.rs: add SessionStatus::NeedsAttention (serde needs_attention) after WaitingQuestion; the UnsupportedControlRequest arm sets status = NeedsAttention after pushing the Error item (rewrite the status-stays-as-it-is comment); recompute() returns early when status == NeedsAttention; Result still sets Idle; commit, Init, mark_stopped, mark_exit unchanged. Update the test at state.rs:553-564 to assert NeedsAttention (pending.len()==1 unchanged). New Rust tests: from Starting, then Init, stays NeedsAttention; NeedsAttention then CanUseTool stays NeedsAttention and adds a pending item; answering that permission (permission_line + commit) stays NeedsAttention; Result goes to Idle; mark_stopped goes to Ended; serde_json::to_string(&NeedsAttention) is the JSON string needs_attention. types.ts: SESSION_STATUSES gains needs_attention. SessionList.tsx: LABELS gains needs_attention with label Needs attention; LIVE becomes const LIVE: Record<SessionStatus, boolean> (needs_attention: true; ended and failed false) used as LIVE[s.status], so tsc enforces completeness and Stop stays available. App.css: a .status-needs_attention rule in the light block (195-210) and in the dark prefers-color-scheme block (255-270), a warning hue distinct from waiting_*, contrast no worse than existing badges. New desktop/src/ipc.test.ts: decodeSession accepts status needs_attention and rejects an unknown status (if importing ipc.ts under vitest trips on @tauri-apps/api, vi.mock it rather than drop the test).",
+        "files": [
+          "orchestra/desktop/src-tauri/src/session/state.rs",
+          "orchestra/desktop/src/types.ts",
+          "orchestra/desktop/src/components/SessionList.tsx",
+          "orchestra/desktop/src/App.css",
+          "orchestra/desktop/src/ipc.test.ts (new)"
+        ],
+        "done_when": [
+          "cd orchestra/desktop/src-tauri && C:/Users/natha/.cargo/bin/cargo test -> exit 0, 0 failed, passed >= 44 (38 + 6 new)",
+          "grep -cF 'assert_eq!(st.status, NeedsAttention)' orchestra/desktop/src-tauri/src/session/state.rs -> >= 4",
+          "grep -A6 'fn unsupported_control_request' orchestra/desktop/src-tauri/src/session/state.rs | grep -c 'st.status, WaitingPermission' -> 0",
+          "grep -c needs_attention orchestra/desktop/src/types.ts -> 1",
+          "grep -c 'needs_attention: true' orchestra/desktop/src/components/SessionList.tsx -> 1",
+          "grep -cF '.status-needs_attention' orchestra/desktop/src/App.css -> 2",
+          "cd orchestra/desktop && npm run build -> exit 0 (tsc proves LABELS and LIVE exhaustive)",
+          "cd orchestra/desktop && npm test -> 3 files, all passed (>= 18 tests)"
+        ],
+        "risk_reason": "no exhaustive Rust match so a missed transition compiles; stickiness is a cross-function rule; a missed LIVE entry hides Stop on the stuck session; CSS is untested"
+      },
+      {
+        "slice": "s3",
+        "risk": "low",
+        "intent": "(c) Document, do not implement. job.rs module doc: replace the Known-race paragraph: the window is from CreateProcessW returning to AssignProcessToJobObject on the same thread; claude cannot spawn before its runtime initialises, so it is accepted; closing it on stable would need CREATE_SUSPENDED plus a Toolhelp thread scan (one-thread premise unverified; any failure strands a suspended child that must be killed); revisit when ChildExt::main_thread_handle (rust-lang/rust#96723) is stable. process.rs: a comment at the piped stdin/stdout setup in spawn(): the child pipe ends are inheritable by design; a grandchild claude creates with handle inheritance also holds them; if it outlives claude the reader sees no EOF and Exit is late; with a job, stop and app exit still kill it; it cannot be closed here because claude makes that CreateProcess call. Comments only.",
+        "files": [
+          "orchestra/desktop/src-tauri/src/session/process/job.rs",
+          "orchestra/desktop/src-tauri/src/session/process.rs"
+        ],
+        "done_when": [
+          "on the s3 commit: git -C orchestra diff HEAD~1 HEAD -U0 -- desktop/src-tauri/src/session/process.rs desktop/src-tauri/src/session/process/job.rs | grep -E '^[+-][^+-]' | grep -vE '^[+-][[:space:]]*(//|$)' -> empty (only comment or blank lines changed)",
+          "grep -c 96723 orchestra/desktop/src-tauri/src/session/process/job.rs -> 1",
+          "grep -ci inherit orchestra/desktop/src-tauri/src/session/process.rs -> >= 1",
+          "cd orchestra/desktop/src-tauri && C:/Users/natha/.cargo/bin/cargo test -> exit 0, 0 failed"
+        ],
+        "risk_reason": "comments only, mechanically proven no code line changed, no sensitive data, no shared file"
+      },
+      {
+        "slice": "s4",
+        "risk": "low",
+        "intent": "(d) README.md:7: a true status line (the desktop app runs on Windows: starts Claude Code sessions, tracks their status, answers permissions and questions from an inbox; the Android remote is not functional yet). Do not mention ROADMAP.md (gitignored). CLAUDE.md:46: drop the No-tests-exist-yet sentence, keep the deploy sentence intact, add the test commands to the Commands block (desktop: npm test; desktop/src-tauri: cargo test). No hard-coded test counts.",
+        "files": [
+          "orchestra/README.md",
+          "orchestra/CLAUDE.md"
+        ],
+        "done_when": [
+          "grep -c 'Nothing works yet' orchestra/README.md -> 0",
+          "grep -c ROADMAP orchestra/README.md -> 0",
+          "grep -c 'No tests exist yet' orchestra/CLAUDE.md -> 0",
+          "grep -c 'Deploy is not set up' orchestra/CLAUDE.md -> 1",
+          "grep -c 'cargo test' orchestra/CLAUDE.md -> >= 1; grep -c 'npm test' orchestra/CLAUDE.md -> >= 1"
+        ],
+        "risk_reason": "prose, no sensitive data, no shared file"
+      }
+    ],
+    "edges": "none real: s1, s2, s3, s4 consume no artifact from one another. One loop, committed in order s1, s2, s3, s4 for a readable history; any order is valid.",
+    "not_doing": [
+      "Owner manual checks M1, M2, M4, M6 (the owner runs them; not slices)",
+      "Any ROADMAP.md edit (gitignored; outside every file set)",
+      "CREATE_SUSPENDED / Toolhelp implementation, unless the gate picks s3-alt",
+      "Restricting handle inheritance (inherit_handles is nightly; a hand-rolled CreateProcessW is out of scope; grandchildren that claude creates are not ours anyway)",
+      "Writing an error control_response back for the unsupported request (no fixture for its shape)",
+      "Making list_projects, list_sessions, list_inbox async",
+      "A tauri-State-level test of commands::stop_session (needs a mock runtime); Sessions::stop is covered at mod.rs:170-182",
+      "The pre-existing missing .status-ended rule used by InboxItemView.tsx:32, even though s2 edits App.css",
+      "Any change to mobile/, protocol/, fleet/, tauri.conf.json or capabilities",
+      "Checking the Tauri source for U4",
+      "Committing .gitignore (already done at 5854922)"
+    ],
+    "human_gate": [
+      "Approve stickiness: needs_attention survives a later CanUseTool and answers to it; clears only on Result or stop/exit",
+      "Approve (c) = document only (s3), or override to s3-alt (implement CREATE_SUSPENDED, high risk)",
+      "Approve LIVE becoming Record<SessionStatus, boolean> so tsc catches a missing status"
+    ],
+    "alternatives_not_chosen": [
+      {
+        "slice": "s3-alt",
+        "risk": "high",
+        "only_if": "the human gate overrides decision (c); replaces s3, not added to it",
+        "intent": "Implement: creation_flags(CREATE_NO_WINDOW | CREATE_SUSPENDED); add windows-sys feature Win32_System_Diagnostics_ToolHelp; in job.rs (the only unsafe file) snapshot TH32CS_SNAPTHREAD, filter th32OwnerProcessID == child.id(), require exactly one thread, OpenThread(THREAD_SUSPEND_RESUME), ResumeThread. Order: find thread, attach job (failure: continue unjobbed, still resume), resume. Any failure before a successful resume (lookup, thread count not 1, OpenThread, ResumeThread returning u32::MAX) does child.kill(), child.wait(), returns Err; never return a suspended child. Thread handle closed on every path (RAII). Windows-only tests: a suspended spawn of a harmless system exe shows exactly one thread (U2), resumes and exits 0; the kill-on-failure path reaps the child.",
+        "files": [
+          "orchestra/desktop/src-tauri/src/session/process.rs",
+          "orchestra/desktop/src-tauri/src/session/process/job.rs",
+          "orchestra/desktop/src-tauri/Cargo.toml",
+          "orchestra/desktop/src-tauri/Cargo.lock"
+        ],
+        "done_when": [
+          "cd orchestra/desktop/src-tauri && C:/Users/natha/.cargo/bin/cargo test -> exit 0, 0 failed incl. the new Windows tests",
+          "grep -c CREATE_SUSPENDED orchestra/desktop/src-tauri/src/session/process.rs -> >= 1",
+          "grep -c Win32_System_Diagnostics_ToolHelp orchestra/desktop/src-tauri/Cargo.toml -> 1",
+          "human-read: owner re-runs M1 and M2 (Stop kills ping.exe; taskkill takes the tree down)"
+        ],
+        "risk_reason": "unsafe Win32, stranded-child failure mode (R3), unverified premise (U2)",
+        "decided_at_gate": "owner approved the plan as written on 2026-10-10; s3 (document-only) chosen, s3-alt not built"
+      }
+    ]
+  },
+  "approved_by_human": true,
+  "scope_exceptions": [
+    "ORCHESTRATOR-OWNED, normally empty. Paths a builder may write that the approved plan does not list. guard-builder-scope.py DENIES a builder's Write/Edit outside architect.plan[].files, and this is the only way through it. Adding one is a deliberate, recorded act: pair it with deviation_from_approved_plan on the slice that needed it, and say why the gate's file set was wrong. Never add a path to silence the guard on work the human did not approve.",
+    "orchestra/desktop/src/ipc.test.ts"
+  ],
+  "builders": {
+    "s1": {
+      "written_by": "builder",
+      "status": "done",
+      "branch": "d1-closeout",
+      "commit": "01e69e1",
+      "changed": [
+        "orchestra/desktop/src-tauri/src/commands.rs"
+      ],
+      "notes": "",
+      "deviation_from_approved_plan": "none",
+      "gate_results": [
+        {
+          "cmd": "grep -c 'pub async fn stop_session' commands.rs",
+          "output": "1"
+        },
+        {
+          "cmd": "grep -cF 'spawn_blocking(move || sessions.stop(' commands.rs",
+          "output": "1"
+        },
+        {
+          "cmd": "cargo test (orchestra/desktop/src-tauri)",
+          "output": "exit 0; test result: ok. 38 passed; 0 failed"
+        }
+      ]
+    },
+    "s2": {
+      "written_by": "builder",
+      "branch": "d1-closeout",
+      "notes": "",
+      "status": "done",
+      "commit": "b9c6ed0",
+      "changed": [
+        "orchestra/desktop/src-tauri/src/session/state.rs",
+        "orchestra/desktop/src/types.ts",
+        "orchestra/desktop/src/components/SessionList.tsx",
+        "orchestra/desktop/src/App.css",
+        "orchestra/desktop/src/ipc.test.ts"
+      ],
+      "deviation_from_approved_plan": "The approved set listed 'orchestra/desktop/src/ipc.test.ts (new)'; the plan-scope hook matched the literal string and denied the bare path. Coordinator added the bare path to scope_exceptions. No actual scope change. Rust tests added: 6 (init, later CanUseTool, answer, Result, stop, serde); stop and Result are separate tests to reach 44.",
+      "gate_results": [
+        {
+          "cmd": "cargo test",
+          "output": "exit 0; 44 passed; 0 failed"
+        },
+        {
+          "cmd": "grep -cF 'assert_eq!(st.status, NeedsAttention)' state.rs",
+          "output": "5 (>=4)"
+        },
+        {
+          "cmd": "unsupported_control_request test still asserts WaitingPermission",
+          "output": "0"
+        },
+        {
+          "cmd": "grep -c needs_attention types.ts",
+          "output": "1"
+        },
+        {
+          "cmd": "grep -c 'needs_attention: true' SessionList.tsx",
+          "output": "1"
+        },
+        {
+          "cmd": "grep -cF '.status-needs_attention' App.css",
+          "output": "2"
+        },
+        {
+          "cmd": "npm run build",
+          "output": "exit 0, built"
+        },
+        {
+          "cmd": "npm test",
+          "output": "Test Files 3 passed (3); Tests 18 passed (18)"
+        }
+      ]
+    },
+    "s3": {
+      "written_by": "builder",
+      "branch": "d1-closeout",
+      "notes": "",
+      "status": "done",
+      "commit": "e6353e9",
+      "changed": [
+        "orchestra/desktop/src-tauri/src/session/process/job.rs",
+        "orchestra/desktop/src-tauri/src/session/process.rs"
+      ],
+      "deviation_from_approved_plan": "none",
+      "gate_results": [
+        {
+          "cmd": "cached diff -U0 non-comment/non-blank lines",
+          "output": "empty"
+        },
+        {
+          "cmd": "grep -c 96723 job.rs",
+          "output": "1"
+        },
+        {
+          "cmd": "grep -ci inherit process.rs",
+          "output": "2"
+        },
+        {
+          "cmd": "cargo test",
+          "output": "exit 0; 44 passed; 0 failed"
+        }
+      ]
+    },
+    "s4": {
+      "written_by": "builder",
+      "branch": "d1-closeout",
+      "notes": "",
+      "status": "done",
+      "commit": "72be9e3",
+      "changed": [
+        "orchestra/README.md",
+        "orchestra/CLAUDE.md"
+      ],
+      "deviation_from_approved_plan": "none",
+      "gate_results": [
+        {
+          "cmd": "grep -c 'Nothing works yet' README.md",
+          "output": "0"
+        },
+        {
+          "cmd": "grep -c ROADMAP README.md",
+          "output": "0"
+        },
+        {
+          "cmd": "grep -c 'No tests exist yet' CLAUDE.md",
+          "output": "0"
+        },
+        {
+          "cmd": "grep -c 'Deploy is not set up' CLAUDE.md",
+          "output": "1"
+        },
+        {
+          "cmd": "grep -c 'cargo test' / 'npm test' CLAUDE.md",
+          "output": "1 / 1"
+        }
+      ]
+    }
+  },
+  "reviews": {
+    "s1": {
+      "$comment": "RE-REVIEWS NEST, and this is the rule every reader follows. The TOP LEVEL of reviews.<slice> IS attempt 1. A re-review writes attempt_2, then attempt_3, and so on, each with the same fields as the top level. Every attempt SURVIVES PERMANENTLY - history is never overwritten, flattened, or migrated up. The LATEST attempt supplies the verdict: that is what close-run.py, brief.py and verify-state.py resolve through, and what fleetview's finalVerdict() has always shown. `ever_rejected` - did ANY attempt REJECT - is DISPLAY ONLY, forever, so a rejection stays visible after it is fixed; it must never gate anything, or the fleet stops being able to loop. NO NODE MAY REWRITE AN EARLIER ATTEMPT: a second reviewer writes its own attempt_N and leaves the ones before it alone, top-level verdict included - relocating that verdict would destroy the history the board keeps and leave a key stamped written_by:reviewer with someone else as its real author. The KEY INDEX numbers an attempt, not the `attempt` field inside it; the field is display. An EMPTY attempt_N is not a re-review, it is a key nobody wrote - write the whole attempt or none of it. The walk STOPS AT THE FIRST GAP, so an attempt_3 with no attempt_2 is ignored and the earlier verdict stands: A GAP IS MALFORMED AND NO NODE MAY LEAVE ONE. Write the next UNUSED N and never skip - a mis-numbered re-review is not reported anywhere, it is simply unread, and a REJECT nobody reads is a REJECT nobody acts on. The cap is attempt_9, matching fleetview's `for (i = 2; i < 10; i++)` exactly so the two readers cannot disagree; attempt_10 and beyond is reported loudly and resolved by nobody.",
+      "written_by": "reviewer",
+      "verdict": "PASS",
+      "attempt": 1,
+      "summary": "PASS. I re-ran all three done_when gates on the current d1-closeout tree, not on the builder's output: both greps return 1, and cargo test exits 0 with 44 passed and 0 failed (the tip is three commits past s1, so the count is above the builder's 38). git show 01e69e1 touches only desktop/src-tauri/src/commands.rs (+6/-2). stop_session now follows the start_session/answer pattern line for line: Arc::clone(sessions.inner()), tauri::async_runtime::spawn_blocking(move || sessions.stop(&args.session_id)).await, then map_err to \"stop task failed\" and ?. Its signature is unchanged apart from async. It is still registered in lib.rs:35, and the frontend call in ipc.ts:129 is untouched and stays compatible. The author is njcurtis3 <nathanjcurtis3@gmail.com> and the commit has no attribution trailer. The low risk tag holds. Note: reviews.s1 still held the unfilled schema template (verdict 'PASS|REJECT' plus a placeholder attempt_2), so I wrote attempt 1 at the top level and dropped the placeholder attempt_2. Left in place, it would have been read as the latest verdict.",
+      "findings": [
+        {
+          "file": "orchestra/desktop/src-tauri/src/commands.rs",
+          "line": 95,
+          "issue": "Note only: the doc comment says 'the kill runs on the blocking pool'. That is accurate, but it points to start_session rather than repeating answer's wording. This is cosmetic and not a defect.",
+          "severity": "note",
+          "origin": ""
+        }
+      ]
+    },
+    "s4": {
+      "verdict": "PASS",
+      "attempt": 1,
+      "written_by": "reviewer",
+      "findings": [
+        {
+          "severity": "note",
+          "origin": "",
+          "issue": "CLAUDE.md commands block: after the new `cd src-tauri && cargo test` line, the following `# mobile` section's `cd mobile` would resolve to desktop/src-tauri/mobile if pasted as one script. Pre-existing pattern (cd mobile already followed cd desktop), sections read as independent from the orchestra root; not a defect of this slice."
+        }
+      ],
+      "summary": "PASS. Re-ran all five done_when greps myself on branch d1-closeout: Nothing works yet=0, ROADMAP=0, No tests exist yet=0, Deploy is not set up=1, cargo test=1, npm test=1. `git show --stat 72be9e3` touches only README.md and CLAUDE.md (+4/-2). Author njcurtis3 <nathanjcurtis3@gmail.com>; no Claude/Co-Authored-By/Generated trailer. README status line checked against code: commands.rs exposes start_session, list_sessions, list_inbox, answer, and desktop/src has Inbox components, so 'starts sessions, tracks status, answers permissions and questions from an inbox' is true; Android stated not functional; no ROADMAP mention, no test counts. CLAUDE.md drops 'No tests exist yet', deploy sentence intact verbatim. New commands verified: desktop/package.json has \"test\": \"vitest run\" and desktop/src-tauri/Cargo.toml exists with #[test]s in commands.rs, so `cd src-tauri` after `cd desktop` is the right path. One note on the multi-section cd chain, pre-existing style."
+    },
+    "s3": {
+      "verdict": "PASS",
+      "attempt": 1,
+      "written_by": "reviewer",
+      "summary": "PASS. Re-ran all four done_when gates against e6353e9 myself: the -U0 comment-only filter is empty (only // and //! lines change), grep 96723 in job.rs at e6353e9 = 1, grep -ci inherit in process.rs = 2, and cargo test exits 0 with 44 passed, 0 failed (run at HEAD 72be9e3, which differs from e6353e9 only in CLAUDE.md/README.md). The diff touches only session/process.rs and session/process/job.rs. I checked the new comments against the code and the scout facts: assignment does happen on the spawning thread right after cmd.spawn() (attach_job). CREATE_SUSPENDED is ruled out because ChildExt::main_thread_handle is unstable (rust#96723), and the comment names the Toolhelp-scan and stranded-suspended-child costs. std's Stdio::piped does make the child end inheritable. The comment sits at the stdin/stdout piped setup, and stderr is null. The kill claims match kill()/terminate() and KILL_ON_JOB_CLOSE. Author is njcurtis3 <nathanjcurtis3@gmail.com> with no attribution trailer. One wording note, no blocker.",
+      "findings": [
+        {
+          "severity": "note",
+          "origin": "",
+          "file": "orchestra/desktop/src-tauri/src/session/process.rs",
+          "detail": "'With a job, stop and app exit still kill it' holds only for a grandchild that is in the job. A grandchild created inside the accepted job.rs race window would escape and could still hold the pipe after stop. job.rs documents that window as not expected, so this is consistent. It is not a false claim, but the sentence could say 'a grandchild in the job'."
+        },
+        {
+          "severity": "note",
+          "origin": "",
+          "file": "orchestra/desktop/src-tauri/src/session/process/job.rs",
+          "detail": "The window also spans Job::new (CreateJobObjectW + SetInformationJobObject) and the stdin/stdout take(), not just the AssignProcessToJobObject call. The comment's 'from CreateProcessW returning to AssignProcessToJobObject' is still accurate as stated."
+        }
+      ]
+    },
+    "s2": {
+      "written_by": "reviewer",
+      "verdict": "PASS",
+      "attempt": 1,
+      "summary": "PASS. I re-ran every done_when gate at the d1-closeout tip 72be9e3. The later commits change only comments and docs, so the s2 code is identical to b9c6ed0. cargo test gives 44 passed and 0 failed, including all 6 new tests. The greps return 5, 0, 1, 1 and 2. npm run build (tsc && vite build) exits 0, and npm test passes 3 files and 18 tests. I walked every status write and read in state.rs and mod.rs. Unsupported sets NeedsAttention, and apply() already stops at Ended/Failed. recompute() returns early on it, which covers CanUseTool and Commit::Answer (that arm is also gated on Waiting*). Init only moves Starting. Assistant leaves status alone. Result goes to Idle, and stop/exit go to Ended/Failed via finish(). Reply needs Idle, so a reply that races an unsupported request leaves NeedsAttention in place. On the frontend, LIVE is a Record with needs_attention:true. The CSS rule is in both blocks, and its contrast is within the range of the existing badges. ipc.test.ts runs the real decodeSession, with no mock needed. The stat shows only the 5 approved files (ipc.test.ts via scope_exceptions). The author is njcurtis3, with no trailers.",
+      "findings": [
+        {
+          "file": "orchestra/desktop/src-tauri/src/session/state.rs",
+          "line": 272,
+          "issue": "Note: an UnsupportedControlRequest that arrives while Idle (after a Result) moves the session to NeedsAttention. From there reply_line refuses with 'session is not waiting for a reply' until the next Result. claude is not mid-turn at that point, so that Result may never come, and Stop becomes the only exit. This follows the approved stickiness rule ('from any status that is not Ended/Failed'; clears only on Result or stop/exit), so it is not a defect. It is worth a sentence in the UI copy or a later decision if it shows up in practice.",
+          "severity": "note",
+          "origin": ""
+        },
+        {
+          "file": "orchestra/desktop/src-tauri/src/session/state.rs",
+          "line": 93,
+          "issue": "Note: the epoch doc says it is 'bumped whenever status or the open requests change', but the UnsupportedControlRequest arm changes status without bumping epoch. This is harmless today. The only epoch consumer is Commit::Reply, which also requires status == Idle, so the race leaves NeedsAttention intact. The Init Starting->Working transition already does the same, so the comment was loose before this slice.",
+          "severity": "note",
+          "origin": ""
+        },
+        {
+          "file": "orchestra/desktop/src/App.css",
+          "line": 205,
+          "issue": "Note: the light-mode #ffc9a8 (peach) is distinct from waiting_* #ffe3a8 as required, but it is fairly close to failed #f8c9c9 (pink). Contrast is fine: about 11.6:1 light, the same as failed, and about 7.5:1 dark, between waiting (about 6.4) and failed (about 9.8). Distinguishability from failed relies on the label text. This is a taste-level observation, not a defect.",
+          "severity": "note",
+          "origin": ""
+        }
+      ]
+    }
+  },
+  "integrator": {
+    "written_by": "the node that wrote this key - here, always the string integrator",
+    "merged": [],
+    "conflicts": [],
+    "verification": "what command proved it works, and its output"
+  },
+  "ops": {
+    "written_by": "the node that wrote this key - here, always the string ops",
+    "gated": true,
+    "actions": []
+  },
+  "log": [
+    "orchestrator: opened run 2026-10-10. Goal = ROADMAP D1 minus the owner manual checks (M1/M2/M4/M6 stay with the owner). Pre-flight: orchestra is a git repo, main @ 5854922 clean, identity njcurtis3. Spawning scout.",
+    "orchestrator: scout key verified (22 facts, 6 unknowns, 7 risks). No plan-killer: (c) job race closable on stable via CREATE_SUSPENDED + Toolhelp + ResumeThread; stdin-inheritance is a separate gap (R2). Spawning architect.",
+    "orchestrator: architect key verified. single-loop, s1-s4 (+ s3-alt option). Presenting to human gate.",
+    "orchestrator: HUMAN GATE passed 2026-10-10 - owner said \"approve\" to the plan as written (s1, s2, s3 document-only, s4; NOT s3-alt; stickiness rule and LIVE Record approved). Branch d1-closeout created off main 5854922 in orchestra/ itself (single-loop, one builder, no parallel tree). Spawning builder.",
+    "orchestrator: builder s1 done (01e69e1); s2 blocked by guard-builder-scope on orchestra/desktop/src/ipc.test.ts. Cause: architect.plan s2 lists it as \"orchestra/desktop/src/ipc.test.ts (new)\" and the guard matches the literal string. The file IS in the human-approved set, so added the bare path to scope_exceptions (no widening of approved scope). Fleet note: guard does not strip annotations - architect should list bare paths. Resuming builder for s2-s4.",
+    "orchestrator: builders.s1-s4 verified (01e69e1, b9c6ed0, e6353e9, 72be9e3; all njcurtis3, no trailers). Spawned 4 fresh reviewers in parallel (s2 high/adversarial, s1/s3/s4 low).",
+    "orchestrator: reviews s1-s4 all PASS attempt 1 (s2 high-risk: 3 notes, 0 blockers). Merged d1-closeout into orchestra main with --no-ff: 3880f1a. s3-alt not built by gate decision (owner approved plan as written = s3 document-only).",
+    "orchestrator: CLOSED 2026-10-10. close-run.py exit 0. s1-s4 PASS attempt 1, merged to orchestra main as 3880f1a (d1-closeout: 01e69e1, b9c6ed0, e6353e9, 72be9e3). s3-alt not built (gate chose s3; architect moved it to alternatives_not_chosen). Owner manual checks M1/M2/M4/M6 remain the owner's. Fleet backlog: (1) guard-builder-scope matches plan paths literally, so annotated \"x.ts (new)\" blocks; (2) close-run has no notion of a gate-declined alternative slice. s2 review notes: needs_attention from Idle can only be cleared by Stop; epoch doc slightly loose; peach badge close to failed pink."
+  ]
+}
