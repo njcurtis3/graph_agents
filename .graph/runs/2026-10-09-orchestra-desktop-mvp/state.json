@@ -1,0 +1,518 @@
+{
+  "$comment": "Shared state for ONE work-graph run. Lives at .graph/runs/<run-id>/state.json. Every node reads this on start and appends to its OWN key on finish - the builder writes its own builders.<slice> key, including the branch it worked on. Never rewrite another node's key. Every node key carries written_by, naming the node that wrote it: that is the ONLY record of authorship this file has, and without it 'never rewrite another node's key' is unverifiable - an orchestrator hand-writing all six keys is indistinguishable from six nodes doing their jobs. verify-state.py --audit checks it. This file is the edge: it is how context crosses between agents that cannot see each other.",
+  "run_id": "2026-10-09-orchestra-desktop-mvp",
+  "goal": "Local desktop MVP (first desktop-milestone run): Rust core launches/tracks Claude Code sessions via their hooks; UI shows session status + inbox, answer on desktop. No phone link, no protocol work.",
+  "app": "orchestra",
+  "status": "done",
+  "scout": {
+    "written_by": "scout",
+    "facts": [
+      "Template still stock: orchestra/desktop/src/App.tsx:1-51 is the create-tauri-app React page; invoke(\"greet\") at App.tsx:12; App.css is the stock stylesheet; no app logic exists.",
+      "Rust core is stock: orchestra/desktop/src-tauri/src/lib.rs:2-5 defines greet(name); lib.rs:10 registers only greet. main.rs:5 calls orchestra_lib::run().",
+      "Cargo.toml:20-23 deps: tauri 2 (no features), serde 1 (derive), serde_json 1. Build-dep tauri-build 2 (Cargo.toml:18). No tokio, no HTTP server, no tauri-plugin-* crate. Crate orchestra, lib orchestra_lib (Cargo.toml:2,14), edition 2024 (Cargo.toml:6).",
+      "tauri.conf.json: productName Orchestra (:3); identifier com.telosrg.orchestra (:5); devUrl http://localhost:1420 (:8); one window label main 1100x720, min 640x480 (:13-21); CSP at :24 is \"default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src ipc: http://ipc.localhost\" (not null, no unsafe-*). bundle.targets all (:29); no plugins.updater block and no bundle.createUpdaterArtifacts (:27-37).",
+      "capabilities/default.json:5-10: windows [\"main\"], permissions [\"core:default\"] only.",
+      "package.json deps (:12-16): react ^19.1.0, react-dom ^19.1.0, @tauri-apps/api ^2. devDeps (:17-24): @types/react ^19.1.8, @types/react-dom ^19.1.6, @vitejs/plugin-react ^6.0.2, typescript ~6.0.3, vite ^8.0.16, @tauri-apps/cli ^2. Scripts (:6-11): dev, build = \"tsc && vite build\", preview, tauri. No test script; no tauri plugin JS packages.",
+      "Build: `npm run build` in orchestra/desktop exit 0 (tsc + vite build, 19 modules, dist/ written).",
+      "Rust toolchain: cargo 1.99.0 and rustc 1.99.0 via ~/.cargo/bin. `cargo check` exit 0 (2m52s). The first attempt was killed by my 280s timeout (exit 143), not a toolchain error.",
+      "Rust link: `cargo build` (debug) exit 0, produced src-tauri/target/debug/orchestra.exe (12.3MB). The MSVC linker is present: a partial VS 2019 BuildTools install (vswhere state 13, isComplete 0) still ships VC 14.29.30133 with cl.exe and link.exe, plus Windows SDK 10.0.19041.0. The state.json log claim that MSVC cannot link is stale for debug builds. Git's usr/bin/link.exe is first on PATH and was not the one used.",
+      "WebView2 present: Program Files (x86)\\Microsoft\\EdgeWebView\\Application holds 154.0.4258.53 and 154.0.4258.62.",
+      "claude CLI: /c/Users/natha/.local/bin/claude.exe, version 2.1.296. `claude auth status`: logged in, Claude Pro account. `claude --help` lists --input-format, --output-format, --permission-prompts, --settings, --include-hook-events, --bare.",
+      "Hook events (code.claude.com/docs/en/hooks, WebFetch): 33 events incl. SessionStart, Setup, UserPromptSubmit, PreToolUse, PermissionRequest, PermissionDenied, PostToolUse, PostToolUseFailure, Notification, SubagentStart, SubagentStop, Stop, StopFailure, SessionEnd, PreCompact, PostCompact and others.",
+      "Hook stdin common fields: session_id, prompt_id, transcript_path, cwd, scratchpad_dir, permission_mode, effort, hook_event_name. Event fields: PreToolUse tool_name,tool_input,tool_use_id; PermissionRequest tool_name,tool_input,permission_suggestions?; PostToolUse tool_response,duration_ms?; Notification message,notification_type,title?; Stop stop_hook_active,last_assistant_message; SessionStart source (startup|resume|clear|compact|fork); UserPromptSubmit prompt; PermissionDenied reason.",
+      "Hook answer surface: PreToolUse hookSpecificOutput.permissionDecision allow|deny|ask|defer; PermissionRequest hookSpecificOutput.decision.behavior allow|deny (+updatedInput); Stop top-level decision \"block\" + reason. Exit 2 blocks on PreToolUse and is ignored by PermissionRequest; other exit codes are non-blocking.",
+      "Hook transport: type \"http\" POSTs the event's stdin JSON to a url. Non-2xx or connection failure is a non-blocking error, so the terminal prompt falls through. Blocking requires a 2xx JSON decision or onFailure \"block\" (v2.1.295+). Default timeout 600s. Command hooks also support async.",
+      "Hook config locations (docs): ~/.claude/settings.json, .claude/settings.json, .claude/settings.local.json, managed policy, plugin hooks. --settings <file-or-inline-json> is precedence level 2, above project and user files (code.claude.com/docs/en/settings). Whether hooks from --settings merge or override is NOT verified.",
+      "Headless bidirectional: -p with --input-format stream-json and --output-format stream-json --verbose (CLI help). Stdin user message shape per SDK example: {\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":...}}. --include-hook-events streams hook events. --permission-prompt-tool <mcp tool> answers prompts in -p mode. --permission-prompts host|none (v2.1.259+).",
+      "Agent SDK canUseTool (code.claude.com/docs/en/agent-sdk/user-input): fires for tool approvals not resolved by rules or modes, and for AskUserQuestion. Returns {behavior:'allow',updatedInput} or {behavior:'deny',message}. Callback may stay pending indefinitely. AskUserQuestion answers go back as updatedInput.answers keyed by question text. Not available in subagents.",
+      "Background sessions per CLI reference: `claude --bg`, `claude agents --json` (lists active sessions), `claude attach`, `claude logs`, `--exec` (PTY-backed job). Whether they expose prompts for answering is unverified."
+    ],
+    "unknowns": [
+      "Wire-level control protocol for permission prompts over stream-json (control_request / can_use_tool message names) is not in the fetched docs; needs SDK source or a spike.",
+      "Whether an http-type PermissionRequest or PreToolUse hook is honored when it comes from a --settings file, and whether --settings hooks merge with user hooks, is unverified.",
+      "Whether AskUserQuestion or free-text questions in a user-launched terminal session can be answered through any hook (e.g. PreToolUse updatedInput) is unverified. The hook path is only documented for tool permission prompts.",
+      "SessionEnd reason values, and whether SessionStart/SessionEnd hooks fire under -p, were not in the fetched excerpt.",
+      "Did not launch the app window (npm run tauri dev); WebView2 presence is from folder evidence only.",
+      "Mobile, protocol and fleet directories not scouted (out of scope for the desktop MVP)."
+    ],
+    "risks": [
+      "Plan-killer for 'answer on desktop' with user-launched terminal sessions: hooks observe them, but the only documented answer path is a blocking PermissionRequest/PreToolUse http hook for tool permission prompts. Free-text or AskUserQuestion answers have no verified hook path. A plain terminal `claude` only sends events if the user's ~/.claude/settings.json (or the project's .claude/settings.json) is edited, which is a user-config change needing approval.",
+      "For sessions the desktop spawns itself, the realistic answer path is headless stream-json or the Agent SDK canUseTool. An interactive claude in a TTY cannot be answered from the app except by PTY keystroke injection, which is brittle.",
+      "The state.json log claim that MSVC cannot link is stale for debug builds. Update the record before planning around it."
+    ]
+  },
+  "architect": {
+    "written_by": "architect",
+    "shape": "diamond",
+    "parallel_safe": true,
+    "rationale": "MECHANISM: the MVP answers only sessions Orchestra spawns itself, as headless claude -p --input-format stream-json --output-format stream-json --verbose --include-hook-events children driven from Rust over stdin/stdout. It is the only path that covers all three answer kinds in the goal (tool permission, AskUserQuestion, free-text reply after a turn ends) without editing the user settings and without bundling a Node runtime. Permission and AskUserQuestion prompts are expected as stream-json control requests when --permission-prompt-tool stdio is passed (the channel the Agent SDK canUseTool rides on); a free-text reply is the next stream-json user message after a result. Those names, the flag and multi-turn stdin are UNVERIFIED, so s1 is a spike that resolves them and commits redacted fixtures, and s2 is built and tested against those fixtures. The --settings hook-merge unknown is designed around, not spiked: the MVP passes no --settings and installs no hooks. Status comes from the stream itself (system init, assistant, control_request, result, process exit); hook events surfaced by --include-hook-events are consumed when present, but nothing depends on them. GOAL READING: tracks sessions via their hooks reads two ways: (A) observe any terminal claude the user launches through hooks written into user settings; (B) track the sessions the app launches through their own event stream. A cannot answer AskUserQuestion or free text (scout plan-killer) and needs a user-config edit; B satisfies answer-on-desktop fully. Recommend B; A is in not_doing as a follow-on run. SHAPE: diamond. Three slices with disjoint file sets, each with a standalone done_when, and this is the first real code in the app (process spawning plus IPC), which should not merge unreviewed. Disjoint sets: s1 = src-tauri/tests/fixtures/stream_json/** only (data + README, no code); s2 = src-tauri/src/**, src-tauri/Cargo.toml, src-tauri/Cargo.lock (currently untracked); s2 is the ONLY slice touching lib.rs and Cargo.toml, so there is no shared-file sequencing; s3 = desktop/src/**, desktop/index.html, desktop/package.json, desktop/package-lock.json. No slice touches tauri.conf.json or capabilities/: app commands and events are covered by core:default, and the dialog plugin is called from Rust only, so no JS permission is needed; a builder that finds otherwise stops and asks for a scope exception. s3 runs in parallel because it consumes only the IPC contract pinned verbatim in ipc_contract, not anything s1 or s2 produce. RISK: s1 high because it captures real session transcripts carrying the owner username, home path, cwd, session ids and possibly account metadata, and a grep cannot prove redaction. s2 high because it spawns child processes and exposes IPC: no-frontend-string-as-path-or-command, no shell, CREATE_NO_WINDOW, child cleanup on exit and path-free error strings are rules no unit test fully sees; it also adds a crate. s3 low because it has no sensitive data, shares no file with another slice, touches no tauri.conf/capabilities, and the contract it must match is pinned as text here so the scope check is a direct comparison; tsc plus vitest cover the logic it owns. POST-SPIKE GATE: if s1 records VERDICT: FALSIFIED, s2 does not start and the run returns to architect. The fallback is a PermissionRequest http hook injected per spawn via --settings to a loopback listener, which needs its own spike of the --settings merge unknown.",
+    "ipc_contract": {
+      "commands": {
+        "pick_project": "() -> Option<Project>. Rust opens the native folder picker itself (tauri-plugin-dialog, Rust API only); the absolute path stays in Rust state; the frontend only ever sees Project{id,name} where name is the folder basename.",
+        "list_projects": "() -> Project[]",
+        "start_session": "(args: {project_id: string, prompt: string}) -> SessionSummary. project_id must exist; prompt non-empty and <= 32768 bytes; prompt is written to the child stdin as a stream-json user message, never passed as a CLI argument.",
+        "list_sessions": "() -> SessionSummary[]",
+        "list_inbox": "() -> InboxItem[]",
+        "answer": "(args: Answer) -> void. Answer is a serde-tagged enum on kind: {kind:permission, item_id:string, decision:allow|deny, message?:string} | {kind:question, item_id:string, answers: Record<string,string>} | {kind:reply, session_id:string, text:string}. Unknown/resolved item_id, unknown session_id, empty or >32768-byte text -> Err(string) with no path in it.",
+        "stop_session": "(args: {session_id: string}) -> void. Kills the child process."
+      },
+      "events": {
+        "session-updated": "SessionSummary",
+        "inbox-updated": "InboxItem[] (full current list)"
+      },
+      "types": {
+        "Project": "{id: string, name: string}",
+        "SessionStatus": "starting | working | waiting_permission | waiting_question | idle | ended | failed",
+        "SessionSummary": "{id: string, project_id: string, project_name: string, status: SessionStatus, started_at: number (ms epoch), last_activity_at: number, last_message: string|null (truncated to 500 chars), claude_session_id: string|null}",
+        "InboxItem": "{id: string, session_id: string, kind: permission|question|finished|error, created_at: number, resolved: boolean, summary: string (truncated), tool_name: string|null, tool_input_preview: string|null (JSON, truncated to 2000 chars), questions: Question[]|null}",
+        "Question": "{question: string, header: string|null, multi_select: boolean, options: {label: string, description: string|null}[]}"
+      },
+      "serde": "Rust structs use rename_all snake_case so the field names above are the wire names exactly; Answer uses tag = kind, rename_all snake_case, deny_unknown_fields."
+    },
+    "plan": [
+      {
+        "slice": "s1",
+        "risk": "high",
+        "intent": "Spike: resolve the stream-json control protocol empirically with claude 2.1.296 and record it. Run from a throwaway directory under the session scratchpad (never inside any repo), cheap prompts, small --max-turns. Answer and record: (1) the exact flag that routes permission prompts to stdin/stdout (hypothesis: --permission-prompt-tool stdio) and whether the host must send an initialize control_request first; (2) the exact inbound shape of a permission prompt (hypothesis: type control_request, request_id, request.subtype can_use_tool, tool_name, input, permission_suggestions) and the accepted reply (hypothesis: type control_response, response.subtype success, request_id, response.behavior allow+updatedInput or deny+message); (3) whether AskUserQuestion arrives the same way, and the updatedInput.answers shape the model accepts; (4) whether the process stays alive after a result message and accepts a second user message on stdin (multi-turn); (5) which hook events, if any, --include-hook-events emits with no hooks configured, and whether SessionStart/SessionEnd fire under -p; (6) what --permission-prompts host|none does. Deliverable: redacted JSONL captures plus a README stating each answer, the final fixed spawn arg list, and a single VERDICT line. Redaction: replace username, home path, cwd, email, session/uuid ids and any account/org fields with fixed placeholders (C:/Users/USER/proj, 00000000-0000-0000-0000-000000000000); keep message structure otherwise intact.",
+        "files": [
+          "orchestra/desktop/src-tauri/tests/fixtures/stream_json/README.md",
+          "orchestra/desktop/src-tauri/tests/fixtures/stream_json/permission_allow.jsonl",
+          "orchestra/desktop/src-tauri/tests/fixtures/stream_json/permission_deny.jsonl",
+          "orchestra/desktop/src-tauri/tests/fixtures/stream_json/ask_user_question.jsonl",
+          "orchestra/desktop/src-tauri/tests/fixtures/stream_json/multi_turn.jsonl"
+        ],
+        "done_when": "(a) grep -cE '^VERDICT: (CONFIRMED|FALSIFIED)' orchestra/desktop/src-tauri/tests/fixtures/stream_json/README.md -> 1. (b) if CONFIRMED: grep -l can_use_tool orchestra/desktop/src-tauri/tests/fixtures/stream_json/*.jsonl -> lists permission_allow.jsonl, permission_deny.jsonl, ask_user_question.jsonl. (c) python -c that json.loads every non-empty line of every orchestra/desktop/src-tauri/tests/fixtures/stream_json/*.jsonl -> exit 0. (d) grep -rIinE 'natha|nathanjcurtis|gmail|Desktop.repos' orchestra/desktop/src-tauri/tests/fixtures/ -> no output (exit 1). (e) human-read: the reviewer reads every fixture line for residual identifiers the grep cannot name (org ids, account uuids, apiKeySource, file contents).",
+        "tests_added": "None (data only). These fixtures are the inputs of s2's tests."
+      },
+      {
+        "slice": "s2",
+        "risk": "high",
+        "intent": "Rust core: session manager; remove greet. Modules: projects.rs (Rust-side folder pick via tauri-plugin-dialog Rust API, absolute path held only in Rust, frontend gets {id,name}); session/protocol.rs (serde types + line parser, tolerant of unknown message types: count and skip, never panic); session/process.rs (spawn, stdout reader thread, stdin writer, kill); session/state.rs (pure state machine deriving SessionStatus and InboxItems from messages; answer serialization to control_response / user message exactly as s1 README); commands.rs (IPC commands and events exactly as ipc_contract). Spawn rules: program is the fixed name claude resolved on PATH (claude.exe; a .cmd shim is reported unsupported, never run through a shell); args are a const array taken from s1 README; current_dir is the Rust-held project path; prompt goes over stdin; CREATE_NO_WINDOW on Windows; children killed on stop_session and on app exit. In-memory state only. IPC args are serde structs with deny_unknown_fields and length bounds; errors are short strings with no absolute paths. If tauri.conf.json or capabilities/ turn out to need a change, stop and request a scope exception instead of editing.",
+        "files": [
+          "orchestra/desktop/src-tauri/src/lib.rs",
+          "orchestra/desktop/src-tauri/src/main.rs",
+          "orchestra/desktop/src-tauri/src/projects.rs",
+          "orchestra/desktop/src-tauri/src/commands.rs",
+          "orchestra/desktop/src-tauri/src/session/mod.rs",
+          "orchestra/desktop/src-tauri/src/session/protocol.rs",
+          "orchestra/desktop/src-tauri/src/session/state.rs",
+          "orchestra/desktop/src-tauri/src/session/process.rs",
+          "orchestra/desktop/src-tauri/Cargo.toml",
+          "orchestra/desktop/src-tauri/Cargo.lock"
+        ],
+        "done_when": "In orchestra/desktop/src-tauri: (a) cargo check -> exit 0, no warnings from crate orchestra. (b) cargo test -> exit 0, >= 12 passing tests including one replay test per s1 fixture file. (c) grep -rn 'Command::new' src/ -> exactly 1 hit, whose argument is a literal or const, not IPC input. (d) grep -rniE 'powershell|cmd[.]exe|/bin/sh' src/ -> no output (exit 1).",
+        "tests_added": "cargo unit tests: protocol.rs parses every line of each s1 fixture (include_str!) into a typed message or a counted Unknown; state.rs replays each fixture and asserts the status sequence (e.g. starting, working, waiting_permission, working, idle) and the InboxItems produced (kind, tool_name, questions shape); answer serialization asserts the exact JSON shape recorded in s1 README for allow, deny, question answers and reply; validation: unknown project_id, empty prompt, 32769-byte prompt, unknown or already-resolved item_id, decision value maybe, and an extra unknown field are each rejected; the error string for a missing project contains no drive-letter path or /Users."
+      },
+      {
+        "slice": "s3",
+        "risk": "low",
+        "intent": "Desktop UI replacing the create-tauri-app page: src/types.ts mirroring ipc_contract verbatim, src/ipc.ts typed invoke/listen wrapper that decodes and rejects unknown enum values, src/state.ts pure reducer for sessions + inbox fed by list_* on mount and by session-updated / inbox-updated events. Layout: session list (status badge per SessionStatus, project name, last activity) and inbox (unresolved first, newest first) with per-kind answer UI: permission -> Allow / Deny (+ optional deny message) showing tool_name and tool_input_preview in a pre; question -> one control per Question (radio, or checkboxes when multi_select, plus free-text other); finished -> last_message plus a reply box; error -> message only. Header: Open project (pick_project) and a new-session form (project select + prompt textarea). Usable at the 640x480 minimum window: side-by-side columns above ~800px, stacked below. Keyboard reachable with visible focus; agent text rendered as text only (no dangerouslySetInnerHTML). Add vitest as a devDependency and a test script (vitest run); pick a vitest major that supports vite ^8.",
+        "files": [
+          "orchestra/desktop/src/App.tsx",
+          "orchestra/desktop/src/App.css",
+          "orchestra/desktop/src/main.tsx",
+          "orchestra/desktop/src/ipc.ts",
+          "orchestra/desktop/src/types.ts",
+          "orchestra/desktop/src/state.ts",
+          "orchestra/desktop/src/state.test.ts",
+          "orchestra/desktop/src/components/SessionList.tsx",
+          "orchestra/desktop/src/components/Inbox.tsx",
+          "orchestra/desktop/src/components/InboxItemView.tsx",
+          "orchestra/desktop/src/components/NewSession.tsx",
+          "orchestra/desktop/src/assets/react.svg",
+          "orchestra/desktop/index.html",
+          "orchestra/desktop/package.json",
+          "orchestra/desktop/package-lock.json"
+        ],
+        "done_when": "In orchestra/desktop: (a) npm run build -> exit 0 (tsc strict + vite build). (b) npm test -> exit 0, >= 6 passing tests. (c) grep -rnE 'greet|dangerouslySetInnerHTML' src/ -> no output.",
+        "tests_added": "vitest on src/state.ts and the ipc.ts decoder (no Tauri runtime): initial load populates sessions and inbox; session-updated upserts by id; inbox-updated replaces the list; inbox ordering (unresolved first, then newest); resolved items excluded from the waiting count; an unknown SessionStatus or InboxItem kind is rejected by the decoder."
+      }
+    ],
+    "edges": [
+      {
+        "from": "s1",
+        "to": "s2",
+        "artifact": "tests/fixtures/stream_json/*.jsonl + README.md (verified wire shapes, fixed spawn args); s2 parser, state-machine and answer tests replay them"
+      },
+      {
+        "parallel": [
+          "s1",
+          "s3"
+        ],
+        "why": "s3 consumes only ipc_contract from this plan"
+      },
+      {
+        "parallel": [
+          "s2",
+          "s3"
+        ],
+        "why": "disjoint files; s3 consumes only ipc_contract from this plan"
+      }
+    ],
+    "not_doing": [
+      "Observing or answering user-launched terminal claude sessions (hooks in ~/.claude/settings.json or project .claude/settings.json posting to a local HTTP listener). Rejected for the MVP: needs a user-config edit, adds an HTTP server, and answers only tool-permission prompts, never AskUserQuestion or free text. Natural follow-on run once the inbox exists.",
+      "Per-spawn hooks injected with --settings (PermissionRequest http hook to a loopback listener). Rejected: --settings merge/override is unverified and the stdio control channel covers the same need in-band. Kept only as the fallback if s1 is FALSIFIED.",
+      "Agent SDK canUseTool through a Node sidecar. Rejected: bundles a Node runtime and sidecar into the Tauri app and needs shell/sidecar capabilities, for the same answer surface stream-json gives directly.",
+      "--permission-prompt-tool backed by an MCP server hosted in the app. Rejected: more machinery than the stdio channel; revisit only if s1 shows stdio is unavailable.",
+      "PTY keystroke injection into interactive sessions; claude --bg / attach background jobs (answerability unverified, brittle).",
+      "Persisting sessions/inbox across app restarts; resuming sessions (--resume).",
+      "Phone link; any change to protocol/, mobile/, fleet/, .github/workflows/.",
+      "Updater, signing, release config; window-state plugin; OS menus; tray; OS notifications.",
+      "Any edit to tauri.conf.json (CSP stays as is) or capabilities/default.json.",
+      "Running the fleet graph from the app; worktrees; task queue; MCP profiles.",
+      "Model/effort/permission-mode pickers; token-by-token streaming render of assistant text.",
+      "Supporting an npm .cmd shim for claude or a user-configurable claude path."
+    ],
+    "unverified_items": [
+      "stream-json control message names/shapes and the enabling flag: resolved by s1",
+      "AskUserQuestion answer shape over the control channel: resolved by s1",
+      "multi-turn stdin after a result: resolved by s1",
+      "hook events emitted by --include-hook-events with no hooks configured; SessionStart/SessionEnd under -p: recorded by s1, nothing depends on them",
+      "--settings hook merge/override: designed around, not used",
+      "the app window launching under WebView2: integrator human-read smoke test - npm run tauri dev, open a project, start a session that runs a Bash command, Allow it from the inbox, answer one AskUserQuestion, reply after the turn ends"
+    ],
+    "human_gate": [
+      "Approve mechanism B: Orchestra answers only sessions it spawns itself (headless stream-json); terminal sessions are not tracked in this run.",
+      "Approve s1 spending a small amount of the owner Claude Pro quota on live CLI calls from a scratch directory, and committing redacted transcripts as fixtures.",
+      "Approve the post-spike rule: VERDICT FALSIFIED stops s2 and returns to architect.",
+      "Approve adding the tauri-plugin-dialog crate (s2) and vitest (s3)."
+    ]
+  },
+  "approved_by_human": true,
+  "scope_exceptions": [
+    "ORCHESTRATOR-OWNED, normally empty. Paths a builder may write that the approved plan does not list. guard-builder-scope.py DENIES a builder's Write/Edit outside architect.plan[].files, and this is the only way through it. Adding one is a deliberate, recorded act: pair it with deviation_from_approved_plan on the slice that needed it, and say why the gate's file set was wrong. Never add a path to silence the guard on work the human did not approve."
+  ],
+  "builders": {
+    "s1": {
+      "status": "done",
+      "branch": "desktop-mvp-s1",
+      "written_by": "builder",
+      "files": [
+        "orchestra/desktop/src-tauri/tests/fixtures/stream_json/README.md",
+        "orchestra/desktop/src-tauri/tests/fixtures/stream_json/permission_allow.jsonl",
+        "orchestra/desktop/src-tauri/tests/fixtures/stream_json/permission_deny.jsonl",
+        "orchestra/desktop/src-tauri/tests/fixtures/stream_json/ask_user_question.jsonl",
+        "orchestra/desktop/src-tauri/tests/fixtures/stream_json/multi_turn.jsonl"
+      ],
+      "notes": "Rework: amended c87d135 -> fb85bcd; stripped mcp__* from init tools[] (all 4 jsonl), README redaction list fixed; other init lists were already REDACTED_LIST.",
+      "gate_results": [
+        {
+          "cmd": "git log -p desktop-mvp-s1 ^main | grep -c mcp__claude_ai",
+          "output": "0"
+        },
+        {
+          "cmd": "(a) grep -cE '^VERDICT: (CONFIRMED|FALSIFIED)' README.md",
+          "output": "1"
+        },
+        {
+          "cmd": "(b) grep -l can_use_tool *.jsonl",
+          "output": "ask_user_question.jsonl\npermission_allow.jsonl\npermission_deny.jsonl"
+        },
+        {
+          "cmd": "(c) python json.loads every non-empty line of *.jsonl",
+          "output": "exit 0"
+        },
+        {
+          "cmd": "(d) grep -rIinE 'natha|nathanjcurtis|gmail|Desktop.repos' fixtures/",
+          "output": "(no output, exit 1)"
+        }
+      ],
+      "commit": "fb85bcd"
+    },
+    "s3": {
+      "written_by": "builder",
+      "status": "done",
+      "branch": "desktop-mvp-s3",
+      "files": [
+        "orchestra/desktop/src/App.tsx",
+        "orchestra/desktop/src/App.css",
+        "orchestra/desktop/src/ipc.ts",
+        "orchestra/desktop/src/types.ts",
+        "orchestra/desktop/src/state.ts",
+        "orchestra/desktop/src/state.test.ts",
+        "orchestra/desktop/src/components/SessionList.tsx",
+        "orchestra/desktop/src/components/Inbox.tsx",
+        "orchestra/desktop/src/components/InboxItemView.tsx",
+        "orchestra/desktop/src/components/NewSession.tsx",
+        "orchestra/desktop/src/assets/react.svg (deleted)",
+        "orchestra/desktop/index.html",
+        "orchestra/desktop/package.json",
+        "orchestra/desktop/package-lock.json"
+      ],
+      "notes": "main.tsx unchanged (already fine); vitest ^5.0.3 installed.",
+      "gate_results": [
+        {
+          "cmd": "npm run build",
+          "exit": 0,
+          "output": "tsc && vite build: 26 modules transformed, dist/index.html 0.39 kB, index-*.css 2.83 kB, index-*.js 231.31 kB, built in 1.07s"
+        },
+        {
+          "cmd": "npm test",
+          "exit": 0,
+          "output": "RUN v5.0.3; Test Files 1 passed (1); Tests 10 passed (10)"
+        },
+        {
+          "cmd": "grep -rnE 'greet|dangerouslySetInnerHTML' src/",
+          "exit": 1,
+          "output": ""
+        }
+      ]
+    },
+    "s2": {
+      "written_by": "builder",
+      "status": "done",
+      "branch": "desktop-mvp-s2",
+      "commit": "abf2f7f",
+      "files": [
+        "desktop/src-tauri/src/lib.rs",
+        "desktop/src-tauri/src/projects.rs",
+        "desktop/src-tauri/src/commands.rs",
+        "desktop/src-tauri/src/session/mod.rs",
+        "desktop/src-tauri/src/session/protocol.rs",
+        "desktop/src-tauri/src/session/state.rs",
+        "desktop/src-tauri/src/session/process.rs",
+        "desktop/src-tauri/Cargo.toml",
+        "desktop/src-tauri/Cargo.lock"
+      ],
+      "gate_results": [
+        {
+          "command": "cargo check; cargo test; grep Command::new; grep powershell|cmd.exe|/bin/sh (in desktop/src-tauri)",
+          "output": "(a) cargo check (src-tauri): exit 0, 0 warnings (\"Finished `dev` profile ... in 6.87s\"; re-run after touch src/lib.rs: warning count 0)\n(b) cargo test: exit 0\nrunning 27 tests ... test result: ok. 27 passed; 0 failed; 0 ignored (replay tests: session::state::tests::replay_permission_allow, replay_permission_deny, replay_ask_user_question, replay_multi_turn; protocol::every_fixture_line_parses_without_panic_and_nothing_is_unknown)\n(c) grep -rn 'Command::new' src/ ->\nsrc/session/process.rs:69:    let mut cmd = std::process::Command::new(PROGRAM);   (PROGRAM = const \"claude\")\n(d) grep -rniE 'powershell|cmd[.]exe|/bin/sh' src/ -> no output, exit 1"
+        }
+      ],
+      "notes": "main.rs unchanged (already just calls orchestra_lib::run()); an unreadable-stdin child that never exits is only reaped on kill."
+    }
+  },
+  "reviews": {
+    "s1": {
+      "$comment": "RE-REVIEWS NEST, and this is the rule every reader follows. The TOP LEVEL of reviews.<slice> IS attempt 1. A re-review writes attempt_2, then attempt_3, and so on, each with the same fields as the top level. Every attempt SURVIVES PERMANENTLY - history is never overwritten, flattened, or migrated up. The LATEST attempt supplies the verdict: that is what close-run.py, brief.py and verify-state.py resolve through, and what fleetview's finalVerdict() has always shown. `ever_rejected` - did ANY attempt REJECT - is DISPLAY ONLY, forever, so a rejection stays visible after it is fixed; it must never gate anything, or the fleet stops being able to loop. NO NODE MAY REWRITE AN EARLIER ATTEMPT: a second reviewer writes its own attempt_N and leaves the ones before it alone, top-level verdict included - relocating that verdict would destroy the history the board keeps and leave a key stamped written_by:reviewer with someone else as its real author. The KEY INDEX numbers an attempt, not the `attempt` field inside it; the field is display. An EMPTY attempt_N is not a re-review, it is a key nobody wrote - write the whole attempt or none of it. The walk STOPS AT THE FIRST GAP, so an attempt_3 with no attempt_2 is ignored and the earlier verdict stands: A GAP IS MALFORMED AND NO NODE MAY LEAVE ONE. Write the next UNUSED N and never skip - a mis-numbered re-review is not reported anywhere, it is simply unread, and a REJECT nobody reads is a REJECT nobody acts on. The cap is attempt_9, matching fleetview's `for (i = 2; i < 10; i++)` exactly so the two readers cannot disagree; attempt_10 and beyond is reported loudly and resolved by nobody.",
+      "written_by": "reviewer",
+      "verdict": "REJECT",
+      "attempt": 1,
+      "summary": "REJECT on privacy. I re-ran done_when (a)-(d) myself in the s1 worktree: all pass (VERDICT 1; can_use_tool in allow/deny/ask; every line parses; owner grep empty). Diff is exactly the five approved files, one commit authored njcurtis3, no trailers, pure ASCII. But my hand read (e) found the init message's tools[] still carries the owner's claude.ai connector inventory: 19 mcp__claude_ai_Google_Drive__* and mcp__claude_ai_Claude_Docs__* names, on line 4 of all four fixtures and line 9 of multi_turn.jsonl. The builder redacted mcp_servers as an account-describing list but left the same information in tools[], and README:34 records 'Not redacted: tools list'. That is the connector-list leak the brief names. Fix: drop every mcp__* entry from tools[] (or REDACTED_LIST the field) and update README:34. Everything else checks out: no paths beyond the C:/Users/USER/proj placeholder, ids and signatures replaced, rate-limit numbers zeroed. Protocol claims are internally consistent: the request_id is echoed, deny gives an is_error tool_result, answers is keyed by question text, the second turn keeps the session id, and --permission-prompts/--include-hook-events exist in the 2.1.296 --help.",
+      "findings": [
+        {
+          "file": "orchestra/desktop/src-tauri/tests/fixtures/stream_json/permission_allow.jsonl",
+          "line": 4,
+          "severity": "blocker",
+          "origin": "builder",
+          "issue": "system/init tools[] lists the owner's claude.ai connectors (mcp__claude_ai_Google_Drive__{copy_file,create_file,download_file_content,get_file_metadata,get_file_permissions,list_recent_files,read_file_content,search_files,share_file,trash_file,update_file}, mcp__claude_ai_Claude_Docs__{batch,create,delete,export,guide,query,read,update}). Same leak at permission_deny.jsonl:4, ask_user_question.jsonl:4, multi_turn.jsonl:4 and multi_turn.jsonl:9. The redaction blanked mcp_servers for exactly this reason, then left it in tools[], which defeats it. Fix: filter mcp__* out of tools[] (built-in tool names can stay) or set tools to REDACTED_LIST."
+        },
+        {
+          "file": "orchestra/desktop/src-tauri/tests/fixtures/stream_json/README.md",
+          "line": 34,
+          "severity": "blocker",
+          "origin": "builder",
+          "issue": "'Not redacted: tools list' documents the leak as intended policy. When the fixtures are fixed, update this line (e.g. 'tools list kept, minus mcp__* connector entries')."
+        },
+        {
+          "file": "orchestra/desktop/src-tauri/tests/fixtures/stream_json/ask_user_question.jsonl",
+          "line": 9,
+          "severity": "note",
+          "origin": "",
+          "issue": "rate_limit_event keeps rateLimitType five_hour, seven_day windows and overageStatus 'rejected'. That reveals a subscription-plan login rather than an API key, but nothing that identifies the person. Acceptable. The same holds in all fixtures."
+        },
+        {
+          "file": "orchestra/desktop/src-tauri/tests/fixtures/stream_json/README.md",
+          "line": 60,
+          "severity": "note",
+          "origin": "",
+          "issue": "For s2: a fresh system/init with a new uuid comes on every turn (multi_turn.jsonl:9), while hook_started/hook_response come only once. s2 must not treat a second init as a new session. README says this; it is flagged so the s2 parser handles it."
+        }
+      ],
+      "attempt_2": {
+        "written_by": "reviewer",
+        "verdict": "PASS",
+        "attempt": 2,
+        "summary": "PASS. Re-ran done_when (a)-(d) in the s1 worktree: VERDICT count 1; can_use_tool in allow/deny/ask only; every jsonl line parses; owner grep empty. Branch is one commit fb85bcd on main 054779c, author/committer njcurtis3, no trailers, 5 approved files only. git log -p desktop-mvp-s1 ^main has one mcp__ hit, README:32's own redaction note; zero claude_ai/Google/Drive/Claude_Docs hits. git diff c87d135 fb85bcd shows the amend only drops mcp__* from init tools[] (5 lines, checked semantically) plus README 32-36; no protocol line changed. Read every line of all 4 fixtures and the README by hand and ran a key/value sweep: tools[] is now 30 built-ins; every uuid is a 00000000-... placeholder, msg_/toolu_/req_ and signature redacted, and all account lists are REDACTED_LIST. The only path is C:/Users/USER/proj. No hostname, email, org id, slug, env, listing or private repo name. Protocol claims still match the fixtures, and 2.1.296 --help still lists the spawn flags.",
+        "findings": [
+          {
+            "file": "orchestra/desktop/src-tauri/tests/fixtures/stream_json/permission_allow.jsonl",
+            "line": 4,
+            "severity": "note",
+            "origin": "",
+            "issue": "init tools[] keeps 30 built-in names including feature-gated ones (DesignSync, ReportFindings, RemoteTrigger, PushNotification, ListAgents, ScheduleWakeup, Cron*). These reveal the CLI build and feature-flag cohort, not the person or account. Acceptable per the README:36 policy. Same at the other init lines (deny:4, ask:4, multi_turn:4,9)."
+          },
+          {
+            "file": "orchestra/desktop/src-tauri/tests/fixtures/stream_json/README.md",
+            "line": 32,
+            "severity": "note",
+            "origin": "",
+            "issue": "The pre-amend commit c87d135 (with the 19 mcp__claude_ai_* names) is still in the s1 worktree's local reflog and object store. No ref reaches it (git log --all does not show it), so a push of desktop-mvp-s1 will not carry it. Do not push the reflog, and do not cherry-pick by that sha. It goes away on gc/prune or when the worktree is removed."
+          },
+          {
+            "file": "orchestra/desktop/src-tauri/tests/fixtures/stream_json/multi_turn.jsonl",
+            "line": 9,
+            "severity": "note",
+            "origin": "",
+            "issue": "Carried over from attempt 1 for s2: a fresh system/init with a new uuid arrives on every turn under the same session_id, while hook_started/hook_response arrive once per process. The s2 parser must not treat a repeated init as a new session."
+          }
+        ]
+      }
+    },
+    "s3": {
+      "verdict": "PASS",
+      "attempt": 1,
+      "written_by": "reviewer",
+      "summary": "Re-ran done_when in the s3 worktree's desktop/: npm run build exit 0 (tsc + vite, 26 modules), npm test exit 0 with 10/10 passing on vitest 5.0.3, and the greet|dangerouslySetInnerHTML grep returned nothing (exit 1). git diff --name-only main...desktop-mvp-s3 lists 14 files, all inside the approved set (main.tsx untouched; react.svg deleted). Compared types.ts field by field against architect.ipc_contract: all 7 command names, the args wrappers, both event names, all 7 SessionStatus and 4 InboxKind values, and every field of SessionSummary/InboxItem/Question and the Answer union match. ipc.ts decodes every payload and throws on unknown enum values; event payloads that fail to decode are dropped and surfaced, never applied. All agent text renders as React text nodes. Columns stack below 800px and sit side by side above it; the focus-visible outline is present, and every control is a native button/input/select. Commit author is njcurtis3 with no attribution trailers. Three minor notes, no blockers. The low risk tag holds.",
+      "findings": [
+        {
+          "severity": "note",
+          "origin": "",
+          "file": "orchestra/desktop/src/components/InboxItemView.tsx",
+          "detail": "Finished.onClick calls setText('') right after send() without awaiting it, so if answer() rejects (e.g. session ended), the typed reply is lost while the error banner shows. Await send and clear only on success."
+        },
+        {
+          "severity": "note",
+          "origin": "architect",
+          "file": "orchestra/desktop/src/components/InboxItemView.tsx",
+          "detail": "Intent says finished -> 'last_message plus a reply box', but InboxItem in ipc_contract has no last_message field; builder renders item.summary. This is the right reading of the contract. Backend slice should make summary carry the final message for finished items."
+        },
+        {
+          "severity": "note",
+          "origin": "",
+          "file": "orchestra/desktop/src/App.tsx",
+          "detail": "Subscribes first, then loads. If a session-updated event lands while list_sessions is in flight, the later sessions-loaded can overwrite it with an older snapshot. Narrow window, and the next event corrects it. Questions answers are also keyed by question text, so two questions with identical text would share state. That is acceptable given the Record<string,string> contract."
+        },
+        {
+          "severity": "note",
+          "origin": "",
+          "file": "orchestra/desktop/src/ipc.ts",
+          "detail": "Seam for integration: invoke passes {args:{...}} for start_session/answer/stop_session, so the Rust command parameters must be named `args` (as the contract writes them). s1 has no commands yet, so this could not be checked against Rust."
+        }
+      ]
+    },
+    "s2": {
+      "verdict": "PASS",
+      "attempt": 1,
+      "written_by": "reviewer",
+      "summary": "Re-ran done_when in the s2 worktree: cargo check exit 0 with 0 warnings after touching lib.rs; cargo test 27/27, including a replay test per fixture that compares answer and reply lines to the recorded wire JSON; Command::new appears once (const PROGRAM); the shell grep returns nothing. The diff touches only the 9 approved files. Commit is by njcurtis3 with no trailers. Built a probe and confirmed that Command::new(\"claude\") with only claude.cmd on PATH fails with NotFound under rustc 1.99, so a shim is never run. Every name, field and enum in the contract matches s3's types.ts and ipc.ts, including the {args:...} wrapper. By hand: cwd comes from a Rust-held project path, error strings are literals, there are no Mutex-across-IO or emit-under-lock deadlocks, the dialog plugin needs no capability, and a kill after stop leaves the session Ended. Six notes, no blockers.",
+      "findings": [
+        {
+          "severity": "note",
+          "origin": "",
+          "file": "orchestra/desktop/src-tauri/src/session/process.rs:254",
+          "detail": "kill() calls TerminateProcess on claude.exe only. Grandchildren it spawned (Bash tool commands, MCP servers) can outlive stop_session and app exit. A Windows Job Object with KILL_ON_JOB_CLOSE would make 'children killed' true for the whole tree."
+        },
+        {
+          "severity": "note",
+          "origin": "",
+          "file": "orchestra/desktop/src-tauri/src/commands.rs:57",
+          "detail": "start_session and answer are sync commands, so they run on the Tauri main thread and do a blocking pipe write: a prompt up to 32 KB, or an allow response echoing a large Write input. If claude is slow to drain stdin, the UI freezes until it does. This is not a deadlock, because the reader thread and emit don't need the main thread. Making these async would move the write off the main thread."
+        },
+        {
+          "severity": "note",
+          "origin": "",
+          "file": "orchestra/desktop/src-tauri/src/session/mod.rs:196",
+          "detail": "start() fires the summary it captured before spawning (status starting) after send_line returns. If the reader thread has already emitted a newer status, s3's reducer replaces it with the stale starting. The window is narrow and the next stream event corrects it. The invoke return value has the same staleness."
+        },
+        {
+          "severity": "note",
+          "origin": "",
+          "file": "orchestra/desktop/src-tauri/src/session/mod.rs:264",
+          "detail": "send_through mutates state (item resolved, status working) before send_line. If the write fails, the item stays resolved with nothing delivered and no event fired. The child is killed and the following Exit marks the session failed, so the session recovers visibly. The state.rs comment 'State changes only on success' holds only within the state layer."
+        },
+        {
+          "severity": "note",
+          "origin": "",
+          "file": "orchestra/desktop/src-tauri/src/session/protocol.rs:57",
+          "detail": "A control_request with any subtype other than can_use_tool is counted as Unknown and never answered. That matches s1 (no other subtype was observed), but if a future claude sends one that expects a reply, the session would stall in working with no inbox item."
+        },
+        {
+          "severity": "note",
+          "origin": "",
+          "file": "orchestra/desktop/src-tauri/src/session/process.rs:300",
+          "detail": "If stdout closes while the child stays alive, the reader thread polls try_wait every 50 ms until stop or app exit. The builder disclosed this; it is a cheap leak, not a hang."
+        }
+      ]
+    }
+  },
+  "integrator": {
+    "written_by": "integrator",
+    "status": "green",
+    "target": "orchestra main, 054779c -> b38ae28 (not pushed)",
+    "merged": [
+      {
+        "branch": "desktop-mvp-s2",
+        "tip": "abf2f7f",
+        "includes": [
+          "desktop-mvp-s1 fb85bcd (latest attempt_2 PASS)",
+          "s2 abf2f7f (attempt 1 PASS)"
+        ],
+        "merge_commit": "fba4ea1",
+        "strategy": "git merge --no-ff (ort), clean"
+      },
+      {
+        "branch": "desktop-mvp-s3",
+        "tip": "041214f",
+        "includes": [
+          "s3 041214f (attempt 1 PASS)"
+        ],
+        "merge_commit": "b38ae28",
+        "strategy": "git merge --no-ff (ort), clean"
+      }
+    ],
+    "merge_identity": "njcurtis3 <nathanjcurtis3@gmail.com>, no attribution trailers",
+    "conflicts": [],
+    "conflict_notes": "No textual or semantic conflicts. File sets were disjoint: s1+s2 touch only desktop/src-tauri/**, and s3 touches only desktop/src/**, index.html, package.json, and package-lock.json.",
+    "pre_merge": "Deleted the one untracked file desktop/src-tauri/Cargo.lock (generated by the scout's cargo build; s2 commits its own). No other untracked or modified files were present. The tree was clean after merging and after all builds.",
+    "verification": [
+      {
+        "cmd": "cd orchestra/desktop && npm install",
+        "exit": 0,
+        "output": "added 55 packages, and audited 82 packages in 5s\n24 packages are looking for funding\nfound 0 vulnerabilities"
+      },
+      {
+        "cmd": "cd orchestra/desktop && npm run build",
+        "exit": 0,
+        "output": "> tsc && vite build\nvite v8.3.4 building client environment for production...\n\u00e2\u0153\u201c 26 modules transformed.\ndist/index.html                   0.40 kB \u00e2\u201d\u201a gzip:  0.27 kB\ndist/assets/index-BflXcwdu.css    2.83 kB \u00e2\u201d\u201a gzip:  1.05 kB\ndist/assets/index-CARheSyd.js   231.31 kB \u00e2\u201d\u201a gzip: 72.18 kB\n\u00e2\u0153\u201c built in 1.44s"
+      },
+      {
+        "cmd": "cd orchestra/desktop && npm test",
+        "exit": 0,
+        "output": "> vitest run\n RUN  v5.0.3\n Test Files  1 passed (1)\n      Tests  10 passed (10)"
+      },
+      {
+        "cmd": "cd orchestra/desktop/src-tauri && cargo check",
+        "exit": 0,
+        "output": "Compiling orchestra v0.1.0\nFinished `dev` profile [unoptimized + debuginfo] target(s) in 53.24s",
+        "warnings": 0
+      },
+      {
+        "cmd": "cd orchestra/desktop/src-tauri && cargo test",
+        "exit": 0,
+        "output": "running 27 tests\ntest result: ok. 27 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s\nrunning 0 tests\ntest result: ok. 0 passed; 0 failed (x2: bin + doc)",
+        "warnings": 0
+      },
+      {
+        "cmd": "cd orchestra/desktop && npm run tauri build -- --debug --no-bundle",
+        "exit": 0,
+        "output": "Running beforeBuildCommand `npm run build` ... \u00e2\u0153\u201c built in 634ms\nFinished `dev` profile [unoptimized + debuginfo] target(s) in 2m 01s\nBuilt application at: C:/Users/natha/Desktop/repos/orchestra/desktop/src-tauri/target/debug/orchestra.exe",
+        "embedded_frontend_check": "orchestra.exe (13,598,720 bytes) contains the asset key index-CARheSyd.js (grep -c = 1)"
+      }
+    ],
+    "contract_crosscheck": "Commands agree. The 7 #[tauri::command] fns in commands.rs are all registered in generate_handler! in lib.rs, and ipc.ts invokes exactly those names: pick_project, list_projects, start_session, list_sessions, list_inbox, answer, stop_session. Events agree: lib.rs emits session-updated and inbox-updated, and ipc.ts listens on the same two. Arguments are wrapped as {args: ...} on both sides. Field names are snake_case on both sides, with no serde renames on the Serialize structs. The SessionStatus, InboxKind and Decision enum values are identical to the types.ts const arrays. The Answer tagged union (kind permission|question|reply) matches field for field. Option<T> serializes as null, which ipc.ts strOrNull accepts.",
+    "gui_launched": false,
+    "blocker": null
+  },
+  "ops": {
+    "written_by": "the node that wrote this key - here, always the string ops",
+    "gated": true,
+    "actions": []
+  },
+  "log": [
+    "orchestrator: opened run. Pre-flight: orchestra is a git repo (main @ 054779c, clean); target is app code, not fleet definitions, so diamond is allowed. Goal chosen by owner from options (scope: local desktop MVP). Rust 1.99.0 installed this session via winget; MSVC Build Tools install failed twice (1602, elevation not granted) - owner to install; until then cargo cannot link.",
+    "orchestrator: scout returned (written). Correction to opening log line: MSVC is NOT missing - a partial VS2019 BuildTools (VC 14.29) links; scout ran cargo check + cargo build green. Plan-killer: terminal sessions answerable only for tool permissions via blocking PermissionRequest http hook; full answer-on-desktop requires app-spawned headless sessions (stream-json / Agent SDK canUseTool). Spawning architect.",
+    "orchestrator: architect returned (written). Shape diamond, s1 spike -> s2 rust core; s3 UI parallel. Presenting plan at human gate.",
+    "orchestrator: HUMAN GATE approved by owner ('approve') as written, incl. mechanism B, s1 live quota use + committed redacted fixtures, FALSIFIED->stop rule, deps tauri-plugin-dialog + vitest. Re-checked orchestra is a git repo; spawning s1 and s3 builders concurrently with worktree isolation; s2 waits on s1.",
+    "orchestrator: created orchestra worktrees by hand (harness isolation roots worktrees in graph_agents, the wrong repo, when launched from repos/): branch desktop-mvp-s1 and desktop-mvp-s3 off main 054779c, under the session scratchpad wt/. Spawning s1 + s3 builders concurrently.",
+    "orchestrator: builders.s3 done (041214f); reviews.s3 PASS attempt 1, 4 notes (worst: reply box clears before answer call returns). builders.s1 done (c87d135, VERDICT CONFIRMED); s1 high-risk review running.",
+    "orchestrator: reviews.s1 REJECT attempt 1 - init tools[] leaks owner's claude.ai connector tool names (4 fixtures line 4, multi_turn:9; README:34 says tools not redacted). Sending back to s1 builder; fresh reviewer for attempt 2.",
+    "orchestrator: s1 rework returned - amended c87d135 -> fb85bcd (no fix commit; mcp__claude_ai count in branch history 0). Spawning fresh reviewer for reviews.s1.attempt_2.",
+    "orchestrator: reviews.s1.attempt_2 PASS (fb85bcd; old c87d135 only in reflog, unreachable). s1->s2 edge satisfied: created worktree branch desktop-mvp-s2 off desktop-mvp-s1 (fb85bcd) so s2 has the fixtures. Spawning s2 builder.",
+    "orchestrator: builders.s2 done (abf2f7f on desktop-mvp-s2, 27 tests). Spawning high-risk reviewer.",
+    "orchestrator: reviews.s2 PASS attempt 1 (6 notes, 0 blockers). All slices PASS. Spawning integrator: merge desktop-mvp-s2 (contains s1) and desktop-mvp-s3 into orchestra main, full suite.",
+    "orchestrator: integrator returned - merged s2 (fba4ea1, includes s1) and s3 (b38ae28) into orchestra main, 0 conflicts, full suite green incl. tauri build --debug --no-bundle. Not pushed. Proceeding to /close-run.",
+    "orchestrator: CLOSED 2026-10-09. close-run.py exit 0. Shape diamond (s1->s2, s3 parallel), hand-made orchestra worktrees (harness isolation would have rooted in graph_agents). s1 spike CONFIRMED stdio control protocol, fixtures fb85bcd (looped once: connector tool names leaked in init tools[], amended so never in history; c87d135 only in reflog). s2 Rust session manager abf2f7f (27 tests). s3 UI 041214f (10 tests). Merged to orchestra main: fba4ea1 (s1+s2), b38ae28 (s3); full suite green incl. tauri build --debug --no-bundle. NOT pushed. Worktrees removed, branches kept. Nothing dropped from plan. Open: owner GUI smoke test (npm run tauri dev) not done; follow-ups from review notes - Job Object for grandchild kill, sync commands block main thread on pipe write, stale 'starting' summary race, item marked resolved before send, non-can_use_tool control_requests unanswered, 50ms poll after stdout close, s3 reply box clears before answer returns. Terminal-session hook tracking deferred per NOT DOING."
+  ]
+}
