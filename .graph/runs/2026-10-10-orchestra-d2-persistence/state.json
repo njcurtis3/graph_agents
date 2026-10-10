@@ -1,0 +1,538 @@
+{
+  "$comment": "Shared state for ONE work-graph run. Lives at .graph/runs/<run-id>/state.json. Every node reads this on start and appends to its OWN key on finish - the builder writes its own builders.<slice> key, including the branch it worked on. Never rewrite another node's key. Every node key carries written_by, naming the node that wrote it: that is the ONLY record of authorship this file has, and without it 'never rewrite another node's key' is unverifiable - an orchestrator hand-writing all six keys is indistinguishable from six nodes doing their jobs. verify-state.py --audit checks it. This file is the edge: it is how context crosses between agents that cannot see each other.",
+  "run_id": "2026-10-10-orchestra-d2-persistence",
+  "goal": "start D2 (orchestra/ROADMAP.md D2: sessions survive a restart - persist sessions and inbox, resume on relaunch, window state plugin, done items in the inbox)",
+  "app": "orchestra",
+  "status": "done",
+  "scout": {
+    "written_by": "scout",
+    "facts": [
+      "COLLECTOR: orchestra is a git repo, main @ 3880f1a, clean; ui = native-desktop + native-mobile; desktop Tauri 2 at orchestra/desktop (orchestra/CLAUDE.md:53-60).",
+      "Q1 IDENTITY: our session id is sN (format s{n}) from Inner.next_session, an in-memory counter reset each launch (mod.rs:74-80, mod.rs:166-167). Project id is pN by vector index (projects.rs:39). Inbox item id is SESSIONID-iN from SessionState.next_item (state.rs:172-173). None survive a restart unless the counters are persisted.",
+      "Q1 CLAUDE SESSION ID: captured only from the system/init session_id field (protocol.rs:33-34, Message::Init at protocol.rs:11-12) and stored at state.rs:219-222 as SessionState.claude_session_id (state.rs:86). Re-set on every init; init is re-emitted per turn (tests/fixtures/stream_json/README.md:60-62). The result message session_id is NOT parsed (protocol.rs:78-81).",
+      "Q1 SERDE TODAY: SessionState (state.rs:81-96) and Session (mod.rs:47-57) derive nothing. InboxItem (state.rs:62-73) derives Clone and Serialize only, no Deserialize. SessionSummary (mod.rs:24-34) Clone and Serialize. SessionStatus (state.rs:17-30) and InboxKind (state.rs:32-39) Serialize only. Decision (state.rs:41-46) is the only Deserialize enum. Pending (state.rs:75-79) has no serde. Project (projects.rs:8-12) Serialize only; ProjectEntry (projects.rs:14-17) holds the absolute PathBuf and has no serde. Nothing is persisted today.",
+      "Q2 SPAWN: PROGRAM claude (process.rs:23); ARGS = 9 fixed items -p --input-format stream-json --output-format stream-json --verbose --include-hook-events --permission-prompt-tool stdio (process.rs:25-36); cmd.args(ARGS).current_dir(dir) (process.rs:110-111). spawn(dir, sink) at process.rs:104. Spawner type Fn(&Path, Sink) (mod.rs:45), called at mod.rs:185, test fake at mod.rs:381-387.",
+      "Q2 FIRST TURN: start() sends the prompt as the first user line (mod.rs:197). Sessions are created only by start() (mod.rs:159-212); there is no resume entry point.",
+      "Q2 CWD AND PROJECT PATH: the absolute folder comes from the native picker (commands.rs:45-48, into_path) and is stored after an is_dir check only (projects.rs:27-30, 40). It never reaches the frontend (projects.rs:1-2; Project at projects.rs:8-12 is id and name). Conflict: orchestra/CLAUDE.md:91-93 says IPC paths resolve against a base dir and reject absolute paths; a user-chosen folder is absolute by nature, so the architect must decide how it is stored and re-validated on load.",
+      "Q2 RESUME DELTA (minimal): append --resume with the claude session id to cmd.args (process.rs:110), validating the id as a UUID in Rust so a leading dash cannot become a flag. Spawner signature changes ripple to mod.rs:45, the test fake (mod.rs:383) and start() (mod.rs:185). ARGS is typed as a 9-element array (process.rs:26) and its test is at process.rs:183-186.",
+      "Q3 EXPERIMENT (claude 2.1.296, Windows, model haiku; scratch dir in the session scratchpad, no repo writes): (a) claude with the ARGS plus --resume id emits system/init with the SAME session_id, accepts a new user line, returns a result with the same session_id, and exits 0 on stdin close (verified across two separate sessions). (b) Resume then a Bash tool use emits control_request subtype can_use_tool with a 36-char request_id, and an allow reply is honoured (the touch file was created). (c) A session killed while a can_use_tool was open and unanswered: on resume, NO control_request for the old request was emitted before the new turn result. The new prompt did not use a tool, so this shows no re-emission at resume time. (d) Resuming an unknown UUID returns result subtype error_during_execution with the id echoed, and exit 1 (is_error not captured). (e) Once, on resume, a new prompt that needed Bash emitted two control_request lines with the same request_id prefix before any answer; not reproduced; state.rs:234-248 does not dedupe request_id. Throwaway transcripts remain in the user claude projects store for the scratch cwd; no probe output was committed.",
+      "Q3 NOT TESTED: resume from a different cwd than the original session; behaviour with --permission-prompts none.",
+      "Q4 EXIT TODAY: RunEvent::Exit calls Sessions::kill_all (lib.rs:40-46 then mod.rs:306-312), which kills children and touches no state. The reader sees EOF and sends Output::Exit(code) (process.rs:134-166) into on_output (mod.rs:215-225) then mark_exit (state.rs:374-384). The job terminates with exit code 1 (job.rs:74), so a normal quit becomes Failed plus an Error item saying the session process exited unexpectedly (state.rs:380-382). Invisible today because nothing persists.",
+      "Q4 OPEN REQUESTS ON EXIT: finish() drains pending_order and resolves every open item (state.rs:355-364), called from mark_stopped (state.rs:366-371) and mark_exit (state.rs:374-384). Open permission and question items become resolved=true with no expired distinction. Answering a dead session gives the no-process error when proc is None (mod.rs:275) or the ended error when Ended or Failed (mod.rs:276-278).",
+      "Q4 INBOX KINDS AND STATES: InboxKind = Permission, Question, Finished, Error (state.rs:34-39). Items have no status enum; the only state is resolved as a bool (state.rs:68). SessionStatus has Starting, Working, WaitingPermission, WaitingQuestion, NeedsAttention, Idle, Ended, Failed (state.rs:19-29). Neither has expired or interrupted.",
+      "Q5 RESULT TEXT: Message::Result with is_error and text (protocol.rs:19-20) reads the result field (protocol.rs:78-81). Stored only as truncations: last_message to 500 chars (state.rs:251-253, MAX_MESSAGE_CHARS state.rs:11) and inbox summary to 300 chars (state.rs:254, 259-260, MAX_SUMMARY_CHARS state.rs:12). Full result text is stored nowhere. Error results go to an Error item (state.rs:255-258). Result session_id, num_turns and cost are not parsed.",
+      "Q5 DONE ALREADY EXISTS IN PART: a successful Result pushes InboxKind::Finished (state.rs:259-260), rendered with a reply box (InboxItemView.tsx:37, 169-200). D2 item 4 is mostly store full text and show it; a distinct done kind is an architect decision.",
+      "Q6 TAURI CONFIG: identifier com.telosrg.orchestra (tauri.conf.json:5); one window labelled main, 1100x720, min 640x480, no window-state (tauri.conf.json:13-22); CSP at tauri.conf.json:24. Cargo.toml:20-24 deps: tauri 2 (no features), serde, serde_json, tauri-plugin-dialog 2; no window-state. Cargo.lock: tauri 2.12.2 (Cargo.lock:3068-3069), tauri-plugin-dialog 2.8.1 (Cargo.lock:3197-3198); tauri-plugin-window-state is absent from the lock.",
+      "Q6 PLUGIN REGISTRATION: lib.rs:12-14 registers only dialog. app.path().app_data_dir() is used nowhere in desktop/src or src-tauri/src. lib.rs:15-25 setup builds Sessions with no load step; Sessions::new (mod.rs:122-124) takes emit and spawner only.",
+      "Q6 CAPABILITIES: capabilities/default.json:8-10 grants core:default only. The dialog runs from Rust (commands.rs:45), so it needs no capability entry. Window-state docs (v2.tauri.app/plugin/window-state): register in setup under cfg(desktop); restore is automatic; the capability identifier is window-state:default (restore-state, save-window-state, filename). Whether a Rust-only use needs that capability is NOT stated; unverified. The docs describe no monitor-bounds check, so restore to a visible display is unknown and likely needs a custom check.",
+      "Q6 WINDOW-STATE VERSION: crates.io tauri-plugin-window-state 2.5.0 (latest stable) depends on tauri ^2.12 (crates.io dependencies endpoint), compatible with the locked tauri 2.12.2.",
+      "Q7 FRONTEND SHAPES: SESSION_STATUSES (types.ts:5-15), SessionSummary (types.ts:17-26), INBOX_KINDS (types.ts:28-29), InboxItem (types.ts:40-50), Answer (types.ts:52-55). Decoders: decodeSession (ipc.ts:59-71, status check at ipc.ts:65); decodeInboxItem (ipc.ts:86-100, kind check at ipc.ts:92). An unknown kind or status throws, and onInboxUpdated and onSessionUpdated drop the whole payload (ipc.ts:133-155).",
+      "Q7 RENDERING: InboxItemView (InboxItemView.tsx:29-39) switches on kind; error renders only the summary (line 38); an unlisted kind renders the header alone. Any resolved item shows the Resolved badge (InboxItemView.tsx:32) and .card.resolved (App.css:126), so an expired state would read as Resolved unless changed. SessionList.tsx:4-13 LABELS and :16-25 LIVE are Records, so a new SessionStatus fails tsc until handled (comment at :15); App.css status rules at App.css:195-213 and 259-277.",
+      "Q7 MERGE RULES: state.ts:25-46 merges snapshots with the event stream; resolved is monotonic (state.ts:37-46). App.tsx:28-59 subscribes first, then loads listSessions and listInbox, so restored items would arrive through the existing snapshot path.",
+      "Q8 TESTS: cargo test in desktop/src-tauri: 44 passed, 0 failed (matches expected 44). npm test in desktop: 18 passed in 3 files (matches expected 18). Build not run beyond tests.",
+      "SAVE PATTERN (risk b): all mutations happen under the single Inner mutex (mod.rs:111-119; start mod.rs:163-178, on_output mod.rs:215-225, send_through commit mod.rs:286-290, stop mod.rs:294-304). publish() (mod.rs:132-140) computes events under inner, takes emit_order, drops inner, then fires; lock order inner then emit_order (mod.rs:113-115). The per-session gate is held across the pipe write and Inner is not (mod.rs:265-271), so a save must follow the commit at mod.rs:286-290, never precede it. The emit closure may not call back into Sessions (mod.rs:113-115); a save should use the same ordered-publish shape with a revision number so the newest snapshot wins.",
+      "FILE GUESS CHECK: all guessed files exist except session/store.rs (new, to be created). Confirmed: session/state.rs, session/mod.rs, session/process.rs, session/protocol.rs, commands.rs, lib.rs, projects.rs, Cargo.toml, Cargo.lock, tauri.conf.json, capabilities/default.json, desktop/src/types.ts, ipc.ts, state.ts, components/InboxItemView.tsx, Inbox.tsx, SessionList.tsx, App.css. Missing from the guess: session/process/job.rs (kill-on-close job, process.rs:11), tests/fixtures/stream_json/* (fixtures drive the replay tests), App.tsx (initial load, App.tsx:28-59), and ipc.test.ts, state.test.ts, reply.test.ts. Also a Rust-side test at state.rs:388+ replays the fixtures."
+    ],
+    "unknowns": [
+      "Whether --resume works from a different cwd than the original session (untested; the app should always resume in the saved cwd).",
+      "Whether a restored session can be replied to: reply_line requires Idle (state.rs:315-318) and send_through requires a live proc (mod.rs:275). A restored session has none, so replying needs a respawn-with-resume path, which D2 does not name.",
+      "Exact is_error for the unknown-id resume (only subtype error_during_execution and exit 1 were captured).",
+      "Whether the window-state plugin keeps the window on a visible monitor by itself (docs silent). A custom monitor check may be required.",
+      "Whether the window-state plugin Rust-only use needs the window-state:default capability (docs silent).",
+      "Whether the duplicate control_request with the same request_id (probe e) reproduces; it was seen once."
+    ],
+    "risks": [
+      "PLAN-KILLER (quit looks like a crash): with persistence, a normal quit runs kill_all (lib.rs:40-46, mod.rs:306-312), then the reader sends Exit(1) (job.rs:74, process.rs:165) into mark_exit (state.rs:374-384). Every session would be saved as Failed with an error item. Needs a shutting-down signal, or a final save that waits for readers to drain.",
+      "OPEN REQUESTS DO NOT SURVIVE: a relaunch cannot answer a pre-shutdown permission or question (probe c: the old request is not re-emitted). These must be closed on load as an explicit expired state, which needs a new field or kind, not the bare resolved badge.",
+      "ID COLLISION: sN, pN and item ids restart at 1 each launch (mod.rs:167, projects.rs:39, state.rs:173). Persist the counters with the snapshot, or re-key on load.",
+      "CONCURRENT WRITE: saving from on_output or send_through without a revision or order lock can let an older snapshot overwrite a newer one. Use the publish pattern (mod.rs:132-140), write atomically (temp file, then rename), and never hold Inner across disk I/O.",
+      "ABSOLUTE PROJECT PATHS vs orchestra/CLAUDE.md:91-93. Architect decision needed.",
+      "SCHEMA FAILURE MODE: decoders throw on unknown kind or status (ipc.ts:65, 92) and the whole payload is dropped silently (ipc.ts:133-155). A new kind or status needs matching Rust and TS changes in one commit, and the on-disk schema version must refuse unknown versions loudly (roadmap D2 item 1).",
+      "DUPLICATE REQUESTS: if claude re-emits a control_request with the same request_id (probe e), CanUseTool (state.rs:234-248) creates two inbox items. Needs a test before resume ships.",
+      "DONE ITEM ALREADY EXISTS: a done kind may duplicate InboxKind::Finished (state.rs:259-260). Architect decides between a new kind and extending Finished with full text.",
+      "RESUME DEPENDS ON CLAUDE OWN STORE: resume works across processes, so claude keeps the transcript outside Orchestra app data (location inferred, not checked). A deleted transcript turns resume into an error (probe d); restore needs a fallback to Ended."
+    ]
+  },
+  "architect": {
+    "written_by": "architect",
+    "shape": "single-loop",
+    "parallel_safe": false,
+    "plan": [
+      {
+        "slice": "s1",
+        "risk": "high",
+        "intent": "Session/inbox model for D2, Rust and TS and UI together in one commit. (a) New SessionStatus::Suspended (wire: suspended): not running but resumable because it holds a valid claude_session_id. (b) InboxItem gains expired: bool (expired implies resolved=true; resolved stays monotonic so the state.ts merge rules still hold) and result_text: Option<String> (full result text on Result items, Finished and Error, capped at MAX_RESULT_BYTES=262144 on a char boundary; summary stays 300 chars). (c) SessionState::suspend(now): drains pending, marks every open Permission/Question item resolved+expired, sets Suspended if claude_session_id is Some, else Ended; pushes no Error item. (d) A CanUseTool whose request_id is already in pending is ignored (no second item). (e) claude_session_id is accepted from Init only if it is a canonical 8-4-4-4-12 hex UUID (hand-rolled check, no new crate), else ignored. (f) Serialize+Deserialize on SessionStatus, InboxKind, InboxItem, Question, QuestionOption, plus a serde-able PersistedSession (status, last_activity_at, last_message, claude_session_id, inbox, next_item, unknown_count) with to/from conversions; Pending is NOT persisted. (g) TS: types.ts adds suspended, expired, result_text; ipc.ts decoders validate them (missing or mistyped expired throws, as today); InboxItemView renders an Expired badge and a distinct .card.expired style, never Resolved, and shows result_text in a scrollable pre-wrap block on finished/error items; SessionList LABELS/LIVE get suspended (label Paused, not live); App.css rules for both.",
+        "files": [
+          "orchestra/desktop/src-tauri/src/session/state.rs",
+          "orchestra/desktop/src/types.ts",
+          "orchestra/desktop/src/ipc.ts",
+          "orchestra/desktop/src/ipc.test.ts",
+          "orchestra/desktop/src/state.test.ts",
+          "orchestra/desktop/src/components/InboxItemView.tsx",
+          "orchestra/desktop/src/components/SessionList.tsx",
+          "orchestra/desktop/src/App.css"
+        ],
+        "done_when": "cd orchestra/desktop/src-tauri && C:/Users/natha/.cargo/bin/cargo test -> test result: ok, 0 failed, with these new tests present and passing: session::state::tests::dedupes_repeated_request_id, session::state::tests::suspend_expires_open_requests, session::state::tests::suspend_without_claude_id_ends, session::state::tests::finished_item_keeps_full_result_text, session::state::tests::rejects_non_uuid_claude_session_id, session::state::tests::inbox_item_serde_roundtrip; AND cd orchestra/desktop && npm test -> all pass, incl. new ipc.test.ts cases (decodes expired/result_text/suspended; rejects an item missing expired); AND npm run build -> exit 0",
+        "notes": "No new InboxKind: D2 item 4 is Finished + result_text. The schema change ships Rust+TS in one commit because the TS decoders drop a whole payload on an unknown value (ipc.ts:133-155)."
+      },
+      {
+        "slice": "s2",
+        "risk": "high",
+        "intent": "Persistence under app_data_dir plus a clean shutdown path. New session/store.rs: Snapshot { schema: 1, revision, next_session, next_project, projects: [{id, name, path}], sessions: [{id, project_id, project_name, started_at, state: PersistedSession}] } at app_data_dir/state.json. save = serialize, write state.json.tmp, sync_all, std::fs::rename over state.json (atomic replace on Windows). load = Ok(None) if absent, Ok(snapshot) if schema == 1, Err(UnknownSchema{found}) or Err(Unreadable) otherwise; on Err the file is never touched and saving is DISABLED for the run. Writer: one background thread fed by a channel. Sessions computes the snapshot under Inner with revision += 1, takes emit_order, drops Inner, then sends (revision, snapshot) - the publish() shape at mod.rs:132-140. The writer coalesces to the newest and skips any revision <= last written, so an older snapshot never overwrites a newer one; Inner is never held across disk I/O. Saves fire from publish() and add_project(). Restore: Sessions::restore(snapshot) rebuilds projects (path re-validated with is_dir; a missing folder stays in the store but is hidden from list_projects and unusable by start/resume; ids come from a persisted next_project counter instead of the vec index) and sessions (every non-Ended/Failed session goes through SessionState::suspend, which also expires items a crash left open). next_session, next_project and per-session next_item are persisted, so sN/pN/item ids never collide. Shutdown, the PLAN-KILLER fix: Sessions::shutdown() replaces kill_all on RunEvent::Exit. Under Inner it sets shutting_down = true and suspends every live session, computes the final snapshot, drops Inner, flushes it synchronously (waits for the writer), THEN kills children. on_output returns early with no state change, no publish and no save once shutting_down is set, so the reader Exit(1) after the job kill can never become Failed + an error item. Loud failure: a storage_status IPC command returns {ok: true} or {ok: false, reason: unknown_schema_version | unreadable, found_version?} with no path in it; App.tsx shows a persistent banner that history was not loaded and will not be saved this run. Absolute project paths live only in this Rust-written file and never cross IPC.",
+        "files": [
+          "orchestra/desktop/src-tauri/src/session/store.rs",
+          "orchestra/desktop/src-tauri/src/session/mod.rs",
+          "orchestra/desktop/src-tauri/src/session/state.rs",
+          "orchestra/desktop/src-tauri/src/projects.rs",
+          "orchestra/desktop/src-tauri/src/lib.rs",
+          "orchestra/desktop/src-tauri/src/commands.rs",
+          "orchestra/desktop/src/ipc.ts",
+          "orchestra/desktop/src/ipc.test.ts",
+          "orchestra/desktop/src/App.tsx",
+          "orchestra/desktop/src/App.css"
+        ],
+        "done_when": "cd orchestra/desktop/src-tauri && C:/Users/natha/.cargo/bin/cargo test -> test result: ok, 0 failed, with these new tests passing: session::store::tests::refuses_unknown_schema_version (file bytes unchanged after load and after a save attempt), session::store::tests::atomic_save_roundtrip, session::store::tests::older_revision_never_overwrites_newer, session::tests::quit_records_suspended_not_failed (fake spawner: start, shutdown(), then the sink receives Exit(Some(1)) -> status Suspended, zero Error items, flushed snapshot says suspended), session::tests::restore_continues_counters, session::tests::restore_expires_items_left_open_by_crash, projects::tests::missing_dir_hidden_after_restore, session::tests::ipc_types_carry_no_path; AND cd orchestra/desktop && npm test -> all pass; AND npm run build -> exit 0",
+        "notes": "Consumes the s1 serde derives, PersistedSession and suspend(). No new crate: std::fs::rename uses MoveFileExW with REPLACE_EXISTING on Windows. Inbox history is unbounded in D2 (see not_doing)."
+      },
+      {
+        "slice": "s3",
+        "risk": "high",
+        "intent": "Lazy resume. Spawner becomes Fn(&Path, Option<&ClaudeSessionId>, Sink) where ClaudeSessionId is a newtype constructible only through the s1 UUID check; process.rs appends --resume and the id after the fixed ARGS (ARGS and its test unchanged; a new test covers the resume form). reply() on a Suspended session, under the session gate: look up the project (missing folder -> Ended + Error item: project folder no longer exists, no spawn), spawn with --resume in the saved project cwd, attach proc, send the reply as the first user line, status -> Working (the reply resolves Finished/Error items as today). Resume failure (exit non-zero, or an error Result, before any successful Result in that spawn) -> status Ended, not Failed, with one Error item: Could not resume this session; claude_session_id kept. Answering an expired item returns an error saying the request expired when Orchestra closed, and touches no process. No process is spawned at launch.",
+        "files": [
+          "orchestra/desktop/src-tauri/src/session/process.rs",
+          "orchestra/desktop/src-tauri/src/session/mod.rs",
+          "orchestra/desktop/src-tauri/src/session/state.rs",
+          "orchestra/desktop/src-tauri/tests/fixtures/stream_json/resume_unknown_id.jsonl",
+          "orchestra/desktop/src-tauri/tests/fixtures/stream_json/README.md",
+          "orchestra/desktop/src/components/InboxItemView.tsx"
+        ],
+        "done_when": "cd orchestra/desktop/src-tauri && C:/Users/natha/.cargo/bin/cargo test -> test result: ok, 0 failed, with new tests passing: session::process::tests::resume_args_follow_fixed_args, session::tests::reply_to_suspended_respawns_with_resume (fake spawner records id and cwd; first line written is the reply), session::tests::resume_failure_falls_back_to_ended (replays resume_unknown_id.jsonl then Exit(Some(1)) -> Ended, exactly one Error item), session::tests::missing_project_folder_ends_without_spawn, session::tests::answering_expired_item_is_refused, session::tests::no_spawn_on_restore; AND cd orchestra/desktop && npm test && npm run build -> pass, exit 0; AND human-read: npm run tauri dev, start a session in a scratch folder, let it finish, quit, relaunch -> the session shows Paused with its done item and full result text; reply -> it answers with context from the first turn",
+        "notes": "resume_unknown_id.jsonl is SYNTHESIZED from scout probe (d) (result subtype error_during_execution, exit 1); its README entry must say so and that is_error was not captured. The InboxItemView change is only the reply-box copy for a paused session (Reply to resume)."
+      },
+      {
+        "slice": "s4",
+        "risk": "high",
+        "intent": "Window state. Add tauri-plugin-window-state = 2 (resolves 2.5.x against locked tauri 2.12.2); register it in lib.rs under cfg(desktop) with default flags. No capability change: restore/save run in Rust and plugin permissions only gate webview invoke calls; the frontend never calls the plugin, so window-state:default is NOT granted. The visible-display guarantee is ours, not assumed: new src/window.rs with a pure function deciding whether a window rect is visible given monitor work areas (at least 100x50 px of the title-bar strip inside some monitor); after restore in setup, if not visible, clamp size to the primary monitor and center. The builder reads the plugin restore code in the cargo registry and records in notes whether it already checks monitors, and whether the main window exists when setup runs.",
+        "files": [
+          "orchestra/desktop/src-tauri/Cargo.toml",
+          "orchestra/desktop/src-tauri/Cargo.lock",
+          "orchestra/desktop/src-tauri/src/lib.rs",
+          "orchestra/desktop/src-tauri/src/window.rs"
+        ],
+        "done_when": "cd orchestra/desktop/src-tauri && C:/Users/natha/.cargo/bin/cargo test -> test result: ok, 0 failed, with window::tests::offscreen_rect_is_not_visible, window::tests::partially_visible_title_bar_is_visible, window::tests::rect_on_removed_monitor_is_recentred passing; AND C:/Users/natha/.cargo/bin/cargo build -> exit 0; AND grep -c window-state orchestra/desktop/src-tauri/capabilities/default.json -> 0; AND grep -c tauri-plugin-window-state orchestra/desktop/src-tauri/Cargo.lock -> >=1; AND human-read: move and resize the window, quit, relaunch -> same position and size; move it to a second monitor, quit, disconnect that monitor, relaunch -> the window appears on the primary display",
+        "notes": "Content-independent of s1-s3; ordered after s2 only because both edit lib.rs. Touches neither tauri.conf.json nor capabilities. Cargo.toml and Cargo.lock belong to this slice alone."
+      },
+      {
+        "slice": "s5",
+        "risk": "low",
+        "intent": "Docs. orchestra/CLAUDE.md: replace the Window state persists ... Not yet added line with what s4 shipped; add one line under the IPC rule recording the exception: absolute project folders chosen in the native dialog are stored by Rust in app_data_dir/state.json, never accepted from or sent to the frontend, and re-validated with is_dir on load. ROADMAP.md: tick the four D2 boxes.",
+        "files": [
+          "orchestra/CLAUDE.md",
+          "orchestra/ROADMAP.md"
+        ],
+        "done_when": "grep -c \"Not yet added\" orchestra/CLAUDE.md -> 0; grep -c app_data_dir orchestra/CLAUDE.md -> >=1; the D2 section of orchestra/ROADMAP.md (between ### D2 and ### D3) has 4 lines matching \\[x\\] and 0 matching \\[ \\]",
+        "notes": "Prose only; no file shared with another slice."
+      }
+    ],
+    "edges": [
+      "s1 -> s2 because s2 serializes the s1 serde-derived types, PersistedSession and suspend()",
+      "s2 -> s3 because resume consumes the restored Suspended sessions, persisted project paths and Sessions::restore in mod.rs",
+      "s2 -> s4 ordering only (shared lib.rs); no artifact flows",
+      "s1,s2,s3,s4 -> s5 because the docs describe what shipped"
+    ],
+    "rationale": "Single-loop: one builder, one branch in the orchestra git repo, slices built in order. Not a diamond because the D2 pieces share seams: state.rs is edited by s1, s2 and s3; mod.rs by s2 and s3; lib.rs by s2 (load + shutdown) and s4 (plugin); ipc.ts, ipc.test.ts and App.css by s1 and s2; InboxItemView.tsx by s1 and s3. Only s4 and s5 are content-disjoint, and s4 still shares lib.rs; fewer than 3 disjoint slices, so fanning out would only manufacture merge conflicts. Risk tags: s1 high - changes the IPC schema on both sides, a wrong decoder silently drops whole payloads (ipc.ts:133-155), and it shares state.rs with s2/s3. s2 high - writes absolute user paths to disk, has ordering logic a unit test only partly sees (revision ordering, no Inner across I/O), owns the PLAN-KILLER shutdown fix, and shares mod.rs/state.rs/lib.rs. s3 high - spawns a child with an argument derived from persisted data (flag injection if the UUID check is wrong) and shares mod.rs/state.rs. s4 high - shares lib.rs with s2 and adds a native dependency (Cargo.lock); the visible-display guarantee is only partly testable. s5 low - prose in two files no other slice touches, verifiable by grep. Scout risks resolved: PLAN-KILLER -> s2 shutdown() with a shutting_down flag, suspend before kill, synchronous final save, on_output ignored afterwards; test quit_records_suspended_not_failed. Open requests -> expired flag (s1) in Rust+TS+UI, rendered Expired, never Resolved. ID counters -> persisted (s2). Concurrent saves -> revision + ordered handoff + coalescing writer + temp/rename (s2). Absolute paths -> only in the Rust-written store, never over IPC, is_dir on load, exception documented (s2, s5). Resume -> lazy (s3) with Ended fallback. Duplicate control_request -> deduped by request_id (s1). Done item -> Finished extended with result_text (s1). Window-state -> no capability, our own visible-display check (s4). Note: a stale D1 script in the shared scratchpad briefly overwrote this key with the D1 diamond plan during this architect run; this write replaces it in full.",
+    "gate_options": {
+      "resume_policy": {
+        "recommended": "lazy - restored sessions are Suspended (shown Paused) and respawn with --resume only when the user replies; zero processes and zero tokens at launch",
+        "alternative": "auto-resume on launch - every unfinished session respawns at startup; costs tokens and N processes per launch, and a resumed claude does nothing until it gets a user line anyway (probe a)"
+      },
+      "unknown_schema_behaviour": {
+        "recommended": "start with empty in-memory state, leave state.json untouched, disable saving for the run, show a persistent banner via storage_status",
+        "alternatives": [
+          "show a native error dialog and quit",
+          "rename the file aside (state.json.unreadable-<ts>) and start fresh"
+        ]
+      },
+      "done_item": {
+        "recommended": "extend InboxKind::Finished (and Error) with result_text",
+        "alternative": "new InboxKind done - duplicates Finished and needs a decoder change for no behaviour gain"
+      },
+      "suspended_status": {
+        "recommended": "new SessionStatus suspended, labelled Paused",
+        "alternative": "reuse Idle for restored sessions - hides that no process is running and conflates a turn interrupted mid-work with a finished one"
+      },
+      "absolute_paths": {
+        "recommended": "store absolute project paths in app_data_dir/state.json (Rust-only), re-validate on load, record the exception in orchestra/CLAUDE.md",
+        "alternative": "do not persist projects; restored sessions become Ended and the user re-picks folders - loses resume entirely"
+      },
+      "window_state_capability": {
+        "recommended": "grant nothing; the plugin is used from Rust only",
+        "alternative": "grant window-state:default - only needed if the frontend ever calls the plugin, which D2 does not"
+      }
+    },
+    "not_doing": [
+      "Auto-resume at launch (lazy resume recommended; alternative at the gate)",
+      "Retention, pruning or a size cap on persisted inbox history; a clear-history action",
+      "Persisting the transcript stream, cost or usage (D3)",
+      "Re-emitting or re-answering requests that were open at quit - they expire",
+      "A new done InboxKind (Finished is extended instead)",
+      "Schema migrations - v1 is the only version; anything else is refused",
+      "Any new capability, or any change to tauri.conf.json or the CSP",
+      "Follow-up prompt UI beyond the existing reply box, per-session settings (both D3)",
+      "Resuming from a cwd other than the original (always the saved project cwd)",
+      "Anything in mobile/, protocol/ or fleet/",
+      "Encrypting state.json (folder paths and result text, no secrets)"
+    ],
+    "human_gate": "Approve: (1) lazy resume over auto-resume; (2) on an unknown schema version, start empty, leave the file untouched, disable saving and show a banner (vs quit, vs rename aside); (3) storing absolute project folder paths in app_data_dir/state.json as a recorded exception to orchestra/CLAUDE.md:91-93; (4) a new suspended status shown as Paused, and expired requests shown as Expired; (5) Finished extended with full result_text (cap 256 KiB) instead of a new kind; (6) window-state with no capability grant plus our own visible-display check; (7) unbounded inbox history in D2. Options are in architect.gate_options; architect.plan holds only the recommended path.",
+    "windows_rule": "Every automated done_when runs on Windows (cargo test/build via C:/Users/natha/.cargo/bin/cargo, npm test, npm run build, grep). Window placement and real resume are human-read checks named in s3 and s4; nothing needs a Mac."
+  },
+  "approved_by_human": true,
+  "scope_exceptions": [
+    "ORCHESTRATOR-OWNED, normally empty. Paths a builder may write that the approved plan does not list. guard-builder-scope.py DENIES a builder's Write/Edit outside architect.plan[].files, and this is the only way through it. Adding one is a deliberate, recorded act: pair it with deviation_from_approved_plan on the slice that needed it, and say why the gate's file set was wrong. Never add a path to silence the guard on work the human did not approve."
+  ],
+  "builders": {
+    "s1": {
+      "written_by": "builder",
+      "status": "done",
+      "branch": "d2-persistence",
+      "commit": "e85873c",
+      "changed": [
+        "orchestra/desktop/src-tauri/src/session/state.rs",
+        "orchestra/desktop/src/types.ts",
+        "orchestra/desktop/src/ipc.ts",
+        "orchestra/desktop/src/ipc.test.ts",
+        "orchestra/desktop/src/state.test.ts",
+        "orchestra/desktop/src/components/InboxItemView.tsx",
+        "orchestra/desktop/src/components/SessionList.tsx",
+        "orchestra/desktop/src/App.css"
+      ],
+      "files": [
+        "orchestra/desktop/src-tauri/src/session/state.rs",
+        "orchestra/desktop/src/types.ts",
+        "orchestra/desktop/src/ipc.ts",
+        "orchestra/desktop/src/ipc.test.ts",
+        "orchestra/desktop/src/state.test.ts",
+        "orchestra/desktop/src/components/InboxItemView.tsx",
+        "orchestra/desktop/src/components/SessionList.tsx",
+        "orchestra/desktop/src/App.css"
+      ],
+      "notes": "",
+      "gate_results": {
+        "cargo test": "test result: ok. 50 passed; 0 failed (44 before + 6 new: dedupes_repeated_request_id, suspend_expires_open_requests, suspend_without_claude_id_ends, finished_item_keeps_full_result_text, rejects_non_uuid_claude_session_id, inbox_item_serde_roundtrip, all ok)",
+        "npm test": "Test Files 3 passed (3); Tests 23 passed (23) incl. new ipc.test.ts cases (decodes expired/result_text/suspended; rejects item missing expired)",
+        "npm run build": "exit 0"
+      },
+      "human_read_checks": [
+        "Expired badge and dashed .card.expired never read as Resolved; Paused label on a suspended session; result_text scrolls in a pre-wrap block (not run in a browser)"
+      ]
+    },
+    "s2": {
+      "written_by": "builder",
+      "status": "done",
+      "branch": "d2-persistence",
+      "commit": "126d194",
+      "changed": [
+        "orchestra/desktop/src-tauri/src/session/store.rs",
+        "orchestra/desktop/src-tauri/src/session/mod.rs",
+        "orchestra/desktop/src-tauri/src/projects.rs",
+        "orchestra/desktop/src-tauri/src/lib.rs",
+        "orchestra/desktop/src-tauri/src/commands.rs",
+        "orchestra/desktop/src/ipc.ts",
+        "orchestra/desktop/src/ipc.test.ts",
+        "orchestra/desktop/src/App.tsx"
+      ],
+      "files": [
+        "orchestra/desktop/src-tauri/src/session/store.rs",
+        "orchestra/desktop/src-tauri/src/session/mod.rs",
+        "orchestra/desktop/src-tauri/src/projects.rs",
+        "orchestra/desktop/src-tauri/src/lib.rs",
+        "orchestra/desktop/src-tauri/src/commands.rs",
+        "orchestra/desktop/src/ipc.ts",
+        "orchestra/desktop/src/ipc.test.ts",
+        "orchestra/desktop/src/App.tsx"
+      ],
+      "notes": "",
+      "gate_results": {
+        "cargo test": "test result: ok. 58 passed; 0 failed. New tests ok: session::store::tests::refuses_unknown_schema_version, atomic_save_roundtrip, older_revision_never_overwrites_newer; session::tests::quit_records_suspended_not_failed, restore_continues_counters, restore_expires_items_left_open_by_crash, ipc_types_carry_no_path; projects::tests::missing_dir_hidden_after_restore",
+        "npm test": "Tests 25 passed (25)",
+        "npm run build": "exit 0"
+      },
+      "findings": [
+        "state.rs and App.css were in the approved set but needed no edit; the banner reuses .banner. The refuses_unknown_schema_version test proves open() returns no writer and the bytes are unchanged after load; a save attempt cannot be made without a writer, so that half is shown by absence of a writer rather than by a failed save call.",
+        "Sessions::new was replaced by Sessions::with_writer (new was dead code); kill_all was replaced by shutdown().",
+        "storage_status IPC returns {ok} or {ok:false, reason, found_version?}; the type and decoder live in ipc.ts because types.ts is outside the s2 file set.",
+        "Every publish() takes and queues a full snapshot (inbox with result_text included); the writer coalesces. History is unbounded by decision, so snapshot size grows with it."
+      ],
+      "human_read_checks": [
+        "Persistent banner appears when state.json has an unknown schema (edit schema to 2 by hand) and no save happens that run; quit and relaunch keeps sessions Paused"
+      ]
+    },
+    "s3": {
+      "written_by": "builder",
+      "status": "done",
+      "branch": "d2-persistence",
+      "commit": "d3f73d1",
+      "changed": [
+        "orchestra/desktop/src-tauri/src/session/process.rs",
+        "orchestra/desktop/src-tauri/src/session/mod.rs",
+        "orchestra/desktop/src-tauri/src/session/state.rs",
+        "orchestra/desktop/src-tauri/tests/fixtures/stream_json/resume_unknown_id.jsonl",
+        "orchestra/desktop/src-tauri/tests/fixtures/stream_json/README.md",
+        "orchestra/desktop/src/components/InboxItemView.tsx"
+      ],
+      "files": [
+        "orchestra/desktop/src-tauri/src/session/process.rs",
+        "orchestra/desktop/src-tauri/src/session/mod.rs",
+        "orchestra/desktop/src-tauri/src/session/state.rs",
+        "orchestra/desktop/src-tauri/tests/fixtures/stream_json/resume_unknown_id.jsonl",
+        "orchestra/desktop/src-tauri/tests/fixtures/stream_json/README.md",
+        "orchestra/desktop/src/components/InboxItemView.tsx"
+      ],
+      "notes": "resume_unknown_id.jsonl is reconstructed from the probe (is_error was not captured; set true) and protocol.rs reads a missing is_error as false.",
+      "gate_results": {
+        "cargo test": "test result: ok. 64 passed; 0 failed. New tests ok: session::process::tests::resume_args_follow_fixed_args; session::tests::reply_to_suspended_respawns_with_resume, resume_failure_falls_back_to_ended, missing_project_folder_ends_without_spawn, answering_expired_item_is_refused, no_spawn_on_restore",
+        "npm test": "Tests 25 passed (25)",
+        "npm run build": "exit 0"
+      },
+      "findings": [
+        "Spawner is Fn(&Path, Option<&ClaudeSessionId>, Sink); ClaudeSessionId::parse (state.rs) is the only constructor. Sessions holds a Weak self so reply(&self) can give the reader thread an Arc without touching commands.rs.",
+        "Resume failure = error Result or non-zero exit before any successful Result in that spawn -> Ended, claude_session_id kept, exactly one Error item; the error Result does not add its own item. The dead process is killed when a line ends the session.",
+        "Expired-item answer error text: this request expired when Orchestra closed. Missing project folder: Ended + Error item The project folder no longer exists, Err without a path."
+      ],
+      "human_read_checks": [
+        "npm run tauri dev: start a session in a scratch folder, let it finish, quit, relaunch -> Paused with its done item and full result text; reply -> answers with context from the first turn (NOT run; needs the GUI and a live claude)"
+      ]
+    },
+    "s4": {
+      "written_by": "builder",
+      "status": "done",
+      "branch": "d2-persistence",
+      "commit": "52e2438",
+      "changed": [
+        "orchestra/desktop/src-tauri/Cargo.toml",
+        "orchestra/desktop/src-tauri/Cargo.lock",
+        "orchestra/desktop/src-tauri/src/lib.rs",
+        "orchestra/desktop/src-tauri/src/window.rs"
+      ],
+      "files": [
+        "orchestra/desktop/src-tauri/Cargo.toml",
+        "orchestra/desktop/src-tauri/Cargo.lock",
+        "orchestra/desktop/src-tauri/src/lib.rs",
+        "orchestra/desktop/src-tauri/src/window.rs"
+      ],
+      "notes": "Dependency fetch was needed to resolve tauri-plugin-window-state 2.5.0; Cargo.lock grew by 16 lines, nothing else changed.",
+      "gate_results": {
+        "cargo test": "test result: ok. 67 passed; 0 failed. window::tests::offscreen_rect_is_not_visible, partially_visible_title_bar_is_visible, rect_on_removed_monitor_is_recentred ok",
+        "cargo build": "Finished dev profile, exit 0, no warnings",
+        "grep -c window-state orchestra/desktop/src-tauri/capabilities/default.json": "0",
+        "grep -c tauri-plugin-window-state orchestra/desktop/src-tauri/Cargo.lock": "2"
+      },
+      "findings": [
+        "Plugin (tauri-plugin-window-state 2.5.0, read in the cargo registry) checks monitors only for POSITION: it calls set_position only when the saved rect intersects some available monitor (m.intersects), else leaves it to the OS. It restores SIZE unconditionally and unclamped, and never checks the title bar is reachable; so window.rs is still needed.",
+        "The main window DOES exist when the app setup closure runs: tauri-2.12.2 app.rs setup() builds every config window (create=true) before calling the user setup closure. Plugin restore happens earlier, in on_window_ready as the window is built, because the plugin is registered on the Builder (not inside setup). Not exercised in a running GUI.",
+        "Visibility rule: the top 50 px strip of the window must have at least 100 px width and the full strip height inside one monitor work area."
+      ],
+      "human_read_checks": [
+        "Move and resize, quit, relaunch -> same position and size; move to a second monitor, quit, unplug it, relaunch -> window on the primary display (NOT run)"
+      ]
+    },
+    "s5": {
+      "written_by": "builder",
+      "status": "done",
+      "branch": "d2-persistence",
+      "commit": "4c6bf40",
+      "changed": [
+        "orchestra/CLAUDE.md"
+      ],
+      "files": [
+        "orchestra/CLAUDE.md"
+      ],
+      "notes": "orchestra/ROADMAP.md is gitignored (/ROADMAP.md): edited in place with the four D2 boxes ticked, not force-added; only CLAUDE.md is in commit 4c6bf40.",
+      "gate_results": {
+        "grep -c \"Not yet added\" orchestra/CLAUDE.md": "0",
+        "grep -c app_data_dir orchestra/CLAUDE.md": "1",
+        "D2 section of orchestra/ROADMAP.md": "4 lines match [x], 0 match [ ]"
+      },
+      "files_edited_uncommitted": [
+        "orchestra/ROADMAP.md"
+      ]
+    }
+  },
+  "reviews": {
+    "s1": {
+      "written_by": "reviewer",
+      "verdict": "PASS",
+      "attempt": 1,
+      "summary": "PASS. Re-ran on tip 4c6bf40: cargo test 67 passed/0 failed with all six named s1 tests ok (their bodies are unchanged since e85873c); npm test 25/25 incl. the four new decodeInboxItem cases and 'accepts suspended'; npm run build (tsc && vite build) exit 0. Re-derived from the diff: Rust serde names (suspended, expired, result_text, snake_case) match types.ts/ipc.ts, and expired/result_text are always serialized so no payload is dropped; is_uuid checks 36 bytes with hyphens only at 8/13/18/23 and hex elsewhere, so a leading '-' is impossible; truncate_bytes walks back to a char boundary (no panic on 2-byte chars, tested); suspend drains pending, sets resolved+expired only on open Permission/Question, picks Suspended/Ended on claude_session_id, pushes no item; dedupe checks pending by request_id; Expired badge is exclusive of Resolved; LABELS/LIVE carry suspended. Diff is exactly the 8 approved files; author njcurtis3, no trailer. Notes: is_uuid accepts uppercase hex; suspended is not is_over (later slices handle the exit seam); mergeInbox keeps the old copy's expired.",
+      "findings": [
+        {
+          "file": "orchestra/desktop/src-tauri/src/session/state.rs",
+          "line": 149,
+          "severity": "note",
+          "origin": "",
+          "issue": "is_uuid uses is_ascii_hexdigit, so uppercase UUIDs ('0B9F6A2C-...') are accepted. Not an injection risk (length, hyphen positions and first byte are all pinned, no leading '-'), but 'canonical' in the intent arguably means lowercase. Claude emits lowercase, so no observed failure."
+        },
+        {
+          "file": "orchestra/desktop/src-tauri/src/session/state.rs",
+          "line": 230,
+          "severity": "note",
+          "origin": "",
+          "issue": "is_over() is still Ended|Failed only, so a Suspended session still accepts apply()/mark_exit(): within s1 alone, suspend() followed by mark_exit(Some(1)) would go Failed with an error item. No caller of suspend exists in s1; at tip, shutdown() sets shutting_down so readers are ignored, and lazy resume needs Suspended to stay non-terminal. Flagged for the s2/s3 reviewers, not a blocker here."
+        },
+        {
+          "file": "orchestra/desktop/src/state.ts",
+          "line": 43,
+          "severity": "note",
+          "origin": "",
+          "issue": "mergeInbox (not in s1's file list) keeps `have`'s fields and ORs only resolved, so if an event copy with expired:false arrived before an inbox-loaded snapshot with expired:true, the merged item would show Resolved rather than Expired. Unreachable today because expiry happens only at restore (before the UI loads) or at shutdown; a one-line `expired: have.expired || i.expired` would make it hold by construction."
+        },
+        {
+          "file": "orchestra/desktop/src-tauri/src/session/state.rs",
+          "line": 211,
+          "severity": "note",
+          "origin": "",
+          "issue": "from_persisted does not enforce expired => resolved on load; a hand-edited file with expired:true,resolved:false on an Ended/Failed session (where suspend() is a no-op) would render Expired with live Allow/Deny buttons. Only from a corrupted file; normalizing in from_persisted would close it."
+        }
+      ]
+    },
+    "s5": {
+      "verdict": "PASS",
+      "attempt": 1,
+      "written_by": "reviewer",
+      "findings": [
+        {
+          "severity": "note",
+          "origin": "",
+          "detail": "CLAUDE.md says the title bar is checked against 'a current monitor'; window.rs actually tests against each monitor's work area (taskbar excluded). Slightly stricter than the prose, harmless."
+        }
+      ],
+      "summary": "PASS. Re-ran done_when myself: at d2-persistence tip (4c6bf40) and in the working tree, grep -c 'Not yet added' CLAUDE.md = 0 and grep -c app_data_dir = 1; ROADMAP.md is gitignored (.gitignore:2 /ROADMAP.md) and its D2 section (### D2 to ### D3) has 4 [x], 0 [ ]. git show --stat 4c6bf40 touches only CLAUDE.md, author njcurtis3, no Claude trailer. Spot-checked the prose against code at the tip: tauri-plugin-window-state is in Cargo.toml, registered under #[cfg(desktop)] in lib.rs, capabilities/default.json grants only core:default, and window::ensure_visible checks the title-bar strip and otherwise clamps to the primary monitor and centres it, as documented. Exception line: projects.rs keeps PathBuf in Rust and exposes only Project{id,name}; the path comes from blocking_pick_folder; StartArgs rejects a cwd field (test); store writes app_data_dir/state.json; restore() re-checks is_dir and hides missing folders. One wording note."
+    },
+    "s2": {
+      "written_by": "reviewer",
+      "verdict": "PASS",
+      "attempt": 1,
+      "summary": "PASS. Read 126d194 (8 files, all in the approved list; author njcurtis3, no trailer) and the untouched seams (start/stop/send_through, state.rs suspend/is_over, job-object kill). Re-ran cargo test on tip 4c6bf40 (67 passed, 0 failed, all 8 named s2 tests present and passing), npm test (25 passed), npm run build (built). Re-derived the quit fix: shutdown sets shutting_down and suspends under Inner, next_snapshot returns None once shutting_down so no later publish can queue a save, a straggler snapshot computed before shutdown carries a lower revision and is skipped once the final one is written, and kill runs only after flush acks, so the reader Exit(1) is dropped by on_output's early return. Lock order inner -> emit_order holds everywhere; Inner is never held across the channel send or disk. Atomic save, unknown-schema refusal (no writer, file untouched, path-free status, persistent banner) and restore (counters, is_dir, suspend+expire) match the plan. Notes: the snapshot clones the whole unbounded history under Inner on every stdout line; the schema test's 'save attempt' is vacuous; flush has a 5s timeout.",
+      "findings": [
+        {
+          "severity": "note",
+          "origin": "architect",
+          "title": "Full-history snapshot on every publish, unbounded history",
+          "detail": "next_snapshot clones every session's inbox (result_text up to 262144 bytes per Finished/Error item) under Inner for every stdout line via on_output->publish, and the writer rewrites + sync_all's the whole file per batch. Coalescing bounds disk writes but not the clone under the lock. With no pruning across runs, a long-lived history (hundreds of finished turns) means tens of MB cloned under Inner per streamed line. Not a correctness failure today; a follow-up should cap/prune history or snapshot only dirty sessions."
+        },
+        {
+          "severity": "note",
+          "origin": "builder",
+          "title": "refuses_unknown_schema_version 'after a save attempt' half is vacuous",
+          "detail": "The test asserts writer.is_none() twice and re-reads the bytes; nothing attempts a save. The guarantee holds structurally (lib.rs passes open()'s None writer to Sessions::with_writer; next_snapshot/queue_save/shutdown are all gated on self.writer), so it is adequate as a proof of 'no writer exists', but a stronger test would build Sessions with the None writer, add_project/start/shutdown, and then compare bytes."
+        },
+        {
+          "severity": "note",
+          "origin": "",
+          "title": "quit test cannot detect kill-before-flush",
+          "detail": "The fake's kill() only sets a flag and emits no Exit, so reordering kill ahead of the flush in shutdown() would still pass quit_records_suspended_not_failed. Code order is correct today (save+flush then kill)."
+        },
+        {
+          "severity": "note",
+          "origin": "",
+          "title": "Bounded final flush and swallowed save errors",
+          "detail": "Writer::flush waits at most 5s; if the final write is slower the process exits and the rename never happens, leaving the previous revision (atomic, never torn). A rename failure (target held open without FILE_SHARE_DELETE, e.g. AV) is swallowed and retried only by a later save, so the final snapshot can be lost silently. Both degrade to the crash path, which restore() handles by suspending and expiring open items. Acceptable; no user-visible signal."
+        },
+        {
+          "severity": "note",
+          "origin": "",
+          "title": "Pre-existing: start() racing shutdown spawns an untracked child",
+          "detail": "start() inserts the session, drops Inner, then spawns; if shutdown runs in between, the new proc is not in shutdown's kill list. Same race existed with kill_all; the job object closes on process exit and kills the tree, and the child's output is ignored once shutting_down, so no state or disk effect."
+        }
+      ]
+    },
+    "s3": {
+      "verdict": "PASS",
+      "attempt": 1,
+      "written_by": "reviewer",
+      "summary": "PASS. Re-ran at tip 4c6bf40: cargo test 67 passed, 0 failed, all six named s3 tests ok; npm test 25 passed; npm run build exit 0. Probed real claude 2.1.296 in a scratch dir outside the repo using the fixed ARGS plus --resume with an all-zero UUID and stdin closed. It returned one result line (error_during_execution, is_error:true, no result field, requested id echoed) and exited 1. So the reconstructed is_error:true is correct, and non-zero exit while resuming is a second, independent path to Ended. Flag injection traced: ClaudeSessionId has a private field and is built only by parse(is_uuid). build_args appends only --resume and that id after the unchanged ARGS. Reply text goes to stdin JSON, never to argv. The gate prevents a double spawn, expired answers are refused before any process is touched, restore spawns nothing, and the Weak self-reference cannot panic or form a cycle. Notes: a folder deleted while the app runs leaves the session Paused with a generic error; a transient API error on the first resumed turn ends the conversation for good; every exit now kills the job.",
+      "findings": [
+        {
+          "severity": "note",
+          "origin": "builder",
+          "title": "A folder deleted after launch is not caught by the missing-folder path",
+          "detail": "resume_with relies on Projects::get, whose missing flag is set only by Projects::restore at load time. If the folder is deleted while the app is running, reply on a Suspended session reaches process::spawn with a nonexistent current_dir. cmd.spawn fails, the session goes back to Suspended through abort_resume, and the user gets 'failed to start claude' with no Error item. Every retry repeats this. The test missing_project_folder_ends_without_spawn sets up a rig r, deletes its folder, and then never replies on r; it covers only the restore-time case. A path.is_dir() check before spawning would close this."
+        },
+        {
+          "severity": "note",
+          "origin": "architect",
+          "title": "A transient error on the first resumed turn ends the conversation for good",
+          "detail": "Any is_error Result before the first successful Result is treated as a failed resume, as the spec says. That includes an API overload, rate limit or auth error on the reply turn of a resume that actually worked. The session goes to Ended (terminal, with no UI path to reply again) and the process is killed, although claude_session_id is still valid. A later slice could check the subtype or num_turns, or the errors text, to tell 'No conversation found' apart from a turn error."
+        },
+        {
+          "severity": "note",
+          "origin": "builder",
+          "title": "on_output now kills the process job on every exit, not only on a failed resume",
+          "detail": "The 'dead' check runs after every output, including Output::Exit. A normal Exit that marks the session Ended or Failed now calls p.kill(), which is job.terminate on Windows. Before this change the job lived until the ProcessHandle was dropped. Detached grandchildren that do not hold the stdout pipe are now killed when claude exits instead of later. The comment ('A line can end a session only when a resume failed') understates this. The effect is probably fine, but the behaviour changed for every session, not only resumed ones."
+        },
+        {
+          "severity": "note",
+          "origin": "builder",
+          "title": "Fixture's result session_id differs from the requested id; real claude echoes the requested one",
+          "detail": "resume_unknown_id.jsonl has the error text naming ...0001 and session_id ...0002. The real capture echoes the requested id in session_id, and the README itself says 'the id echoed'. Nothing reads Result.session_id, so behaviour is unaffected. The real capture also has is_error:true, which confirms the reconstructed field, so the README caveat could be replaced with the observed shape."
+        }
+      ]
+    },
+    "s4": {
+      "written_by": "reviewer",
+      "verdict": "PASS",
+      "attempt": 1,
+      "summary": "PASS. Re-ran on tip 4c6bf40: cargo test 67/0 failed incl. the 3 named window:: tests; cargo build exit 0; both greps (0, 2). Re-derived from registry source: plugin 2.5.0 needs tauri ^2.12 (single 2.12.2 in tree); lock delta +16, nothing removed; registered only under cfg(desktop); capabilities untouched, no frontend use. Ordering holds: setup() builds config windows, window_created goes via run_on_main_thread, which runs inline on the main thread, and setup runs in the Ready handler there, so restore precedes ensure_visible. outer_position, outer_size and work_area are all physical; empty monitor list returns early, no panic paths. Notes: outer_size is fed to set_size, which sets the INNER size, so a recentred window ends up a frame larger than the clamp and slightly off-centre; the 50 px strip rule recentres a window whose top is 1 px above the work area. Diff is the 4 approved files; author njcurtis3, no trailer. Human-read monitor test not run.",
+      "findings": [
+        {
+          "file": "orchestra/desktop/src-tauri/src/window.rs",
+          "line": 83,
+          "severity": "medium",
+          "origin": "builder",
+          "issue": "ensure_visible reads window.outer_size() but applies the clamped result with window.set_size(PhysicalSize), which tauri-runtime-wry maps to set_inner_size. Input: saved 5000x3000 rect whose corner intersects the primary but title bar is off-screen -> after recentre the OUTER window is the 1920x1040 work area plus the frame (~16 x ~40 physical px on Windows), so its bottom edge sits under the taskbar, and centring is off by the same amount. The plugin then saves that larger inner size on exit, so each recentre grows the window by one frame. Title bar stays reachable, so the slice's guarantee holds; fix is to clamp against inner_size (or subtract outer-inner delta) before set_size."
+        },
+        {
+          "file": "orchestra/desktop/src-tauri/src/window.rs",
+          "line": 33,
+          "severity": "note",
+          "origin": "architect",
+          "issue": "The plan's rule requires the full top min(h,50) px strip inside one work area, so a window at y=-1 (title bar 49 px visible and fully grabbable, e.g. dragged to the top edge with Snap off, or a top-docked taskbar overlapping by a pixel) is judged not visible and recentred on launch. Likewise a strip split 60/60 across two adjacent monitors is rejected because the 100 px must lie in ONE monitor. Matches the plan literally; a smaller height threshold (e.g. 20 px) or union of monitors would avoid false recentres."
+        },
+        {
+          "file": "orchestra/desktop/src-tauri/src/window.rs",
+          "line": 1,
+          "severity": "note",
+          "origin": "",
+          "issue": "The named test rect_on_removed_monitor_is_recentred exercises the pure function only. In the real removed-monitor case the plugin skips set_position when the saved rect intersects no monitor (tauri-plugin-window-state 2.5.0 src/lib.rs:211), the OS places the window, and ensure_visible usually finds it visible and does nothing; the restored size is NOT clamped then (e.g. a 2560x1440 size from a removed 4K monitor on a 1080p primary). Consistent with the intent (clamp only when not visible) but the human-read check is what actually covers this path."
+        },
+        {
+          "file": "orchestra/desktop/src-tauri/Cargo.toml",
+          "line": 25,
+          "severity": "note",
+          "origin": "",
+          "issue": "The dependency is unconditional while registration is cfg(desktop); harmless for a desktop-only app, but a mobile target would still compile the crate. Could be moved under [target.'cfg(not(any(target_os = \"android\", target_os = \"ios\")))'.dependencies]."
+        }
+      ]
+    }
+  },
+  "integrator": {
+    "written_by": "the node that wrote this key - here, always the string integrator",
+    "merged": [],
+    "conflicts": [],
+    "verification": "what command proved it works, and its output"
+  },
+  "ops": {
+    "written_by": "the node that wrote this key - here, always the string ops",
+    "gated": true,
+    "actions": []
+  },
+  "log": [
+    "orchestrator: opened run 2026-10-10. Pre-flight: orchestra is a git repo, main @ 3880f1a (pushed). Spawning scout.",
+    "orchestrator: scout key verified (25 facts, 6 unknowns, 9 risks). Not plan-killing: resume keeps session_id and routes can_use_tool (claude 2.1.296); open requests are not re-emitted -> expired state; clean quit currently marks sessions Failed -> needs shutdown signal. Spawning architect.",
+    "orchestrator: architect key verified (single-loop, s1-s5, gate_options separate). Architect reported it accidentally ran a stale D1 scratchpad script that overwrote its own key, then rewrote it; key re-checked as the D2 plan, audit clean. Presenting to human gate.",
+    "orchestrator: HUMAN GATE passed 2026-10-10 - owner said \"approve\" to the plan as written (all 7 gate decisions as recommended: lazy resume, unknown-schema banner + saving off, absolute paths exception, Paused/Expired, result_text on Finished/Error, window-state no capability + own visibility check, unbounded history). Branch d2-persistence created off main 3880f1a in orchestra/. Spawning builder.",
+    "orchestrator: builders.s1-s5 verified (e85873c, 126d194, d3f73d1, 52e2438, 4c6bf40; all njcurtis3, no trailers; cargo 67, npm 25 at tip). Spawning 5 fresh reviewers in parallel (s1-s4 high, s5 low).",
+    "orchestrator: reviews s1-s5 all PASS attempt 1 (0 blockers; notes: snapshot copied under lock per stdout line with unbounded history; ensure_visible passes outer_size to set_size so a recentred window is one frame too big; UUID check accepts uppercase; mergeInbox keeps stale expired; from_persisted does not force expired=>resolved). Merged d2-persistence into orchestra main --no-ff: 329e93c.",
+    "orchestrator: CLOSED 2026-10-10. close-run.py exit 0. s1-s5 PASS attempt 1, merged to orchestra main as 329e93c (e85873c, 126d194, d3f73d1, 52e2438, 4c6bf40). ROADMAP.md (gitignored) ticked in place by s5. Owner human-read checks pending: quit/relaunch shows Paused + done item + resume keeps context; window position/size survive restart and unplugged-monitor recentre; schema 2 -> banner, no saves; Expired never reads Resolved. Fleet note: architect accidentally ran a stale D1 scratchpad script that overwrote its own key; it rewrote the key."
+  ]
+}
