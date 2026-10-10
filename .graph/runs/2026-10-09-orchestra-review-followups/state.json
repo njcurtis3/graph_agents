@@ -1,0 +1,507 @@
+{
+  "$comment": "Shared state for ONE work-graph run. Lives at .graph/runs/<run-id>/state.json. Every node reads this on start and appends to its OWN key on finish - the builder writes its own builders.<slice> key, including the branch it worked on. Never rewrite another node's key. Every node key carries written_by, naming the node that wrote it: that is the ONLY record of authorship this file has, and without it 'never rewrite another node's key' is unverifiable - an orchestrator hand-writing all six keys is indistinguishable from six nodes doing their jobs. verify-state.py --audit checks it. This file is the edge: it is how context crosses between agents that cannot see each other.",
+  "run_id": "2026-10-09-orchestra-review-followups",
+  "goal": "start the follow-up run for the review notes (from 2026-10-09-orchestra-desktop-mvp: reviews.s2 six notes + reviews.s3 reply-box note)",
+  "app": "orchestra",
+  "status": "done",
+  "scout": {
+    "written_by": "scout",
+    "base": "orchestra main b38ae28, git status clean before and after scouting. cargo test 27/27 pass with 0 warnings; npm test 10/10 pass; npm run build exit 0 (dist/ is gitignored, status still clean).",
+    "line_map_note": "The desktop-mvp review cites process.rs:254 and process.rs:300, but process.rs is 129 lines. The real locations are process.rs:56-59 (kill) and process.rs:102-112 (reader poll, sleep at :109). The other review line numbers match the current code.",
+    "facts": [
+      "F1 Job Object: no job code exists in desktop/src-tauri/src (case-insensitive grep for job is empty). process.rs:56-59 fn kill() locks self.child and calls child.kill(), which terminates only the claude process. process.rs:62-66 Drop calls kill(). process.rs:80-86 is cmd.spawn(); no job is created or assigned anywhere.",
+      "F1 Cargo.toml:20-25 direct deps: tauri 2, serde, serde_json, tauri-plugin-dialog. No direct windows-sys, windows or win32job. Cargo.lock has windows-sys 0.45.0, 0.60.2 (pulled by rfd via tauri-plugin-dialog), 0.61.2 (pulled by dirs-sys) and windows 0.62.2. No win32job entry (grep count 0).",
+      "F1 features: cargo tree -e features -i windows-sys@0.60.2 and @0.61.2 show no Win32_System_JobObjects. Win32_Foundation is enabled (via rfd). A direct windows-sys dep with Win32_System_JobObjects reuses the locked 0.60.2 (no new crate download) but adds a direct edge in the orchestra entry of Cargo.lock.",
+      "F1 race: process.rs:80 spawn starts the child immediately, and assignment can only happen after process.rs:80-86 returns. std::process::Command exposes no hook between creation and resume. CREATE_SUSPENDED (process.rs:78 already uses creation_flags for CREATE_NO_WINDOW) needs the primary thread handle to ResumeThread, which std does not return; closing the race needs toolhelp thread enumeration or NtResumeProcess, i.e. more unsafe code. The stream emits SessionStart hook_started/hook_response before any user message (fixtures README:62-68), so child processes at startup are plausible.",
+      "F2 sync vs async: commands.rs:40-41 pick_project is pub async fn (comment at :39). commands.rs:53 list_projects, :58 start_session, :63 list_sessions, :68 list_inbox, :73 answer, :88 stop_session are sync pub fn. Tauri docs (v2.tauri.app/develop/calling-rust) say commands without async run on the main thread.",
+      "F2 writer: process.rs:47-54 send_line locks the stdin Mutex and calls write_all/flush on the calling thread. No channel, no writer thread. Callers: mod.rs:184 (inside start, no Sessions lock held) and mod.rs:267 (inside send_through, after the Sessions lock is released at :266). The blocking write holds the calling thread, not the Sessions lock.",
+      "F2 tokio: tokio 1.53.2 is in Cargo.lock via tauri v2.12.2 (cargo tree -i tokio). Not a direct dependency in Cargo.toml.",
+      "F2 contract: ipc.ts:114-127 invokes start_session and answer with {args: ...}. Tauri docs say an async command invoked from JS already returns a promise and works like any other command, so argument names and JSON shape do not change. Caveat from the same docs: async commands cannot take borrowed args such as the State type with a lifetime unless they return Result. start_session and answer already return Result, and pick_project already does (commands.rs:41-44). Making them async alone would still block a tokio worker during the write, so the write itself must move (writer thread, or spawn_blocking).",
+      "F3 ordering: mod.rs:163 let summary = session.summary(); captures status Starting (state.rs:127 in SessionState::new). mod.rs:172 calls the spawner, which starts the reader thread (process.rs:92). mod.rs:181-183 stores proc. mod.rs:184 send_line. mod.rs:196 fires the captured summary (status Starting) outside any lock, and mod.rs:197 returns the same stale value. Meanwhile the reader can apply Init (state.rs:203-211, Starting to Working) and fire via on_output (mod.rs:201-214). Events are computed under the lock but fired after release (mod.rs:211-213), so re-reading under the lock at :196 does not fix emit order; a sequence number would be a contract change in types.ts.",
+      "F4 ordering: mod.rs:252-273 send_through. mod.rs:264 let line = f(&mut s.state, now_ms())? mutates state under the lock before the write. state.rs:296-304 reply() resolves Finished and Error items and sets Working. state.rs:263-279 and :281-294 (answer_permission, answer_question) call close_pending (resolves the item) and recompute before returning the line. mod.rs:267-270: on send_line error, proc.kill() and return Err with no fire. The item stays resolved and status Working until the reader Exit arrives, then state.rs:325-334 mark_exit sets Failed (non-zero) or Ended (0) and pushes an error item. The state.rs:262 doc comment says State changes only on success, which does not hold on this path.",
+      "F5 protocol.rs:55-59: control_request with subtype other than can_use_tool returns Message::Unknown. protocol.rs:157 test asserts this. state.rs:249 Message::Unknown => self.unknown_count += 1 only counts it. Nothing is written back and no inbox item is created, so the status is unaffected.",
+      "F5 fixture README: README:47-49 documents only the can_use_tool inbound request and control_response subtype success. README:50-51 documents deny (behavior deny) and the error tool_result (is_error true). README:88 says answer every control_request with can_use_tool. No other subtype and no control_response error shape is recorded.",
+      "F5 hang: UNVERIFIED. README:53 says the reply must echo request_id. The earlier scout fact (Agent SDK canUseTool) says the callback may stay pending indefinitely, so an unanswered control_request most plausibly leaves the child waiting with the session stuck in working and no inbox item. No fixture records the child behavior when a request goes unanswered.",
+      "F6 poll: process.rs:100-101 comment explains the poll (so kill() never waits on the child lock). process.rs:102-112 loop: lock child, try_wait, Ok(None) then sleep 50 ms at process.rs:109, repeat. About 20 wakeups per second per session for as long as the child lives after stdout closes. kill() (:56-59) takes the same lock.",
+      "F7 reply clear: InboxItemView.tsx:12-22 send() awaits answer(), catches to onError, returns void (type Sub at :39 is send of type Answer returning void). InboxItemView.tsx:181-184 the Send reply onClick calls send with kind reply without await, then calls setText with the empty string unconditionally. Confirmed.",
+      "F8 snapshot overwrite: App.tsx:34-35 subscribe to session-updated and inbox-updated first. App.tsx:42-46 Promise.all of listSessions, listInbox, listProjects. App.tsx:48 dispatches sessions-loaded; App.tsx:49 dispatches inbox-updated with the snapshot. state.ts:27 sessions-loaded replaces sessions wholesale; state.ts:33 inbox-updated replaces inbox wholesale. The inbox has the same overwrite (App.tsx:49), which the review did not name.",
+      "Tests at b38ae28: cargo test (desktop/src-tauri) exit 0, 27 passed, 0 failed, 0 warnings, including protocol::every_fixture_line_parses_without_panic_and_nothing_is_unknown and state replay tests. npm test (desktop) exit 0, vitest 5.0.3, 10 passed. npm run build (desktop) exit 0."
+    ],
+    "unknowns": [
+      "F1 win32job crate: crates.io was not reachable from this shell (curl returned nothing). Its existence and API are unverified. A windows-sys dep needs no network if 0.60.2 is reused.",
+      "F1 whether a job assigned after spawn covers grandchildren that spawn in the window between cmd.spawn() and AssignProcessToJobObject: not tested.",
+      "F5 child behavior on an unanswered control_request, and the control_response error shape: not in any fixture. A live re-spike is needed before a fix can target a verified shape.",
+      "F2 whether tauri::async_runtime::spawn_blocking is the right escape hatch in Tauri 2.12 was not checked against crate source."
+    ],
+    "risks": [
+      "Plan-killer for F1: a Job Object needs unsafe Win32 code (CreateJobObjectW, SetInformationJobObject with JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE, AssignProcessToJobObject, CloseHandle), and the job handle must live in ProcessHandle or kill-on-close fires early. Assign-after-spawn is racy; the race-free version needs CREATE_SUSPENDED plus a thread resume that std cannot do. Expect a windows-sys direct dependency and an unsafe module.",
+      "F2: async start_session and answer do not remove the blocking write. The write must also move (writer thread or spawn_blocking), or a runtime worker blocks instead of the main thread.",
+      "F4 and F5 touch state.rs and mod.rs, not only the files the guess named. F4 needs each state.rs answer function split into build-then-commit. F5 needs a new Message arm and possibly a reply path in mod.rs.",
+      "F8 has a second instance on the inbox path (App.tsx:49). A fix covering only sessions leaves the inbox overwrite in place."
+    ],
+    "file_map": {
+      "rust": {
+        "F1": [
+          "desktop/src-tauri/src/session/process.rs",
+          "desktop/src-tauri/Cargo.toml",
+          "desktop/src-tauri/Cargo.lock (orchestra deps only)"
+        ],
+        "F2": [
+          "desktop/src-tauri/src/commands.rs",
+          "desktop/src-tauri/src/session/process.rs (writer thread) or session/mod.rs"
+        ],
+        "F3": [
+          "desktop/src-tauri/src/session/mod.rs"
+        ],
+        "F4": [
+          "desktop/src-tauri/src/session/mod.rs",
+          "desktop/src-tauri/src/session/state.rs"
+        ],
+        "F5": [
+          "desktop/src-tauri/src/session/protocol.rs",
+          "desktop/src-tauri/src/session/state.rs",
+          "desktop/src-tauri/src/session/mod.rs (if a reply path changes)",
+          "tests/fixtures/stream_json/* only if a new spike is recorded"
+        ],
+        "F6": [
+          "desktop/src-tauri/src/session/process.rs"
+        ]
+      },
+      "ui": {
+        "F7": [
+          "desktop/src/components/InboxItemView.tsx"
+        ],
+        "F8": [
+          "desktop/src/App.tsx",
+          "desktop/src/state.ts (only if the merge goes in the reducer)",
+          "desktop/src/state.test.ts (only if the reducer changes)"
+        ]
+      },
+      "shared_files": [
+        "process.rs: F1, F2 (writer thread), F6",
+        "mod.rs: F2 (if the write path moves there), F3, F4, F5 (if a reply path changes)",
+        "state.rs: F4, F5",
+        "commands.rs: F2 only",
+        "UI: F7 and F8 share no file; state.ts only if F8 is fixed in the reducer"
+      ]
+    },
+    "guess_check": "Partly wrong. The Rust fixes do not stay in mod/process/commands/protocol/Cargo.toml: F4 and F5 need state.rs, and F1 also changes Cargo.lock. Cargo.toml is F1 only. The UI guess is right: InboxItemView.tsx for F7, App.tsx for F8, state.ts only if F8 goes in the reducer. Shared files (process.rs: F1, F2, F6; mod.rs: F2, F3, F4, F5; state.rs: F4, F5) mean the fixes cannot be batched in parallel without a merge order."
+  },
+  "architect": {
+    "written_by": "architect",
+    "shape": "diamond",
+    "parallel_safe": true,
+    "rationale": "Diamond, 3 slices, all parallel off b38ae28. Disjoint file sets: s1 = src-tauri/src/session/process.rs + NEW src-tauri/src/session/process/job.rs (declared from process.rs as a child module, so mod.rs is not touched) + Cargo.toml + Cargo.lock; s2 = src-tauri/src/session/mod.rs + state.rs + protocol.rs + src-tauri/src/commands.rs; s3 = desktop/src/App.tsx + state.ts + state.test.ts + components/InboxItemView.tsx + NEW src/reply.ts + NEW src/reply.test.ts. No file appears in two slices. The overlap the scout flagged (process.rs by F1/F2/F6, mod.rs by F2-F5) is removed by fixing F2 with spawn_blocking in commands.rs instead of a writer thread in process.rs, so process.rs belongs only to s1 and mod.rs only to s2. Freeze that makes them independent: the Proc trait (send_line, kill) and the signature of process::spawn do not change; the s2 Fake and the s1 ProcessHandle both keep implementing the same trait. Each done_when runs on its own branch from b38ae28. The change carries new unsafe Win32 code and lock-ordering logic, so it is not one to merge unreviewed. Diamond over single-loop because review cost differs by slice: s1 and s2 need a high-effort reviewer, s3 does not. Risk tags: s1 HIGH because it adds unsafe FFI, a new direct dependency and a Cargo.lock edit, and the crash path (KILL_ON_JOB_CLOSE when the app dies) is invisible to cargo test. s2 HIGH because the fixes are lock-ordering and race logic (emit order, a per-session send gate, commit after write), and a test can show the ordering it scripts but not the absence of a deadlock. s3 LOW because it is pure reducer and helper logic fully covered by vitest, with no sensitive data and no shared file.",
+    "decisions": {
+      "F1": "Option (a): assign the job after spawn, accept the race and document it, with a direct Windows-only dependency windows-sys version 0.60 with features Win32_Foundation, Win32_Security, Win32_System_JobObjects and Win32_System_Threading, under the cfg(windows) target dependencies table. Feature gates were verified against the local windows-sys-0.60.2 source. CreateJobObjectW needs Win32_Security, and JOBOBJECT_EXTENDED_LIMIT_INFORMATION needs Win32_System_Threading. Cargo resolves to the locked 0.60.2, so there is no download and no new package entry. Why the race is acceptable: the window is the few microseconds between CreateProcess returning and AssignProcessToJobObject. Before claude.exe can create a child it must load its JS runtime and reach the SessionStart hook, which takes milliseconds or more, so a grandchild cannot realistically exist inside the window. (b) was rejected. Raw CreateProcessW means re-implementing pipes and argument quoting in unsafe code. The variant that keeps std (CREATE_SUSPENDED, then a Toolhelp thread walk and ResumeThread) leaves a suspended orphan if resume fails. Both cost more unsafe code than the race costs. That variant is recorded as the upgrade path if manual check M1 ever finds an escaped grandchild. (c) was rejected because win32job is unverified and crates.io is unreachable. (d) was rejected because the leak is real today. Semantics: one Job per session, created with null security attributes, so the handle is not inheritable and the app holds the only handle. JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE is set through SetInformationJobObject(JobObjectExtendedLimitInformation). When the last handle closes, every process in the job is terminated. That covers the paths that run no code: a crash, a panic under the panic=abort release profile, and Task Manager killing the app all make the kernel close the app's handles, so the job closes and the whole tree dies. RunEvent::Exit and kill_all no longer carry this alone. Breakaway is not allowed (neither BREAKAWAY_OK nor SILENT_BREAKAWAY_OK), so descendants stay in the job. Windows 8+ nested jobs mean assignment still works when the app itself runs inside a job, for example under a terminal or an IDE. The Job lives in ProcessHandle (an owned wrapper whose Drop calls CloseHandle), so it lives exactly as long as the session's Proc. kill() calls TerminateJobObject, then the existing child.kill() as a fallback. If CreateJobObjectW or AssignProcessToJobObject fails, the session still starts with job = None and the current behavior, and the failure is never surfaced as an error string containing a path. All unsafe code is confined to process/job.rs, and every unsafe block carries a SAFETY comment.",
+      "F2": "spawn_blocking, not a writer thread. start_session and answer become pub async fn returning Result<_, String>: clone the Arc<Sessions> out of State and run the existing synchronous call inside tauri::async_runtime::spawn_blocking (verified present in tauri-2.12.2 src/async_runtime.rs:311). A JoinError maps to a short string with no path. Why not a writer thread: an enqueue returns before the write happens, so a write failure would arrive asynchronously, and F4 needs it synchronously to decide whether to commit. spawn_blocking keeps send_line synchronous on a blocking-pool thread, so the main thread never blocks and no tokio core worker is used. JS invoke contract identical: same command names, same args shape, same return types. Async commands taking State are legal because both return Result. stop_session and the list_* commands stay sync because they never do I/O while holding a lock (kill is non-blocking, see s1). Consequence handled in s2: commands can now run concurrently, so two answers to one item could both build a line. s2 adds a per-session send gate.",
+      "F5": "Surface only. Write nothing back. protocol.rs gains Message::UnsupportedControlRequest with request_id and subtype. state.rs pushes an Error inbox item (summary along the lines of: Claude sent a request Orchestra cannot answer (<subtype, truncated to 64 chars>). The session may be waiting; stop it if it does not continue.), leaves the status unchanged and does not increment unknown_count. Why not answer with an error control_response: that shape (subtype error, request_id, error) is not in any s1 fixture. A live check is not cheap, because Orchestra sends no initialize, so it registers no hooks, SDK MCP servers or callbacks, and there is no known way to make the CLI emit a non-can_use_tool request to test against. Sending an unverified shape risks the CLI rejecting or exiting on it. Surfacing fixes the actual harm, a session silently stuck in working with no inbox item, without depending on an unverified shape. Answering stays a follow-up gated on a fixture that records one.",
+      "F3": "Emit order is guaranteed by an emit lock, not a contract change. Sessions gains emit_order: Mutex<()>. Every publish computes its events under the Inner lock, takes emit_order while still holding Inner, drops Inner, fires, then drops emit_order. Lock order is always Inner then emit_order, and the emit callback must never call back into Sessions (documented at the field; the lib.rs callback only calls handle.emit). start() no longer fires the pre-spawn summary. After a successful send it re-reads the summary under the lock and publishes it in order, and the return value is that same fresh summary. The UI ignores the start_session return value (NewSession.tsx:21), so it cannot overwrite a newer event either.",
+      "F4": "Build-then-commit. state.rs splits each answer into a read-only builder (taking &self, returning the line plus a commit token) and a commit (taking &mut self). permission_line, question_line and reply_line validate exactly as today and mutate nothing. commit_answer(item_id) closes the item only if it is still pending, and recomputes only while the session is in a waiting state and not over. commit_reply(token) resolves only the Finished and Error item ids captured at build time, and sets Working only if nothing was applied since the build. The token carries a per-state epoch that apply and mark_* bump. mod.rs send_through: take the per-session send gate (an Arc<Mutex<()>> stored on Session, cloned out under Inner), build under Inner, drop Inner, write, then on success re-lock, commit and publish. On a write error: kill, return Err, commit nothing, fire nothing. The item stays pending until the reader's Exit makes mark_exit set Failed, which is the honest state. The gate is held across build, write and commit but never together with Inner during the write, so the reader thread, which needs Inner and never the gate, cannot deadlock against a full stdin pipe. Fix the state.rs:262 doc comment so it is true.",
+      "F6": "When a job is present, the reader thread reaps with a blocking child.wait() while it holds the child lock. kill() then never needs that lock: it calls TerminateJobObject, then try_lock plus child.kill() as a fallback. When there is no job (job creation failed, or off Windows): the poll stays but backs off from 50 ms, doubling to a 1000 ms cap, and kill() keeps the current blocking lock, which the poller releases between tries. The non-Windows backoff is not the ideal fix. Mac and Linux are CI-only targets per orchestra/CLAUDE.md, and a pid-based kill would need a libc dependency, which is out of scope.",
+      "F7": "send() returns Promise<boolean> (true on success). The reply button clears the text only after a successful send, through a small pure helper replyThenClear(send, answer, clear) in src/reply.ts, so it is testable without a DOM library (none is installed and none is added).",
+      "F8": "Merge the snapshot instead of overwriting, with no contract change. sessions-loaded merges by id: an existing session is kept when its last_activity_at is >= the loaded one, and sessions missing from the snapshot are kept. Every Rust state change sets last_activity_at = now_ms, so it is monotonic per session. On a tie the existing (event) copy wins. That is ambiguous only within one millisecond, and is documented. A new inbox-loaded action merges as a union by id with resolved = a.resolved OR b.resolved. Items are append-only and resolution is monotonic, so this merge never regresses. App.tsx:49 dispatches inbox-loaded. inbox-updated (the event, the full current list) still replaces wholesale."
+    },
+    "plan": [
+      {
+        "slice": "s1",
+        "findings": [
+          "F1",
+          "F6"
+        ],
+        "risk": "high",
+        "risk_reason": "new unsafe Win32 FFI and a direct dependency plus a Cargo.lock edit; the crash path (KILL_ON_JOB_CLOSE when the app dies) cannot be seen by cargo test",
+        "intent": "Put each session's claude.exe in a Job Object with KILL_ON_JOB_CLOSE so stop, app exit and app crash all kill the whole process tree. Replace the 50 ms reap poll with a blocking wait when a job exists, or a capped backoff when none does. The Proc trait and the spawn() signature are frozen.",
+        "files": [
+          "orchestra/desktop/src-tauri/src/session/process.rs",
+          "orchestra/desktop/src-tauri/src/session/process/job.rs",
+          "orchestra/desktop/src-tauri/Cargo.toml",
+          "orchestra/desktop/src-tauri/Cargo.lock"
+        ],
+        "done_when": "In orchestra/desktop/src-tauri: (a) cargo check --offline exits 0, and its output piped to grep -c '^warning' gives 0. (b) cargo test --offline -> exit 0, >= 30 passed, 0 failed; cargo test --offline -- --list | grep -cE 'job::tests::terminate_kills_child_and_grandchild|job::tests::closing_the_job_kills_the_tree|process::tests::reap_backoff_is_capped' -> 3. (c) git -C ../.. diff b38ae28 -- desktop/src-tauri/Cargo.lock | grep -c '^+name = ' -> 0 (no new crate), and cargo tree --offline -i windows-sys@0.60.2 --depth 1 | grep -c 'orchestra v' -> 1. (d) grep -rln unsafe src/ -> only src/session/process/job.rs, and in that file grep -c 'unsafe {' equals grep -c 'SAFETY:'. (e) git -C ../.. diff --quiet b38ae28 -- desktop/src-tauri/tauri.conf.json desktop/src-tauri/capabilities -> exit 0.",
+        "tests_added": "cfg(windows) job::tests::terminate_kills_child_and_grandchild: spawn cmd /c ping -n 30 127.0.0.1 (ping is a grandchild), assign it to a Job, wait until JobObjectBasicAccountingInformation.ActiveProcesses == 2 (5 s deadline), TerminateJobObject, assert ActiveProcesses reaches 0 and child.wait() returns within 5 s. cfg(windows) job::tests::closing_the_job_kills_the_tree: the same spawn, drop the Job (CloseHandle), and assert the child exits within 5 s. This proves KILL_ON_JOB_CLOSE, which is the path an app crash takes. process::tests::reap_backoff_is_capped: the pure delay schedule goes 50, 100, 200 ... and caps at 1000.",
+        "manual_checks": [
+          "M1 (stop kills grandchildren): npm run tauri dev; open a scratch folder outside any repo; start a session with the prompt: Use the Bash tool to run ping -n 120 127.0.0.1; Allow; tasklist /fi \"imagename eq PING.EXE\" shows it; click Stop; within 2 s the same tasklist shows no PING.EXE. At b38ae28 it survives.",
+          "M2 (crash kills tree): repeat M1 up to Allow, then taskkill /f /im orchestra.exe (no RunEvent::Exit runs); within 2 s no PING.EXE and no claude.exe from that session remain.",
+          "M3 (F6, human-read): read the reap branch in process.rs. With a job, wait() blocks and kill() takes no child lock. Without one, the delay caps at 1000 ms."
+        ]
+      },
+      {
+        "slice": "s2",
+        "findings": [
+          "F2",
+          "F3",
+          "F4",
+          "F5"
+        ],
+        "risk": "high",
+        "risk_reason": "the fixes are lock-ordering and race logic (emit-order lock, per-session send gate, commit after write) and a test cannot prove the absence of a deadlock; two locks are added to a type the reader thread also uses",
+        "intent": "Move the blocking stdin write off the main thread (spawn_blocking), publish events in compute order and stop emitting the stale Starting summary, commit answer and reply state only after a successful write, and surface non-can_use_tool control_requests as an Error inbox item. The JS invoke contract is unchanged.",
+        "files": [
+          "orchestra/desktop/src-tauri/src/commands.rs",
+          "orchestra/desktop/src-tauri/src/session/mod.rs",
+          "orchestra/desktop/src-tauri/src/session/state.rs",
+          "orchestra/desktop/src-tauri/src/session/protocol.rs"
+        ],
+        "done_when": "In orchestra/desktop/src-tauri: (a) cargo check exits 0, and its output piped to grep -c '^warning' gives 0. (b) cargo test -> exit 0, >= 34 passed, 0 failed, including protocol::tests::every_fixture_line_parses_without_panic_and_nothing_is_unknown; cargo test -- --list | grep -cE 'start_publishes_post_send_summary_in_order|failed_answer_send_leaves_item_pending|failed_reply_send_leaves_session_idle|reader_update_during_reply_send_wins|concurrent_answers_send_once|unsupported_control_request_is_typed|unsupported_control_request_surfaces_error_item' -> 7. (c) grep -cE 'pub async fn (start_session|answer)[(]' src/commands.rs -> 2 and grep -c spawn_blocking src/commands.rs -> 2. (d) git -C ../.. diff --quiet b38ae28 -- desktop/src/ipc.ts desktop/src/types.ts desktop/src-tauri/src/lib.rs desktop/src-tauri/src/session/process.rs -> exit 0 (contract and frozen files untouched).",
+        "tests_added": "mod.rs: start_publishes_post_send_summary_in_order (the Fake send_line feeds INIT through the sink; the last SessionUpdated event for the session and the returned summary are both Working; fails at b38ae28). failed_answer_send_leaves_item_pending (the Fake fails its write; Err returned; the item is unresolved, the status is WaitingPermission, no event is fired by the call, and the Fake is killed). failed_reply_send_leaves_session_idle (Idle status and the Finished item unresolved after a failed write). reader_update_during_reply_send_wins (the Fake feeds DONE during the reply write; after commit the new Finished item stays unresolved and the status is Idle). concurrent_answers_send_once (two threads answer one item; exactly one Ok, and the Fake holds exactly 2 lines: prompt + 1 answer). protocol.rs: unsupported_control_request_is_typed (the existing tolerates_garbage assert for subtype other is updated to the new variant). state.rs: unsupported_control_request_surfaces_error_item (an Error item whose summary names the subtype; status and unknown_count unchanged; the Fake writes nothing).",
+        "manual_checks": [
+          "M4 (F2): npm run tauri dev, start a session, answer a permission; the window stays responsive while answering. The real proof is human-read: neither start_session nor answer does I/O on the main thread.",
+          "M5 (F5, human-read): no live trigger exists. Read protocol.rs and state.rs: an unknown control_request subtype produces one Error inbox item and nothing is written to stdin."
+        ]
+      },
+      {
+        "slice": "s3",
+        "findings": [
+          "F7",
+          "F8"
+        ],
+        "risk": "low",
+        "risk_reason": "pure reducer and helper logic fully covered by vitest; no sensitive data, no file shared with another slice, no IPC contract change",
+        "intent": "Clear the reply box only after a successful send, and merge the initial snapshot into the event-fed state for both sessions and the inbox instead of overwriting it.",
+        "files": [
+          "orchestra/desktop/src/App.tsx",
+          "orchestra/desktop/src/state.ts",
+          "orchestra/desktop/src/state.test.ts",
+          "orchestra/desktop/src/components/InboxItemView.tsx",
+          "orchestra/desktop/src/reply.ts",
+          "orchestra/desktop/src/reply.test.ts"
+        ],
+        "done_when": "In orchestra/desktop: (a) npm test -> exit 0, >= 16 passed, 0 failed, including the cases named: sessions-loaded keeps a newer session from an event; sessions-loaded adds unseen sessions and keeps ones missing from the snapshot; inbox-loaded keeps resolved set by an event; inbox-loaded adds unseen items in inbox order; replyThenClear clears only on success; replyThenClear keeps the text when the send fails. (b) npm run build -> exit 0. (c) grep -c inbox-loaded src/App.tsx -> 1. (d) git -C .. diff --quiet b38ae28 -- desktop/src/ipc.ts desktop/src/types.ts desktop/package.json desktop/package-lock.json -> exit 0 (no contract change, no new dependency).",
+        "tests_added": "state.test.ts: the four merge cases named above. reply.test.ts: two cases with a stubbed send that resolves true or false.",
+        "manual_checks": [
+          "M6 (F7): in the running app, make a reply fail (stop the session, then send a reply from its Finished card if it is still open); the typed text remains and the error banner shows."
+        ]
+      }
+    ],
+    "edges": [
+      {
+        "parallel": [
+          "s1",
+          "s2",
+          "s3"
+        ],
+        "why": "No artifact flows between slices. s1 and s2 share only the frozen Proc trait, which neither changes. s3 consumes only the unchanged ipc_contract."
+      }
+    ],
+    "fan_in_done_when": "On the integrated branch, in orchestra/desktop/src-tauri: cargo check with 0 warnings; cargo test -> exit 0, >= 37 passed (27 + 3 from s1 + 7 from s2). In orchestra/desktop: npm test -> exit 0, >= 16 passed; npm run build -> exit 0. git -C orchestra diff --quiet b38ae28 -- protocol mobile fleet desktop/src/ipc.ts desktop/src/types.ts desktop/src-tauri/tauri.conf.json desktop/src-tauri/capabilities -> exit 0. Then the owner runs M1 and M2.",
+    "ipc_contract": "unchanged from 2026-10-09-orchestra-desktop-mvp architect.ipc_contract; no change proposed",
+    "not_doing": [
+      "No change to the IPC contract (no sequence number or rev field on events). F3 and F8 are fixed without one.",
+      "No answering of unknown control_request subtypes with an error control_response until a fixture records the shape (F5 is surface-only).",
+      "No race-free CREATE_SUSPENDED spawn (option b). It is the recorded upgrade path if M1 ever finds an escaped grandchild.",
+      "No killing of a session's leftover grandchildren when claude exits on its own with code 0. The job lives until stop or app exit. Noted as a possible follow-up; it is not one of the review findings.",
+      "No pid-based kill or libc dependency for non-Windows reaping; the non-Windows path gets only the capped backoff.",
+      "No writer thread and no change to the Proc trait.",
+      "No DOM testing library (jsdom, @testing-library); F7 is tested through a pure helper.",
+      "No edits to protocol/, mobile/, fleet/, tauri.conf.json, capabilities/, lib.rs, ipc.ts or types.ts.",
+      "No fix for the pre-existing ghost Starting session a snapshot could show if spawn fails mid-load.",
+      "No update to the stale line in orchestra/CLAUDE.md that says no tests exist yet. It is outside every slice's file set and is a separate one-line chore."
+    ],
+    "unverified_items": [
+      "The F5 error control_response shape. It is deliberately not depended on.",
+      "The F1 race window is argued from process-startup cost, not measured. M1 is the check.",
+      "F8 tie-breaking at equal last_activity_at (same millisecond) can keep a copy that is 1 ms stale. Documented, accepted."
+    ],
+    "human_gate": "Approve: (1) the diamond of 3 parallel slices with the file sets above, and the frozen Proc trait. (2) F1 = option (a): a new direct, Windows-only windows-sys 0.60 dependency (no new crate in Cargo.lock) and about 60 lines of unsafe code confined to process/job.rs; the startup race is accepted and documented. (3) F2 = spawn_blocking in commands.rs; the JS contract is identical. (4) F5 = surface-only, with no reply written. (5) F8 = merge semantics keyed on last_activity_at and monotonic resolved, plus the new inbox-loaded action. No tauri.conf.json or capabilities change is required by any slice."
+  },
+  "approved_by_human": true,
+  "scope_exceptions": [
+    "ORCHESTRATOR-OWNED, normally empty. Paths a builder may write that the approved plan does not list. guard-builder-scope.py DENIES a builder's Write/Edit outside architect.plan[].files, and this is the only way through it. Adding one is a deliberate, recorded act: pair it with deviation_from_approved_plan on the slice that needed it, and say why the gate's file set was wrong. Never add a path to silence the guard on work the human did not approve."
+  ],
+  "builders": {
+    "s1": {
+      "written_by": "builder",
+      "status": "done",
+      "branch": "followups-s1",
+      "changed": [
+        "orchestra/desktop/src-tauri/src/session/process.rs",
+        "orchestra/desktop/src-tauri/src/session/process/job.rs",
+        "orchestra/desktop/src-tauri/Cargo.toml",
+        "orchestra/desktop/src-tauri/Cargo.lock"
+      ],
+      "notes": "windows-sys also needed feature Win32_System_Threading (gates JOBOBJECT_EXTENDED_LIMIT_INFORMATION); still reuses locked 0.60.2, lock diff +1 line, no new name.",
+      "gate_results": [
+        {
+          "cmd": "(a) cargo check --offline; grep -c '^warning'",
+          "output": "exit 0; warning count 0"
+        },
+        {
+          "cmd": "(b) cargo test --offline; --list | grep -cE job/reap tests",
+          "output": "test result: ok. 30 passed; 0 failed; (job::tests::terminate_kills_child_and_grandchild ok, job::tests::closing_the_job_kills_the_tree ok); list grep count 3"
+        },
+        {
+          "cmd": "(c) git diff b38ae28 -- Cargo.lock | grep -c '^+name = '; cargo tree --offline -i windows-sys@0.60.2 --depth 1 | grep -c 'orchestra v'",
+          "output": "0 (lock diff: 1 insertion); 1"
+        },
+        {
+          "cmd": "(d) grep -rln unsafe src/; grep -c 'unsafe {' job.rs; grep -c 'SAFETY:' job.rs",
+          "output": "src/session/process/job.rs; 8; 8"
+        },
+        {
+          "cmd": "(e) git diff --quiet b38ae28 -- tauri.conf.json capabilities",
+          "output": "exit 0"
+        },
+        {
+          "cmd": "git commit --amend --no-edit --reset-author; git log -1 --format='%h|%an|%cn'",
+          "output": "851caab|njcurtis3|njcurtis3 (new commit hash 851caab replaces db92f0f; no code change)"
+        }
+      ],
+      "commit": "851caab"
+    },
+    "s3": {
+      "written_by": "builder",
+      "status": "done",
+      "branch": "followups-s3",
+      "files": [
+        "desktop/src/App.tsx",
+        "desktop/src/state.ts",
+        "desktop/src/state.test.ts",
+        "desktop/src/components/InboxItemView.tsx",
+        "desktop/src/reply.ts",
+        "desktop/src/reply.test.ts"
+      ],
+      "notes": "",
+      "gate_results": "(a) npm test: Test Files 2 passed (2); Tests 16 passed (16); exit 0 (includes the 4 merge cases and 2 replyThenClear cases). (b) npm run build: exit 0, built in 652ms. (c) grep -c inbox-loaded src/App.tsx -> 1. (d) git diff --quiet b38ae28 -- src/ipc.ts src/types.ts package.json package-lock.json -> exit 0."
+    },
+    "s2": {
+      "written_by": "builder",
+      "status": "done",
+      "branch": "followups-s2",
+      "commit": "f0e9746",
+      "changed": [
+        "desktop/src-tauri/src/commands.rs",
+        "desktop/src-tauri/src/session/mod.rs",
+        "desktop/src-tauri/src/session/state.rs",
+        "desktop/src-tauri/src/session/protocol.rs"
+      ],
+      "notes": "My earlier read-only-intended probe git config user.name user.email actually set user.name to the literal user.email in orchestra/.git/config; coordinator removed it, commit re-authored.",
+      "gate_results": [
+        {
+          "cmd": "cargo check 2>&1 | grep -c ^warning",
+          "output": "0"
+        },
+        {
+          "cmd": "cargo test",
+          "output": "exit 0; test result: ok. 35 passed; 0 failed (includes protocol::tests::every_fixture_line_parses_without_panic_and_nothing_is_unknown)"
+        },
+        {
+          "cmd": "cargo test -- --list | grep -cE <the 7 named tests>",
+          "output": "7"
+        },
+        {
+          "cmd": "grep -cE pub async fn (start_session|answer)[(] src/commands.rs",
+          "output": "2"
+        },
+        {
+          "cmd": "grep -c spawn_blocking src/commands.rs",
+          "output": "2"
+        },
+        {
+          "cmd": "git -C ../.. diff --quiet b38ae28 -- desktop/src/ipc.ts desktop/src/types.ts desktop/src-tauri/src/lib.rs desktop/src-tauri/src/session/process.rs",
+          "output": "exit 0"
+        },
+        {
+          "cmd": "git commit --amend --no-edit --reset-author; git log -1 --format=%an|%cn",
+          "output": "njcurtis3|njcurtis3 (hash f0e9746)"
+        }
+      ]
+    }
+  },
+  "reviews": {
+    "s1": {
+      "written_by": "reviewer",
+      "verdict": "REJECT",
+      "attempt": 1,
+      "summary": "REJECT on commit identity only; the code is sound. Re-ran every done_when gate in the s1 worktree: check exit 0 with 0 warnings after touching job.rs; test 30 passed/0 failed, the 3 named tests listed; lock diff adds no name line and windows-sys 0.60.2 shows orchestra; unsafe appears only in job.rs (8 'unsafe {' and 8 SAFETY:); tauri.conf.json and capabilities unchanged. No ping.exe was running before or after cargo test. Re-derived the Win32 path. CreateJobObjectW gets null attrs, so the handle is not inheritable, and it is null-checked. KILL_ON_JOB_CLOSE is set through JobObjectExtendedLimitInformation with size_of, and no breakaway flag is set. The handle is closed once in Drop. Arc keeps it alive across terminate, so there is no use after close. In the job path kill() takes no child lock, so wait() cannot deadlock it. The fallback keeps try_wait with a 1 s cap. Proc and spawn() are unchanged. Send/Sync on Job is sound. Blocker: db92f0f is authored 'user.email', because orchestra/.git/config was given user.name=user.email at 22:28:34, six seconds before s2's a725e23. Fix the config and amend.",
+      "findings": [
+        {
+          "file": "orchestra/.git/config (commit db92f0f)",
+          "line": 0,
+          "issue": "Commit db92f0f is authored and committed as 'user.email <nathanjcurtis3@gmail.com>', not the owner identity njcurtis3. Cause: orchestra/.git/config gained a local [user] name = user.email (mtime 2026-10-09 22:28:34, six seconds before s2's commit a725e23 at 22:28:40, which carries the same bad name). Global user.name is njcurtis3. Merging followups-s1 as-is writes a non-owner author into orchestra history, which the constitution forbids ('the author is always the owner'). The last violation cost a history rewrite. Fix: `git -C orchestra config --unset user.name`, then `git commit --amend --reset-author --no-edit` on followups-s1 (and the same on followups-s2). The integrator's merge commits would inherit the bad name too until the config is fixed.",
+          "severity": "blocker",
+          "origin": ""
+        },
+        {
+          "file": "orchestra/desktop/src-tauri/src/session/process/job.rs",
+          "line": 25,
+          "issue": "The two `unsafe impl Send/Sync` carry 'Sound because' comments instead of SAFETY:, which keeps gate (d)'s 'unsafe {' and SAFETY: counts equal. The argument itself is real and correct. A job HANDLE has no thread affinity, and Assign/Terminate/Query are thread-safe kernel calls. CloseHandle runs only in Drop, which needs exclusive ownership, so no call can race it. Not gaming in effect, but gate (d) is mis-specified: its regex `unsafe {` does not match `unsafe impl`. Next time make the gate count every `unsafe` item, or label these SAFETY: and accept the mismatch with a note.",
+          "severity": "note",
+          "origin": "architect"
+        },
+        {
+          "file": "orchestra/desktop/src-tauri/src/session/process/job.rs",
+          "line": 139,
+          "issue": "closing_the_job_kills_the_tree asserts only that cmd.exe is reaped within 5 s of drop(job). That does prove kill-on-close fired, because ping -n 30 would otherwise keep cmd alive about 29 s. It never checks that the grandchild ping.exe died. Grandchild death is asserted only in the terminate test (ActiveProcesses == 0). Tree death on close holds only by inference: both processes were confirmed in the job, and close kills the whole job. A tighter test would check the ping pid's exit after the drop.",
+          "severity": "note",
+          "origin": "builder"
+        },
+        {
+          "file": "orchestra/desktop/src-tauri/src/session/process/job.rs",
+          "line": 125,
+          "issue": "In the test helper tree(), if assign() fails the assert panics. The child (cmd plus ping) is not in any job, so it leaks for about 29 s. This happens only on a test failure, and only for a single run.",
+          "severity": "note",
+          "origin": "builder"
+        }
+      ],
+      "attempt_2": {
+        "written_by": "reviewer",
+        "verdict": "PASS",
+        "attempt": 2,
+        "summary": "PASS. The attempt-1 blocker is fixed. 851caab^{tree} and db92f0f^{tree} are both c67120f9, so the code is byte-identical to what attempt 1 reviewed. Author and committer of 851caab are both njcurtis3 <nathanjcurtis3@gmail.com>, and the message has no trailers. `git -C orchestra config --local --get-regexp user` returns nothing (exit 1). I re-ran every done_when gate in the s1 worktree at 851caab with job.rs touched first: (a) check exits 0 with 0 warnings; (b) 30 passed, 0 failed, and the 3 named tests are listed; (c) the lock diff adds no name line, and windows-sys 0.60.2 shows orchestra once; (d) unsafe appears only in job.rs, with 8 'unsafe {' and 8 SAFETY:; (e) tauri.conf.json and capabilities are unchanged. No ping.exe was left running. I read job.rs and the process.rs diff fresh. The null-checked non-inheritable handle, the KILL_ON_JOB_CLOSE size_of call and the single CloseHandle in Drop are all sound. In the job path kill() takes no child lock, and the reader's blocking wait() is the only other child-lock holder, so there is no deadlock. Nothing new to raise. Attempt 1's three notes stand as they are.",
+        "findings": []
+      }
+    },
+    "s3": {
+      "written_by": "reviewer",
+      "verdict": "PASS",
+      "attempt": 1,
+      "summary": "PASS. Re-ran done_when in the s3 worktree desktop/: npm test 16/16 passed (all six named cases present), npm run build exit 0, grep -c inbox-loaded src/App.tsx = 1, git diff --quiet b38ae28 on ipc.ts/types.ts/package.json/package-lock.json exit 0. Diff names only the six approved files; commit 2d20900 is authored njcurtis3 with no Claude trailers. Read the diff against F7/F8: replyThenClear clears only when send resolves true, and send returns false from its catch, so a rejected answer() keeps the text (and a busy double-click also returns false, no clear). mergeSessions keeps the existing copy unless the snapshot is strictly newer, so ties go to the event copy; mergeInbox unions by id with resolved = either side, then sortInbox. Tests dispatch the event first and the snapshot second, so they exercise the race order, not just an empty-state load. Low tag holds: frontend-only, no contract or dependency change. Notes only: the tie rule is untested, and the first sessions test doesn't distinguish 'newer wins' from 'event always wins'.",
+      "findings": [
+        {
+          "file": "orchestra/desktop/src/state.test.ts",
+          "line": 91,
+          "issue": "No test pins the F8 tie rule (equal last_activity_at -> event copy wins); the strict '>' in mergeSessions is correct but a regression to '>=' would pass the suite. The 'keeps a newer session' case also never has the snapshot be newer, so it can't tell 'newer wins' from 'existing always wins'.",
+          "severity": "note",
+          "origin": ""
+        },
+        {
+          "file": "orchestra/desktop/src/components/InboxItemView.tsx",
+          "line": 13,
+          "issue": "Permission/Question callers now receive Promise<boolean> and ignore it; harmless since send catches internally, but it's a floating promise if a lint rule is added later.",
+          "severity": "note",
+          "origin": ""
+        }
+      ]
+    },
+    "s2": {
+      "written_by": "reviewer",
+      "verdict": "REJECT",
+      "attempt": 1,
+      "summary": "REJECT on one blocker: commit a725e23 is authored 'user.email <nathanjcurtis3@gmail.com>', not njcurtis3, because orchestra/.git/config sets user.name=user.email. Merging would put a non-owner name on main, and the same config would stamp s1, s3 and the merge commits. The code is sound. I re-ran done_when in the worktree: 0 warnings, 35 tests passed, all 7 named tests listed, greps 2/2, frozen files and fixtures unchanged vs b38ae28. I re-derived the lock graph by hand (gate->Inner->emit_order, gate->stdin; reader Inner->emit_order). Nothing takes gate under Inner or emit_order, and Inner is never held across send_line or emit, so there is no cycle. I walked the F4 races (Result, CanUseTool, Exit, stop or an unsupported request landing mid-write; a double answer) and found no wrong commit or skip. Each new test asserts what its name says. Notes: stop_session is sync on the main thread, where tauri-runtime-wry evaluates the emit at once, so reader events still queued can land after Ended until the reader's Exit publish repairs it. F5 leaves the status Working, as planned. Fix: unset the local user.name, then amend with --reset-author.",
+      "findings": [
+        {
+          "severity": "blocker",
+          "origin": "builder",
+          "where": "commit a725e23 (orchestra repo); C:/Users/natha/Desktop/repos/orchestra/.git/config user.name",
+          "issue": "Both author and committer on a725e23 read 'user.email <nathanjcurtis3@gmail.com>'. The cause is a repo-local user.name=user.email in orchestra/.git/config, which overrides the global njcurtis3. The constitution requires the author to be the owner. Merging a725e23 puts a bogus author name on main, and fixing it after the merge means rewriting history (as on 2026-08-26). The same local config will also stamp every later orchestra commit, including s1, s3 and the integrator's merge commits.",
+          "fix": "git -C orchestra config --unset user.name (falls back to global njcurtis3), then in the s2 worktree git commit --amend --no-edit --reset-author; verify git log -1 --format='%an <%ae>|%cn <%ce>' shows njcurtis3 for both."
+        },
+        {
+          "severity": "note",
+          "origin": "architect",
+          "where": "desktop/src-tauri/src/commands.rs:271 (stop_session, sync) + session/mod.rs:294-299",
+          "issue": "F3 guarantees the order of emit calls, but not the order of delivery, on one path. Sync commands run on the main thread. In tauri-runtime-wry-2.12.1 src/lib.rs:263, send_user_message evaluates the event script at once when called on the main thread, but posts it to the event-loop proxy from any other thread. So a reader event that was computed and emitted before stop, and is still queued, reaches JS after stop's Ended summary and resolved inbox. The last-writer-wins reducer then briefly shows the stale Waiting* status and unresolved items. It repairs itself: kill leads to reader EOF, and Output::Exit always publishes afterwards (publish is unconditional), which restores Ended. Not a blocker. Making stop_session async would route its emit through the proxy and close the gap."
+        },
+        {
+          "severity": "note",
+          "origin": "",
+          "where": "desktop/src-tauri/src/session/state.rs:257-265",
+          "issue": "F5 behaves as planned: an unanswered unsupported control_request leaves the status unchanged (typically Working) indefinitely, and the Error item text is the only signal. The text is bounded (subtype truncated to 64 chars) and contains no path. Nothing is written to stdin, and unknown_count is untouched."
+        },
+        {
+          "severity": "note",
+          "origin": "",
+          "where": "desktop/src-tauri/src/session/state.rs:325-331",
+          "issue": "Behavior change outside races: Commit::Answer now recomputes the status only when it is Waiting*. Suppose a Result left the status Idle with requests still pending, and a reply then set it to Working. Answering one of several leftover requests now leaves the status Working, where the old code recomputed it to Waiting for the next request. This is arguably more correct, since the turn has moved on. Fixtures are unaffected."
+        },
+        {
+          "severity": "note",
+          "origin": "",
+          "where": "desktop/src-tauri/src/session/mod.rs (concurrent_answers_send_once)",
+          "issue": "The test relies on a 50 ms sleep inside the Fake write to make the two threads overlap. It cannot fail falsely, but if the threads did not overlap, an implementation without the gate would pass. Acceptable."
+        }
+      ],
+      "attempt_2": {
+        "written_by": "reviewer",
+        "verdict": "PASS",
+        "attempt": 2,
+        "summary": "PASS. Attempt 1's only blocker is fixed. I checked that f0e9746^{tree} == a725e23^{tree} == ed925ab, so the code is byte-identical to what attempt 1 reviewed. f0e9746 has author and committer njcurtis3 <nathanjcurtis3@gmail.com> and a one-line message with no trailers. `git -C orchestra config --local --get-regexp user` prints nothing (exit 1). I re-ran done_when myself at f0e9746. The results: cargo check gives 0 warnings; cargo test exits 0 with 35 passed and 0 failed, including every_fixture_line_parses_without_panic_and_nothing_is_unknown; the 7 named tests are listed; the greps return 2 and 2; the frozen-file diff against b38ae28 exits 0. I re-read mod.rs and state.rs fresh and agree the code is sound. The gate is held across send_line (mod.rs:271-284), but Inner is not, and the reader takes only Inner and emit_order, so a full pipe cannot deadlock. The child lock is never held across a blocking wait (process.rs try_wait poll). When a commit lands after stop or exit, it is a no-op: finish() drains pending and bumps the epoch (state.rs:347). No new blockers. I raise none of attempt 1's notes.",
+        "findings": [
+          {
+            "severity": "note",
+            "origin": "",
+            "where": "desktop/src-tauri/src/session/mod.rs:194-197",
+            "issue": "start() stores proc (line 194) before it writes the prompt (line 197) and does not take the gate. The reader can publish the session before start returns, so a reply or answer could in principle write to stdin before the prompt. reply_line requires Idle and items require a CanUseTool, and neither can occur before the prompt is consumed. ProcessHandle.send_line also serialises whole lines on its stdin mutex, so there is no byte interleave. Not reachable in practice.",
+            "fix": "none required; optionally take the session gate around the prompt write in start()."
+          }
+        ]
+      }
+    }
+  },
+  "integrator": {
+    "written_by": "integrator",
+    "status": "done",
+    "target": "orchestra main, b38ae28 -> 2815684 (not pushed)",
+    "author_ident": "njcurtis3 <nathanjcurtis3@gmail.com> (git var GIT_AUTHOR_IDENT); no Claude attribution in b38ae28..HEAD (grep count 0)",
+    "merged": [
+      {
+        "slice": "s1",
+        "branch": "followups-s1",
+        "head": "851caab",
+        "merge_commit": "31657b8",
+        "verdict": "PASS (attempt_2)"
+      },
+      {
+        "slice": "s2",
+        "branch": "followups-s2",
+        "head": "f0e9746",
+        "merge_commit": "64f9f7f",
+        "verdict": "PASS (attempt_2)"
+      },
+      {
+        "slice": "s3",
+        "branch": "followups-s3",
+        "head": "2d20900",
+        "merge_commit": "2815684",
+        "verdict": "PASS (attempt_1)"
+      }
+    ],
+    "conflicts": [],
+    "conflict_note": "File sets disjoint (s1: Cargo.toml/lock, session/process.rs, session/process/job.rs; s2: commands.rs, session/mod.rs, protocol.rs, state.rs; s3: desktop/src/*). All three ort merges clean, no textual or semantic conflicts.",
+    "frozen_paths": "git diff --quiet b38ae28 -- protocol mobile fleet desktop/src/ipc.ts desktop/src/types.ts desktop/src-tauri/tauri.conf.json desktop/src-tauri/capabilities -> exit 0",
+    "verification": {
+      "cargo check (desktop/src-tauri)": "Finished `dev` profile [unoptimized + debuginfo] target(s) in 27.96s; exit 0; 0 warnings",
+      "cargo test (desktop/src-tauri)": "test result: ok. 38 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.13s (plus two empty 0-passed targets); exit 0",
+      "npm test (desktop)": "Test Files  2 passed (2) / Tests  16 passed (16); exit 0",
+      "npm run build (desktop)": "dist/assets/index-BXJOJ8JR.js 231.78 kB | gzip: 72.32 kB; built in 934ms; exit 0",
+      "npm run tauri build -- --debug --no-bundle": "Finished `dev` profile in 45.41s; Built application at: C:/Users/natha/Desktop/repos/orchestra/desktop/src-tauri/target/debug/orchestra.exe; exit 0"
+    },
+    "seam_s1_x_s2": {
+      "verdict": "no deadlock, no lost kill",
+      "locks": {
+        "Inner": "Reader thread takes it only inside on_output (via sink), never while holding the child lock: the wait() guard is scoped to the `if has_job` block and drops before sink(Output::Exit). stop() releases Inner inside publish() before calling kill(). kill_all() clones procs under Inner, releases, then kills. send_through never holds Inner across send_line.",
+        "emit_order": "Always taken after Inner (publish), Inner dropped, emit fires, released. emit is Tauri handle.emit, which does not call back into Sessions. Not held across any process.rs call.",
+        "gate (per session)": "Taken only in send_through, held across send_line and the failed-write kill(). Neither stop(), kill_all(), on_output() nor Drop takes it, so a writer stuck under the gate cannot hold off stop or app exit.",
+        "ProcessHandle.child": "With a job: the reader holds it for the whole blocking wait(), and its only other user (kill's fallback branch) is unreachable because kill() returns after job.terminate() whenever self.job is Some; has_job and self.job derive from the same attach_job result. Without a job: reader holds it only for try_wait() between capped-backoff sleeps, so kill()/Drop get it within one poll.",
+        "ProcessHandle.stdin": "Taken only by send_line. Not taken by kill, Drop or the reader."
+      },
+      "paths": {
+        "stop_session": "Inner -> emit_order -> release -> kill() -> TerminateJobObject; takes no lock the waiting reader holds.",
+        "s2 failed-write kill": "send_through -> proc.kill(); production spawner is process::spawn (lib.rs:23), so proc is ProcessHandle and kill() is s1's job.terminate(). Holds only the gate; stdin guard already released when send_line returned.",
+        "app exit": "RunEvent::Exit -> kill_all() -> job.terminate() per session, lock-free; on crash KILL_ON_JOB_CLOSE covers it.",
+        "Drop": "ProcessHandle::drop -> kill() -> job.terminate() (lock-free), then the Job field drops and CloseHandle also kills. Last Arc<ProcessHandle> lives in Session.proc; the reader holds only Arc<Mutex<Child>>, never the handle.",
+        "send_line under gate vs terminated child": "A write blocked on a full pipe holds gate+stdin; stop()/kill_all() need neither, terminate the job, the pipe read end closes and write_all returns an error; send_through then calls kill() again (idempotent on an empty job) and releases the gate. Does not block forever."
+      },
+      "residual_not_red": "Unblocking a stuck write relies on every holder of the child's stdin read end dying. A grandchild spawned in the documented spawn-to-assign window (job.rs header) or any grandchild in the no-job fallback could, if it inherited stdin, keep a blocked write pending. Same exposure existed at b38ae28 for all grandchildren; s1 strictly narrows it. Not a new seam defect."
+    },
+    "blocker": null,
+    "worktrees_and_branches": "left in place"
+  },
+  "ops": {
+    "written_by": "the node that wrote this key - here, always the string ops",
+    "gated": true,
+    "actions": []
+  },
+  "log": [
+    "orchestrator: opened run. Pre-flight: orchestra is a git repo (main @ b38ae28, pushed, clean); target is app code, not fleet definitions, so diamond allowed. Source findings: desktop-mvp reviews.s2 notes (job object for grandchildren, sync commands block main thread, stale 'starting' summary race, item resolved before send, non-can_use_tool control_requests unanswered, 50ms poll after stdout close) and reviews.s3 notes (reply box clears before answer returns, + 3 others).",
+    "orchestrator: scout returned (written). All 8 findings hold at b38ae28 (+ inbox overwrite at App.tsx:49). Plan-killer: Job Object needs direct windows-sys dep + unsafe Win32; assign-after-spawn race closable only by CREATE_SUSPENDED (not in std). Async alone doesn't remove blocking write. Rust fixes overlap in process.rs/mod.rs. Spawning architect.",
+    "orchestrator: architect returned (written). Diamond, 3 parallel slices: s1 F1+F6 (job object, high), s2 F2-F5 (high), s3 F7+F8 UI (low). Presenting at human gate.",
+    "orchestrator: HUMAN GATE approved by owner ('approve') as written (diamond; F1 option a with windows-sys 0.60 + unsafe in job.rs; F2 spawn_blocking; F5 surface-only; F8 merge rules). Created worktrees by hand: followups-s1/s2/s3 off main b38ae28 under scratchpad wt2/. Spawning 3 builders concurrently.",
+    "orchestrator: builders.s3 done (2d20900); reviews.s3 PASS attempt 1, 2 notes (tie rule untested; newer-wins test can't distinguish from event-always-wins). s1, s2 still building.",
+    "orchestrator: reviews.s1 and reviews.s2 both REJECT attempt 1 on one blocker: commits db92f0f/a725e23 authored 'user.email <owner email>' because orchestra/.git/config gained a local `user.name = user.email` during this run (written 22:28; source not found in activity.jsonl; likely a builder's mistyped git config). Code judged sound by both. Orchestrator removed the stray local user.name (restores global njcurtis3, matching every prior commit). Sending s1 and s2 back to amend --reset-author.",
+    "orchestrator: s1 amended db92f0f->851caab, s2 amended a725e23->f0e9746, author-only (tree hashes identical). Cause confirmed by s2 builder: it ran `git config user.name user.email` intending a read. Spawning fresh reviewers for attempt_2 on both.",
+    "orchestrator: reviews.s1.attempt_2 PASS (851caab), reviews.s2.attempt_2 PASS (f0e9746), s3 PASS (2d20900). Spawning integrator; briefed on the cross-slice seam s2's review could not see (s2 reviewed against b38ae28 process.rs; s1 replaces its reap with blocking wait()+job kill).",
+    "orchestrator: CLOSED 2026-10-09. close-run.py exit 0. Shape diamond, 3 parallel slices, hand-made worktrees. s1 F1+F6 job object (851caab), s2 F2-F5 (f0e9746), s3 F7+F8 (2d20900). s1 and s2 each REJECTed once on author identity only: s2 builder ran `git config user.name user.email` intending a read, which wrote repo-local user.name; orchestrator unset it, both amended --reset-author (trees identical), PASS on attempt 2. Merged to orchestra main 31657b8/64f9f7f/2815684; cargo test 38, npm test 16, tauri debug build green; integrator walked the s1/s2 lock seam: no deadlock, no lost kill. NOT pushed. Worktrees removed, branches kept. Owner manual checks M1 (stop kills ping.exe), M2 (taskkill orchestra kills tree), M4, M6 not yet run. Residual: grandchild spawned in the pre-assign gap (or with no job) inheriting stdin could hold a stuck write; unsupported control_request leaves status Working; stop_session still sync. Nothing dropped from plan."
+  ]
+}
