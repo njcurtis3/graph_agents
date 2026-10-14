@@ -1,0 +1,857 @@
+{
+  "$comment": "Shared state for ONE work-graph run. Lives at .graph/runs/<run-id>/state.json. Every node reads this on start and appends to its OWN key on finish - the builder writes its own builders.<slice> key, including the branch it worked on. Never rewrite another node's key. Every node key carries written_by, naming the node that wrote it: that is the ONLY record of authorship this file has, and without it 'never rewrite another node's key' is unverifiable - an orchestrator hand-writing all six keys is indistinguishable from six nodes doing their jobs. verify-state.py --audit checks it. This file is the edge: it is how context crosses between agents that cannot see each other.",
+  "run_id": "2026-10-14-orchestra-d4-tasks-worktrees",
+  "goal": "start D4 (orchestra/ROADMAP.md D4: tasks and worktrees - a task queue queued/running/needs-input/done; each task runs in its own git worktree of the chosen project, paths resolved in Rust and never taken from the frontend; review and land a task: show the diff, merge or discard, then clean up the worktree)",
+  "app": "orchestra",
+  "status": "done",
+  "scout": {
+    "written_by": "scout",
+    "facts": [
+      "Collector: orchestra main at 7e62e10, clean; identity njcurtis3; ui native-desktop and native-mobile; registry stack tauri, rust, react, typescript, expo.",
+      "StartArgs is {project_id, prompt, model?, permission_mode?} with deny_unknown_fields and no cwd or path field (commands.rs:23-29). The session cwd is looked up in Rust from project_id: start() reads entry.path (session/mod.rs:384-385) and passes &path to the spawner (session/mod.rs:408).",
+      "Projects: pick_project runs the native folder dialog in Rust (app.dialog().file().blocking_pick_folder) and returns only Project {id, name} (commands.rs:51-62; projects.rs:9-13). Projects::add requires is_dir, dedupes by plain PathBuf equality with no canonicalize, id is pN, name is the basename (projects.rs:41-58). No path arrives from the frontend.",
+      "SessionStatus variants: starting, working, waiting_permission, waiting_question, needs_attention, idle, suspended, ended, failed (session/state.rs:19-34). Transitions: Starting to Working on Init (state.rs:375-382); CanUseTool to waiting_permission or waiting_question via recompute (state.rs:352-361, 390-407); answer commit back to working when nothing is pending (state.rs:501-509); Result to Idle plus a finished or error item (state.rs:408-433); unsupported control request to NeedsAttention, sticky until a Result (state.rs:434-443, 353-355); reply only from Idle (state.rs:485-487), commit to Working (state.rs:511-517); stop to Ended (state.rs:559-563); exit 0 to Ended, other exit to Failed plus error item (state.rs:566-581); suspend on restore or shutdown to Suspended if claude_session_id else Ended (state.rs:539-556; session/mod.rs:242-245).",
+      "Idle keeps the child alive: on_output kills the process only when status is Ended or Failed (session/mod.rs:477-489). A finished turn keeps its process, and its cwd, until stop, exit or shutdown.",
+      "Inbox is a flat union of every session's items, sorted by created_at (session/mod.rs:124-134). Kinds: permission, question, finished, error (session/state.rs:36-43). Finished and Error carry result_text capped at 256 KiB (state.rs:14-15, 81-82). Only Permission and Question are answerable, via the pending map (state.rs:449-482).",
+      "The inbox is the only needs-input and done surface. The Follow-up box in SessionDetail shows only for idle or suspended sessions (orchestra/desktop/src/components/SessionDetail.tsx:217-264; canPrompt and showsPrompt live in detail.ts, not read in full).",
+      "A task would need its own entity: the queued and landed or discarded states have no SessionStatus, and a queued task has no session. Session cwd is fixed to the project for life: StoredSession has project_id only (session/store.rs:21-34), and resume_with uses projects.get(&s.project_id) (session/mod.rs:545). Making cwd a worktree needs a new persisted field and a changed resume path.",
+      "Persistence: SCHEMA is 1 (store.rs:18). StoredSession is {id, project_id, project_name, started_at, model?, permission_mode?, state} (store.rs:21-34). PersistedSession is {status, last_activity_at, last_message, claude_session_id, inbox, next_item, unknown_count} (state.rs:120-131). Snapshot has no deny_unknown_fields (store.rs:36-44), so an older build drops an unknown new field on its next save. A schema bump is the only refusal path (store.rs:89-92).",
+      "Atomic save: temp file, sync_all, rename (store.rs:98-109). The Writer thread coalesces to the newest revision (store.rs:127-177). Absolute project paths are persisted in state.json (projects.rs:70-74; store.rs:42) and never sent over IPC.",
+      "D2 resume: a reply to a Suspended session calls begin_resume (state.rs:263-279), spawns claude with --resume <uuid> at the project path (session/mod.rs:541-597, esp. 545 and 559), then sends the reply. Restore never spawns (session/mod.rs:228-230). A missing project folder is hidden on restore (projects.rs:82-95, 90) and resume fails cleanly with the message that the project folder no longer exists, and no spawn happens (session/mod.rs:545-551; test session/mod.rs:1191-1215). A folder deleted after restore but before resume is not re-checked: spawn current_dir fails, and process.rs:154-157 maps every NotFound spawn error to a message about claude.exe not being on PATH.",
+      "Spawn (session/process.rs): Command::new(claude) at line 139, a PATH lookup with no shell and no .cmd support (lines 24-26); fixed ARGS (29-39); build_args (51-66); current_dir(dir) (145); stdin and stdout piped, stderr null (146-148); CREATE_NO_WINDOW on Windows (152); no env() or env_clear() call; stdout reader thread emits Output::Line and Output::Exit (168-200).",
+      "Windows job object per child: KILL_ON_JOB_CLOSE, terminate via TerminateJobObject (session/process/job.rs:1-13, 71-74). kill() on a job returns without waiting for exit (process.rs:116-122). Exit is observed later through the reader (process.rs:176-199; session/mod.rs:439-490). stop() returns before the process is gone (session/mod.rs:643-653). The child joins the job after spawn, a known race (job.rs:8-13). Handle inheritance by grandchildren can delay EOF (process.rs:141-143).",
+      "No git code exists. A search of orchestra/desktop/src-tauri/src and tests for git, worktree, Command::new and current_dir found only process.rs:139 (claude) and job.rs:124 (a test, cmd). No worktree module. Cargo.toml dependencies: tauri, serde, serde_json, tauri-plugin-dialog, tauri-plugin-notification, tauri-plugin-window-state, windows-sys. No shell or fs plugin.",
+      "Concurrency: no limit and no queue. start() inserts a session and spawns unconditionally (session/mod.rs:374-436). Each session holds one claude child, one reader thread and one job object. The only queue is the store Writer channel for saves (store.rs:127-177).",
+      "Capabilities: orchestra/desktop/src-tauri/capabilities/default.json grants only core:default to window main. CSP is in tauri.conf.json:24: default-src self; connect-src ipc: http://ipc.localhost. No innerHTML or dangerouslySetInnerHTML anywhere in orchestra/desktop/src (grep, none).",
+      "Path validation helpers that exist: Projects::add is_dir (projects.rs:42); Projects::restore is_dir per entry (projects.rs:90); check_len and check_text for text (session/mod.rs:681-693); ClaudeSessionId::parse via is_uuid (state.rs:160-182); is_session_id for transcript file names (transcript.rs:183, 253-258). No containment or dot-dot helper exists yet.",
+      "Frontend: App.tsx:25-30 state, 36-65 subscriptions and initial load, 67-74 openProject. state.ts:3-10 actions, 49-69 reducer, mergeSessions 29-36, mergeInbox 40-47. ipc.ts:113-155 decode helpers (obj, str, strOrNull, num, bool, oneOf, arr), 157-300 decoders, 302-341 invoke wrappers, 343-379 listeners that drop undecodable payloads through onError. types.ts mirrors Rust field for field (statuses 5-16, SessionSummary 24-36, InboxItem 50-62, TranscriptEntry 67-81, MAX_TEXT_BYTES 92).",
+      "Text rendering is plain React text only. SessionDetail.tsx:143-162 (Body) and 164-215 (Entry) use text nodes and pre for tool input and results. SessionList.tsx:148-159 LIVE record: Stop shows for working statuses (191-195).",
+      "Test baseline, run now: cargo test 108 passed, 0 failed, exit 0. npm test (vitest 5.0.3): 4 files, 41 tests passed, exit 0. npm run build not run.",
+      "git --version is git version 2.51.0.windows.1. git worktree is available: git worktree list in orchestra prints only the main worktree (orchestra 7e62e10 [main]).",
+      "ROADMAP.md:74-78 (gitignored, read from disk) D4 has three checkboxes only: the queue queued, running, needing input, done; a per-task git worktree of the chosen project, paths resolved in Rust, never from the frontend; review and land with diff, merge or discard, then cleanup. ROADMAP.md:154 (A4) mentions starting a session or task from the phone against projects the desktop allowlists.",
+      "orchestra/CLAUDE.md:82-97: capabilities are an allowlist (82-84); shell or spawn is limited to named programs with fixed args (85); IPC validates every argument, no frontend string is a path or shell command, paths resolve against a base dir and reject .. and absolute paths (91-93); the one recorded exception is the absolute project folder chosen in the native dialog, stored by Rust in app_data_dir/state.json and re-validated with is_dir on load (94-97). CLAUDE.md says nothing about worktree location, branch naming, merge target, or leaving the main checkout alone. Its prerequisites list Node, rustup and the Tauri Windows prerequisites, not git.",
+      "Claude session cwd: the fixture README records system/init carrying cwd (orchestra/desktop/src-tauri/tests/fixtures/stream_json/README.md:75) and the cwd being the project directory (README.md:86). Resume is keyed by session id (README.md:94)."
+    ],
+    "unknowns": [
+      "Whether Claude Code keys its resumable conversation store by cwd. This is external behaviour, not verifiable from this repo. If it does, resuming a task session from a different cwd, or after its worktree is gone, fails. The resume path always uses the project path today (session/mod.rs:545, 559), so this has never been exercised.",
+      "How Windows reports a nonexistent current_dir at spawn (NotFound or another kind). If NotFound, process.rs:154-157 shows a misleading claude-not-found message.",
+      "Whether a Windows directory removal fails while the child, or a grandchild, still has the directory as cwd or holds handles. The code has no wait-for-exit path a caller can use, since kill returns before exit (process.rs:116-122). Must be tested on this machine before relying on it.",
+      "Target branch and checkout state for land and merge. No code or doc says which branch a landing merges into, what to do with a dirty or non-main checkout, or whether the checkout must be clean. Nothing in the repo checks git state today.",
+      "Worktree location, branch naming and task id format are unspecified in ROADMAP and CLAUDE.md. Under the current rules app_data_dir/worktrees/<task> fits the base-dir rule better than <project>/.worktrees, which would write into the project repo.",
+      "Git must be on PATH for the app. The prerequisites in orchestra/CLAUDE.md do not list git, and nothing checks for it.",
+      "Long Windows paths (node_modules inside a worktree) may fail checkout or deletion. Not measured.",
+      "Whether the job-object race (job.rs:8-13) or handle inheritance (process.rs:141-143) can keep a stopped session's process alive long enough to block removal. Not measured.",
+      "D5 (builders, human gate in the inbox) depends on tasks and worktrees. Its shape is not yet decided. The inbox is a flat list with no task concept today.",
+      "Diff rendering size: transcript fields are capped (8 KiB per field, 16 MiB per file, transcript.rs:22-28) and result_text at 256 KiB (state.rs:15). No cap exists for a diff. Not measured.",
+      "Not read: orchestra/desktop/src/detail.ts, InboxItemView.tsx, notify.rs, window.rs, session/protocol.rs, session/transcript.rs in full, and the mobile and protocol trees (out of D4 scope). Sibling directory names were listed once with ls on the parent of desktop. Only names; no sibling file was opened."
+    ],
+    "risks": [
+      "Windows removal race: a stopped, Idle or exited-but-not-reaped session may still hold the worktree as its cwd. Cleanup must wait for Output::Exit (process.rs:199; session/mod.rs:489) before deleting. Idle sessions keep the child alive after a turn (session/mod.rs:477-489), so a task that looks done can still block removal.",
+      "Land writes the project checkout. Today the only writer to a project is claude itself, under permission prompts (process.rs:145; fixture README.md:86). A Rust-run git merge in the project path would be a new, unprompted change to the working tree, and nothing checks cleanliness or branch. The app stated stance (no frontend-chosen paths, base-dir rule, allowlisted spawn) does not forbid it, but it has no rule either. This needs a human decision, probably a gate.",
+      "Schema: task fields added at schema 1 are silently lost by an older build (store.rs:36-44, no deny_unknown_fields). Bump SCHEMA to 2 so older builds refuse the file (store.rs:89-92).",
+      "Session cwd is bound to project_id (store.rs:21-34; session/mod.rs:384-385, 545). Moving cwd to a worktree touches start, resume and restore together. A plan that adds a task table and leaves resume on the project path would resume into the wrong directory.",
+      "The spawn error mapping (process.rs:154-157) would mislabel a missing worktree cwd as a missing claude.exe.",
+      "Git invocation has no precedent. process.rs holds the only Command pattern (fixed args, no shell, CREATE_NO_WINDOW, piped streams). A git helper should copy that shape: fixed program name, fixed args, typed validated inputs, and branch and path derived in Rust.",
+      "Concurrency is unbounded (session/mod.rs:374-436). A queue is new work, and each running task is one claude child plus one job object, so the queue limit will be the first real throttle.",
+      "Status vocabulary does not match D4. There is no queued or landed status, and Idle means turn done and can still reply, not done (state.rs:19-34). Mapping task states onto SessionStatus would conflate them."
+    ],
+    "build": "not run (npm run build not requested); cargo test 108 passed; npm test 41 passed",
+    "plan_killer": "Removing a task worktree on Windows races the child that holds it as cwd: stop() returns before exit (session/mod.rs:643-653; process.rs:116-122), and an Idle session keeps its process alive (session/mod.rs:477-489). Cleanup must wait for Output::Exit first, and no caller-visible signal for that exists today."
+  },
+  "architect": {
+    "written_by": "architect",
+    "shape": "single-loop",
+    "parallel_safe": false,
+    "rationale": "single-loop: five ordered commits on one branch of the orchestra git repo (main @ 7e62e10). Not a diamond, because no three slices have disjoint file sets. session/mod.rs is the hub: s2 adds stop_and_wait and the Fake wait, s3 adds the task map, the cwd resolver and the queue pump, s4 adds land, discard and cleanup. lib.rs is touched by s1 (mod git), s3 (worktree base, task-updated event, commands) and s4 (commands). commands.rs is touched by s3 and s4, and git.rs by s1 (runner, worktree add/remove) and s4 (diff, commit, merge). Only the frontend (s5) is file-disjoint from the backend, and it consumes the IPC shapes of s3 and s4, so it is a sequence, not a parallel branch. Order: s1 first (the s2 removal probe and the s3 worktree add call git.rs), s2 before s3 (s3 suspends a done task child through stop_and_wait), s3 before s4 (land operates on the Task entity), s5 last. Risk: every slice is high. s1 runs a new external program against the user repositories. s2 changes kill/exit semantics beside the locks and is the only evidence for the Windows removal race. s3 changes the on-disk schema and where claude runs. s4 writes the user project checkout and deletes directories. s5 renders untrusted diff text from the user project. Independently of those reasons, s1-s4 all share mod.rs, lib.rs or git.rs, which is high under the fleet rule. One flagged discrepancy that does not block the plan: the scout cites SessionList.tsx:148-195 and SessionDetail.tsx:217-264, but on disk those files are 75 and 195 lines (CRLF, counted with grep -c). The frontend line references are unreliable; the backend references checked here (mod.rs 374-436, 541-597, 643-653; store.rs 18-44, 89-92; process.rs 139-160) match.",
+    "design": {
+      "task_session_relation": "Task is its own entity in session/task.rs, kept in Inner.tasks next to Inner.sessions. The relation is one task to at most one session: task.session_id is None while queued, and session.task_id: Option<String> is set for a task session (None for a plain session, which is unchanged). A follow-up to a task reuses the same session through the existing reply and D2 lazy resume, so a task never gets a second session. Task status is a closed enum, separate from SessionStatus: queued, running, needs_input, done, landing, landed, discarded, cleanup_pending, error. running and needs_input are derived from the task session (Starting/Working -> running; WaitingPermission/WaitingQuestion/NeedsAttention -> needs_input). done is entered when the task session reaches Idle (Finished or Error item, with last_turn_error kept as a flag), Ended or Failed (with session_over: true, so no follow-up). The others are set explicitly. Why: Idle means turn over and can reply, and must not be conflated with done.",
+      "cwd": "A session working dir comes from one resolver, Inner::cwd_of(session) -> Result<PathBuf, CwdError>: the project path for a plain session, and task.worktree for a task session. start, resume_with and the queue pump all call it, and none of them reads projects.get(project_id).path directly any more. Before every spawn it checks is_dir and returns a fixed message (task worktree, or project folder, no longer exists) without spawning. Restore never spawns (D2 rule kept). It checks each task worktree with is_dir and puts a missing one into error with note worktree missing. The cwd of a task session is fixed for life, so resume always runs in the directory the conversation started in. That sidesteps the scout unknown on whether claude keys resume by cwd. Resume after the worktree is gone is refused, never attempted elsewhere.",
+      "schema": "SCHEMA becomes 2. load accepts 1 and 2 and refuses anything else (UnknownSchema, so the D2/D3 banner shows and nothing is saved). Snapshot gains next_task: u64 and tasks: Vec<StoredTask>, both serde(default). StoredSession gains task_id: Option<String>, serde(default). A schema-1 file therefore loads with no tasks and every session plain. The first save writes schema 2, and that one-way step is what the bump buys. A D3 build that meets a schema-2 file hits store.rs:89-92, shows the newer-version banner and saves nothing, instead of silently dropping the tasks on its next save. Stored task fields are strings parsed through the closed enums on load, and an unknown value loads as error with note unknown status rather than making the whole file Unreadable.",
+      "exit_wait_and_cleanup": "Proc gains wait_exit(&self, timeout: Duration) -> bool. ProcessHandle keeps an Arc<(Mutex<bool>, Condvar)> that the reader thread sets after wait()/try_wait returns and before sink(Output::Exit). On Windows with a job, wait_exit also polls JobObjectBasicAccountingInformation.ActiveProcesses until 0 (or the timeout), so a grandchild still in the job keeps the wait open (the windows-sys JobObjects feature is already enabled). Sessions::stop_and_wait(session_id, timeout) does stop() and then waits with no lock held, returning Ok(true) once exited or Ok(false) on timeout. Cleanup (land or discard): stop_and_wait(10 s), then git worktree remove --force <path> with up to 5 attempts at 250/500/1000/2000/2000 ms, then git worktree prune. On success the branch is deleted (git branch -d after a land, -D after a discard). If anything still fails, the task goes to cleanup_pending with a short note: it is persisted, offers a Retry cleanup command, and is retried once by a background thread after restore, when no child can be alive. Paths are never removed with std::fs::remove_dir_all, and every path handed to git worktree remove must pass a containment check: canonicalised, it starts with the canonicalised app_data_dir/worktrees. That way a tampered state.json cannot direct a deletion.",
+      "git_invocation": "New src-tauri/src/git.rs copies the process.rs shape. The program is the const GIT = git, resolved on PATH by std (no shell, no .cmd). Fixed leading args: -c core.longpaths=true -c core.quotepath=false --no-pager -C <repo PathBuf>. Fixed env: GIT_TERMINAL_PROMPT=0, plus GIT_OPTIONAL_LOCKS=0 for status. CREATE_NO_WINDOW is set, stdin is null, and stdout is read with a byte cap. Every call has a timeout (30 s by default, 120 s for commit and merge), after which the child is killed. Typed inputs only: RepoPath (a Rust-held PathBuf), TaskBranch (a newtype matching ^orchestra/t[0-9]+(-[2-9])?$, built only by Rust), BaseBranch (read from git symbolic-ref --short HEAD, then checked with git check-ref-format --branch and must not start with -), and CommitId (40 or 64 lowercase hex). --end-of-options goes before ref operands wherever the subcommand accepts it. git::check() runs git --version, and a NotFound maps to a fixed message (Git was not found on PATH; tasks need Git for Windows). The check runs at task creation. Plain sessions never need git. Errors are short and fixed, and never echo git stderr or a path.",
+      "spawn_error_fix": "process::spawn checks dir.is_dir() before Command::spawn and returns a fixed message (the working folder no longer exists). Only a NotFound with an existing dir keeps the claude.exe-not-on-PATH message.",
+      "project_requirements": "To accept a task, a project must be a git work tree whose toplevel (git rev-parse --show-toplevel, canonicalised) equals the canonicalised project path, must have a HEAD commit, and must have HEAD on a branch (not detached). Otherwise create_task refuses with a fixed message and nothing is queued. Plain sessions in non-git folders keep working.",
+      "d5_note": "D5 builders will create tasks through the same internal Sessions::create_task API that IPC uses. Task carries no fleet-specific field. The inbox stays per session, so the permission and question items of a task keep appearing there unchanged. Nothing for D5 is built here."
+    },
+    "plan": [
+      {
+        "slice": "s1",
+        "intent": "Git runner and worktree primitives (no task logic). New src-tauri/src/git.rs as in design.git_invocation, exposing: check(); repo_info(path) -> {toplevel, head_branch, head_commit} (fails on a non-repo, an unborn HEAD or a detached HEAD); branch_exists; worktree_add(repo, path, branch, base_commit), which runs git worktree add -b <branch> <path> <commit> and creates parent dirs inside the base; worktree_remove(repo, path), one --force attempt plus prune; and the containment check is_within(base, path). The runner run(repo, &[fixed args], cap, timeout) -> Result<Output, GitError> is the only place Command::new(GIT) appears. lib.rs gets the mod git line only. Tests build throwaway repos under std::env::temp_dir() with git init and one commit, passing -c user.name and -c user.email as fixed test args so they do not depend on the machine identity.",
+        "files": [
+          "orchestra/desktop/src-tauri/src/git.rs",
+          "orchestra/desktop/src-tauri/src/lib.rs"
+        ],
+        "done_when": "cd orchestra/desktop/src-tauri && C:/Users/natha/.cargo/bin/cargo test git:: -> all passed, 0 failed, including git_check_reports_version, repo_info_rejects_non_repo_and_detached_head, repo_info_rejects_subdir_project, worktree_add_then_remove_roundtrip, branch_name_rejects_leading_dash_and_foreign_names, is_within_rejects_dotdot_and_outside_paths, runner_times_out_and_kills (a fixed test command that blocks), output_cap_truncates; cd orchestra/desktop/src-tauri && C:/Users/natha/.cargo/bin/cargo test -> 0 failed (>= 108 plus the new tests); grep -rn Command::new orchestra/desktop/src-tauri/src -> only process.rs (claude), git.rs (GIT) and test-only lines; git -C orchestra diff 7e62e10 --stat -- desktop/src-tauri/Cargo.toml desktop/src-tauri/capabilities desktop/src-tauri/tauri.conf.json -> empty",
+        "risk": "high",
+        "risk_reason": "the first new external program since claude, run against the user real repositories. Argument construction is where an injected ref or path would show up, and a mechanical test cannot prove every caller passes typed inputs. lib.rs is shared with s3 and s4, and git.rs with s4.",
+        "notes": "No new crate (no tempfile, no git2). Long-path handling is limited to -c core.longpaths=true; no registry change."
+      },
+      {
+        "slice": "s2",
+        "intent": "Caller-visible exit wait, the cwd error fix, and the on-machine removal probe. (a) Proc::wait_exit(timeout) and the ProcessHandle exit latch, with the job ActiveProcesses poll on Windows, as in design.exit_wait_and_cleanup. (b) Sessions::stop_and_wait(session_id, timeout) -> Result<bool, String>, which never holds Inner while waiting. (c) process::spawn refuses a missing dir before spawning (design.spawn_error_fix). (d) A test-only seam: spawn becomes a thin wrapper over spawn_program(program, args, dir, sink), so a test can run a real child (cmd.exe /c ping -n 60 127.0.0.1, where cmd is the child and ping a grandchild in the same cwd) through the real job and reader code. (e) The probe test removal_blocked_until_child_exits: make a repo and a worktree (s1 helpers), spawn that child with the worktree as cwd, and call worktree_remove. On Windows that must fail while the child is alive (the scout unknown, now measured). Then kill; wait_exit(10 s) must return true, and worktree_remove must succeed within the retry schedule. The Fake proc in the mod.rs tests implements wait_exit.",
+        "files": [
+          "orchestra/desktop/src-tauri/src/session/process.rs",
+          "orchestra/desktop/src-tauri/src/session/process/job.rs",
+          "orchestra/desktop/src-tauri/src/session/mod.rs"
+        ],
+        "done_when": "cd orchestra/desktop/src-tauri && C:/Users/natha/.cargo/bin/cargo test removal_blocked_until_child_exits -> 1 passed on this Windows machine (asserts removal fails while the child lives and succeeds after wait_exit); cd orchestra/desktop/src-tauri && C:/Users/natha/.cargo/bin/cargo test wait_exit_returns_true_after_kill -> 1 passed; cd orchestra/desktop/src-tauri && C:/Users/natha/.cargo/bin/cargo test wait_exit_times_out_on_live_child -> 1 passed; cd orchestra/desktop/src-tauri && C:/Users/natha/.cargo/bin/cargo test spawn_reports_missing_dir_not_missing_claude -> 1 passed (needs no claude.exe, because the dir check runs first); cd orchestra/desktop/src-tauri && C:/Users/natha/.cargo/bin/cargo test stop_and_wait_holds_no_lock_while_waiting -> 1 passed; cd orchestra/desktop/src-tauri && C:/Users/natha/.cargo/bin/cargo test -> 0 failed",
+        "risk": "high",
+        "risk_reason": "changes kill and exit semantics next to Inner/emit_order (a wait under Inner would deadlock against the reader on_output). It is the only evidence for the Windows removal race, so its assertions are load-bearing, and a test that only checks that removal eventually works cannot tell a real wait from a lucky sleep. mod.rs is shared with s3 and s4.",
+        "notes": "If removal_blocked_until_child_exits shows that removal succeeds while the child is alive, the builder reports it and changes the assertion to record the observed behaviour. The builder does not delete the test, and the exit wait stays either way. If the job ActiveProcesses query is not usable, wait on the child only and say so; the s4 retry schedule covers stragglers."
+      },
+      {
+        "slice": "s3",
+        "intent": "Task entity, schema 2, queue, and worktree cwd. New session/task.rs: Task, TaskStatus, StoredTask and pure transition functions. Sessions::create_task(project_id, prompt, settings) runs git::check, checks the project (design.project_requirements), records base_branch and base_commit, and inserts a queued task with id t<N> from a persisted next_task. Queue pump: while fewer than MAX_RUNNING_TASKS (gate G7) tasks are running or needs_input, the oldest queued task starts. The pump derives worktree = <worktree_base>/<project_id>/<task_id> and branch = orchestra/<task_id> (gate G6 collision suffix), runs git::worktree_add, then starts a session whose cwd comes from cwd_of. If the worktree cannot be created, the task goes to error with a fixed note and the pump moves on. The pump runs after create_task, after any task leaves running or needs_input, after cancel, and once after restore (gate G8; restore itself still spawns nothing). Task status follows its session through on_output, per design.task_session_relation. On entering done (gate G11) the child is suspended (state.suspend, then stop_and_wait off the reader thread), so the worktree has no live cwd and the slot frees. cancel_task applies to queued only (no worktree yet, nothing to clean). Plain sessions are untouched and never count toward the limit. Schema 2 as in design.schema. Sessions::with_writer takes the worktree base (app_data_dir/worktrees; a temp dir in tests). A new Event::TaskUpdated(TaskSummary) is emitted as task-updated. New commands create_task, list_tasks and cancel_task, all deny_unknown_fields, async with spawn_blocking where git runs. TaskSummary carries id, project_id, project_name, status, title (the first prompt line, capped at 120 chars), created_at, session_id, branch, base_branch, note, last_turn_error and session_over, and never a path. orchestra/CLAUDE.md: add git to the prerequisites, and extend the one recorded path exception to worktree paths that Rust derives under app_data_dir/worktrees, stores in state.json, never sends over IPC, and re-checks with is_dir and the containment check on load.",
+        "files": [
+          "orchestra/desktop/src-tauri/src/session/task.rs",
+          "orchestra/desktop/src-tauri/src/session/mod.rs",
+          "orchestra/desktop/src-tauri/src/session/store.rs",
+          "orchestra/desktop/src-tauri/src/commands.rs",
+          "orchestra/desktop/src-tauri/src/lib.rs",
+          "orchestra/CLAUDE.md"
+        ],
+        "risk": "high",
+        "risk_reason": "changes the on-disk schema (a wrong migration loses the owner session history) and moves where claude runs (a wrong cwd means claude edits the real checkout instead of the worktree, which no test outside the Fake can see). Persists new absolute paths, and shares mod.rs, lib.rs and commands.rs with s2 and s4.",
+        "notes": "The largest slice. If the reviewer wants it smaller, the split line is task.rs + store.rs (schema, pure transitions) before the mod.rs wiring, as commits inside the slice, not a new branch. No task concept is added to the inbox.",
+        "done_when": "cd orchestra/desktop/src-tauri && C:/Users/natha/.cargo/bin/cargo test schema1_file_loads_as_schema2_with_no_tasks -> 1 passed (fixture: a D3-shaped state.json; after load and save the file has schema 2, the same sessions, no task_id, tasks empty); cd orchestra/desktop/src-tauri && C:/Users/natha/.cargo/bin/cargo test schema3_is_refused -> 1 passed; cd orchestra/desktop/src-tauri && C:/Users/natha/.cargo/bin/cargo test task_status_does_not_reuse_session_status -> 1 passed; cd orchestra/desktop/src-tauri && C:/Users/natha/.cargo/bin/cargo test queue_respects_running_limit -> 1 passed (Fake spawner, limit 2: three tasks give two running and one queued, and the third starts only after one reaches done); cd orchestra/desktop/src-tauri && C:/Users/natha/.cargo/bin/cargo test task_session_spawns_in_worktree_not_project -> 1 passed (the Fake spawner records the cwd); cd orchestra/desktop/src-tauri && C:/Users/natha/.cargo/bin/cargo test resume_of_task_session_uses_worktree -> 1 passed; cd orchestra/desktop/src-tauri && C:/Users/natha/.cargo/bin/cargo test resume_refused_when_worktree_missing -> 1 passed (no spawn recorded); cd orchestra/desktop/src-tauri && C:/Users/natha/.cargo/bin/cargo test restore_marks_missing_worktree_error_and_spawns_nothing -> 1 passed; cd orchestra/desktop/src-tauri && C:/Users/natha/.cargo/bin/cargo test create_task_refuses_non_repo_and_detached_head -> 1 passed; cd orchestra/desktop/src-tauri && C:/Users/natha/.cargo/bin/cargo test done_task_suspends_child_and_frees_slot -> 1 passed; cd orchestra/desktop/src-tauri && C:/Users/natha/.cargo/bin/cargo test stored_worktree_outside_base_is_rejected_on_load -> 1 passed; cd orchestra/desktop/src-tauri && C:/Users/natha/.cargo/bin/cargo test task_summary_has_no_path -> 1 passed (serialized TaskSummary contains neither the worktree base nor the project path); cd orchestra/desktop/src-tauri && C:/Users/natha/.cargo/bin/cargo test -> 0 failed; grep -n -i git orchestra/CLAUDE.md -> a match on the Prerequisites line; git -C orchestra diff 7e62e10 --stat -- desktop/src-tauri/Cargo.toml desktop/src-tauri/capabilities desktop/src-tauri/tauri.conf.json -> empty"
+      },
+      {
+        "slice": "s4",
+        "intent": "Review and land (backend). git.rs gains: stage_all(worktree) (git add -A); diff(worktree, base_commit, cap) -> {files: [{path, status, added, removed, binary}] from --numstat -z (at most 5000 entries), patch: String capped at DIFF_CAP_BYTES (gate G10) and cut on a line boundary, truncated: bool}, with the patch from git diff --cached --no-color --no-ext-diff --no-textconv <base_commit>; commits(worktree, base_commit) -> [{id, subject, body capped at 4 KiB}] for base..HEAD; commit(worktree, message); is_clean_tracked(repo) (git status --porcelain --untracked-files=no is empty); merge(repo, branch, message) per gate G3, with git merge --abort on a non-zero exit; branch_delete(repo, branch, force). Sessions gains get_task_diff, land_task, discard_task and retry_cleanup. Land (gates G1/G2/G3/G9): the task must be done; stop_and_wait; stage_all, and if anything is staged, commit with message <task_id>: <title> under the repo configured identity, with no attribution trailer. Then check that the project HEAD is still base_branch and is_clean_tracked, and refuse with a fixed message otherwise (nothing changed, the task stays done). Merge. On conflict: abort, set note (conflicts, merge orchestra/<id> by hand), and keep the task done with branch and worktree intact. On success: record landed_commit, then clean up. If nothing differs from base, land refuses (nothing to land; discard instead). Discard from queued (same as cancel), done, error or needs_input: stop_and_wait, then worktree remove --force and branch -D. Cleanup per design.exit_wait_and_cleanup, including cleanup_pending, the retry command and the one retry after restore. Commands get_task_diff, land_task, discard_task and retry_cleanup take deny_unknown_fields {task_id} and are async with spawn_blocking. Errors are fixed strings without paths or git stderr.",
+        "files": [
+          "orchestra/desktop/src-tauri/src/git.rs",
+          "orchestra/desktop/src-tauri/src/session/task.rs",
+          "orchestra/desktop/src-tauri/src/session/mod.rs",
+          "orchestra/desktop/src-tauri/src/commands.rs",
+          "orchestra/desktop/src-tauri/src/lib.rs"
+        ],
+        "done_when": "cd orchestra/desktop/src-tauri && C:/Users/natha/.cargo/bin/cargo test land -> all passed, 0 failed, including land_merges_into_base_with_no_ff_and_cleans_up, land_commits_uncommitted_worktree_changes_without_trailers (the message has no Co-Authored-By and no Claude line), land_refuses_dirty_checkout_and_changes_nothing, land_refuses_when_checkout_moved_to_other_branch, land_conflict_aborts_and_keeps_branch_and_worktree (afterwards no merge is in progress in the project), land_refuses_when_nothing_changed; cd orchestra/desktop/src-tauri && C:/Users/natha/.cargo/bin/cargo test discard_removes_worktree_and_branch -> 1 passed; cd orchestra/desktop/src-tauri && C:/Users/natha/.cargo/bin/cargo test cleanup_pending_when_removal_fails_then_retry_succeeds -> 1 passed (removal blocked by a live real child as in s2: the task is cleanup_pending; after the child is killed, retry_cleanup succeeds); cd orchestra/desktop/src-tauri && C:/Users/natha/.cargo/bin/cargo test cleanup_never_touches_path_outside_base -> 1 passed; cd orchestra/desktop/src-tauri && C:/Users/natha/.cargo/bin/cargo test diff_is_capped_and_marks_truncated -> 1 passed; cd orchestra/desktop/src-tauri && C:/Users/natha/.cargo/bin/cargo test diff_lists_binary_and_untracked_files -> 1 passed; cd orchestra/desktop/src-tauri && C:/Users/natha/.cargo/bin/cargo test -> 0 failed; git -C orchestra diff 7e62e10 --stat -- desktop/src-tauri/Cargo.toml desktop/src-tauri/capabilities desktop/src-tauri/tauri.conf.json -> empty",
+        "risk": "high",
+        "risk_reason": "the first Rust-initiated write to the user project checkout (merge) and the first directory deletion. A wrong check merges into the wrong branch or over uncommitted work, and a wrong path deletes the wrong folder. Tests use throwaway repos only and cannot prove the behaviour on the owner real projects. Shares git.rs, mod.rs, lib.rs and commands.rs with earlier slices.",
+        "notes": "Land and discard are blocking calls of up to about 20 s (exit wait plus removal retries). They stay on spawn_blocking: never on the reader thread, never with Inner held across git."
+      },
+      {
+        "slice": "s5",
+        "intent": "Tasks UI (desktop). NewSession.tsx gains a checkbox, Run as task (own worktree), which makes the form call create_task instead of start_session. A Tasks column (TaskList.tsx) groups tasks by status (queued, running, needs input, done, and a collapsed group for landed/discarded/error/cleanup pending), showing title, project, branch and note; Cancel for queued, Retry cleanup for cleanup_pending, Open otherwise. TaskDetail.tsx: status header, a link to the task session detail (existing SessionDetail), and for done tasks the review: commits (subject and body), the file list with +/- counts, and DiffView.tsx. DiffView renders the patch split into lines, each a React text node inside a pre, with a className from its first character (+, -, @@, diff header); no innerHTML or dangerouslySetInnerHTML, no markdown, no links, and a truncation banner (diff truncated at N KiB) when truncated. Land (gate G4) opens an in-app confirm naming the project, target base_branch, file count and merge method; Discard has its own confirm; both are disabled while a call is in flight, and a Rust refusal shows its message. tasks.ts holds pure helpers (groupTasks, canLand, canDiscard, diffLineClass, splitPatch). types.ts, ipc.ts (strict decoders; an unknown status is dropped through onError) and state.ts (task-updated upsert, tasks-loaded merge) are extended; App.tsx subscribes to task-updated before list_tasks. Desktop only.",
+        "files": [
+          "orchestra/desktop/src/types.ts",
+          "orchestra/desktop/src/ipc.ts",
+          "orchestra/desktop/src/ipc.test.ts",
+          "orchestra/desktop/src/state.ts",
+          "orchestra/desktop/src/state.test.ts",
+          "orchestra/desktop/src/tasks.ts",
+          "orchestra/desktop/src/tasks.test.ts",
+          "orchestra/desktop/src/App.tsx",
+          "orchestra/desktop/src/App.css",
+          "orchestra/desktop/src/components/NewSession.tsx",
+          "orchestra/desktop/src/components/TaskList.tsx",
+          "orchestra/desktop/src/components/TaskDetail.tsx",
+          "orchestra/desktop/src/components/DiffView.tsx"
+        ],
+        "done_when": "cd orchestra/desktop && npm test -> 0 failed (>= 41 plus new); tasks.test.ts covers groupTasks for all nine statuses, canLand (true only for done), canDiscard, diffLineClass, and splitPatch keeping a line that holds <script> as a literal string; ipc.test.ts covers decodeTask dropping an unknown status and ignoring an extra path-like field; state.test.ts covers the task-updated upsert; cd orchestra/desktop && npm run build -> exit 0; grep -rni innerhtml orchestra/desktop/src -> no matches (case-insensitive, so it also catches dangerouslySetInnerHTML); git -C orchestra diff 7e62e10 --stat -- mobile protocol fleet -> empty; human-read (owner, npm run tauri dev, a throwaway git repo opened as a project): (1) queue three tasks with limit 2 and see one stay queued until another is done; (2) answer a task permission prompt in the inbox; (3) open the review of a done task and see commits, file list and diff; (4) land one, then confirm with git log in the throwaway repo that a merge commit is on the base branch and that the worktree folder and branch are gone; (5) discard one and see its worktree and branch gone; (6) quit with a task done, relaunch, send a follow-up, and see it resume in the worktree (edits land in the worktree, not the checkout)",
+        "risk": "high",
+        "risk_reason": "renders untrusted text from the user project (diff and commit messages): a rendering slip is a script-injection hole that no unit test fully rules out, and the grep only catches the obvious APIs. The Land button triggers the s4 checkout write. It is the only slice touching types.ts/ipc.ts/state.ts, so the shared-file rule is not the reason here.",
+        "notes": "orchestra ui is native-desktop + native-mobile with no responsive-web, so no mobile-first layout work applies. mobile/ and protocol/ are untouched (A4, start a task from the phone, is later). When s1-s5 land, the three D4 lines in orchestra/ROADMAP.md are ticked in place; the file is gitignored and not committed."
+      }
+    ],
+    "edges": [
+      "s1 -> s2: the removal probe uses git::worktree_add and worktree_remove",
+      "s1 -> s3: the pump calls git::check, repo_info and worktree_add",
+      "s2 -> s3: done-task suspension uses stop_and_wait",
+      "s2 -> s4: cleanup uses stop_and_wait and wait_exit",
+      "s3 -> s4: land, discard and cleanup operate on the Task entity and its stored worktree, branch and base",
+      "s3 -> s5: consumes create_task, list_tasks, cancel_task, task-updated and TaskSummary",
+      "s4 -> s5: consumes get_task_diff, land_task, discard_task and retry_cleanup"
+    ],
+    "commit_order": [
+      "s1",
+      "s2",
+      "s3",
+      "s4",
+      "s5"
+    ],
+    "not_doing": [
+      "D5: any fleet/ loading, graph runs, builders, run board or inbox human gate; Task carries no fleet fields",
+      "mobile/, protocol/, fleet/; starting a task from the phone (A4)",
+      "Worktrees for plain sessions: they keep running in the project folder, unchanged, and never count toward the task limit",
+      "Converting existing sessions into tasks; tasks without git",
+      "Projects that are a subdirectory of a repo, bare repos, repos with no commit, or a detached HEAD at task creation (refused with a message)",
+      "Push, remotes, pull requests, rebase, cherry-pick",
+      "A conflict-resolution UI: a conflicting land aborts and leaves branch and worktree for the owner",
+      "Auto-stashing a dirty checkout",
+      "Per-hunk staging, editing the diff, syntax highlighting, word diff, markdown in commit messages",
+      "A user-configurable concurrency limit, task priority or reordering, task dependencies",
+      "MCP profiles and hooks-based tracking from omaorchestra",
+      "New crates (git2, tempfile); capabilities, CSP or tauri.conf.json changes",
+      "Registry or OS long-path settings beyond -c core.longpaths=true",
+      "Deleting transcripts or sessions of landed or discarded tasks",
+      "D2 follow-ups 2, 4 and 5; follow-up 3 (folder deleted while running) only as far as the pre-spawn is_dir check and the corrected message",
+      "Committing orchestra/ROADMAP.md (gitignored; ticked in place only)"
+    ],
+    "gate_options": {
+      "G1_land_target": {
+        "recommended": "base_branch recorded at task creation (the branch checked out in the project at that time). Land requires the checkout to still be on that branch and refuses otherwise.",
+        "alternatives": [
+          "whatever branch the checkout is on at land time (simpler, but a task based on main can land on a feature branch)",
+          "never write the checkout: land = commit in the worktree, remove the worktree, keep orchestra/<id> for the owner to merge by hand"
+        ]
+      },
+      "G2_dirty_checkout": {
+        "recommended": "refuse land when tracked files are modified or staged (status --porcelain --untracked-files=no non-empty); git itself refuses if an untracked file would be overwritten",
+        "alternatives": [
+          "also refuse on any untracked file (stricter, annoying with build output)",
+          "auto-stash and pop (rejected in not_doing: a hidden change to the working tree of the owner)"
+        ]
+      },
+      "G3_merge_method": {
+        "recommended": "git merge --no-ff --no-edit with message merge orchestra task <id>: <title>. One merge commit, task commits preserved, revertable with -m 1, and branch -d afterwards",
+        "alternatives": [
+          "squash (merge --squash then one commit on base: linear history, task commits lost, branch -D)",
+          "--ff-only (refuses whenever base moved since task creation)"
+        ]
+      },
+      "G4_land_confirm": {
+        "recommended": "an explicit in-app confirm naming the project, target branch, file count and method; Rust enforces the state and checkout checks regardless",
+        "alternative": "one-click land, no confirm"
+      },
+      "G5_worktree_location": {
+        "recommended": "app_data_dir/worktrees/<project_id>/<task_id>: Rust-derived, inside the app base dir (the CLAUDE.md base-dir rule), never written beside the projects of the owner, containment-checked before any removal",
+        "alternatives": [
+          "sibling of the project: <project parent>/.orchestra-worktrees/<project name>-<task_id> (shorter paths; for umbrella apps it sits under repos/, so the umbrella CLAUDE.md and .claude hooks still load; but it writes outside both the app data dir and the repo)",
+          "inside the repo: <project>/.orchestra/worktrees/<task_id> (needs a .gitignore entry in the repo of the owner; rejected)"
+        ],
+        "caveat": "OWNER DECISION. With the recommended location, a task on an umbrella app runs claude outside repos/, so repos/CLAUDE.md and the repos/.claude commit-trailer guard do NOT load for it; only the CLAUDE.md of the app itself, inside the worktree, loads. Commits claude makes in such a worktree could carry attribution trailers. s5 shows every commit with its full message before land, so a trailer is visible at review, and the land and merge commits that Orchestra makes never add one. Also: every task writes the .git of the project (worktree metadata and the orchestra/<id> branch) from task start, not only at land."
+      },
+      "G6_branch_naming": {
+        "recommended": "orchestra/<task_id> (t<N>, N persisted); on collision with an existing branch try -2 to -9, then refuse with a fixed message",
+        "alternatives": [
+          "orchestra/<task_id>-<slug>, slug of [a-z0-9-] up to 32 chars from the title (more readable, more validation surface)",
+          "refuse on any collision"
+        ]
+      },
+      "G7_concurrency": {
+        "recommended": "MAX_RUNNING_TASKS = 2, a Rust constant counting tasks in running or needs_input; plain sessions not counted",
+        "alternatives": [
+          "1 (strictly serial)",
+          "3",
+          "configurable in the UI (deferred, see not_doing)"
+        ]
+      },
+      "G8_queue_on_launch": {
+        "recommended": "lib.rs calls the pump once after restore, so queued tasks start on launch; restore itself never spawns. Tasks that were running or needs_input at close return as needs_input with the note paused when Orchestra closed, reply to continue, and do not count toward the limit until replied to",
+        "alternative": "the queue stays paused after launch until the owner presses Resume queue"
+      },
+      "G9_land_commit": {
+        "recommended": "uncommitted worktree changes at land are committed by Orchestra as <task_id>: <title> under the configured git identity of the project, with no trailer and with repo hooks running (a failing hook refuses the land with a fixed message), 120 s timeout",
+        "alternatives": [
+          "same with --no-verify (skips the hooks of the owner; avoids a hook that hangs with no window)",
+          "refuse land while the worktree has uncommitted changes (the owner asks claude to commit first)"
+        ]
+      },
+      "G10_diff_cap": {
+        "recommended": "patch capped at 1 MiB on a line boundary with a truncated banner; the numstat file list is always complete up to 5000 entries; binary files listed as binary",
+        "alternative": "4 MiB (slower React render of one pre)"
+      },
+      "G11_done_semantics": {
+        "recommended": "a task is done when its turn ends (Idle, Ended or Failed); its child is then suspended, freeing the slot and the worktree cwd handle. A follow-up resumes in the same worktree via the D2 lazy resume and counts toward the limit again (refused with task limit reached when full)",
+        "alternative": "keep the Idle child alive after a turn (instant follow-ups), counted against the limit until land or discard; cleanup still stops and waits"
+      }
+    },
+    "probes": [
+      "P1 (s2, automated): removal_blocked_until_child_exits measures the Windows removal race on this machine with a real child and grandchild in the job",
+      "P2 (s5 human-read item 6): a task session resumed after relaunch runs in the worktree. Covers the external unknown on whether claude keys resume by cwd, which no test here can exercise without claude"
+    ]
+  },
+  "approved_by_human": true,
+  "scope_exceptions": [
+    "ORCHESTRATOR-OWNED, normally empty. Paths a builder may write that the approved plan does not list. guard-builder-scope.py DENIES a builder's Write/Edit outside architect.plan[].files, and this is the only way through it. Adding one is a deliberate, recorded act: pair it with deviation_from_approved_plan on the slice that needed it, and say why the gate's file set was wrong. Never add a path to silence the guard on work the human did not approve."
+  ],
+  "builders": {
+    "s1": {
+      "written_by": "builder",
+      "status": "done",
+      "branch": "d4-tasks-worktrees",
+      "commit": "9267833",
+      "changed": [
+        "orchestra/desktop/src-tauri/src/git.rs",
+        "orchestra/desktop/src-tauri/src/lib.rs"
+      ],
+      "notes": "git::check() has its own Command::new(GIT) (line 154) besides run(), since run needs a -C repo; both are GIT-only.",
+      "gate_results": {
+        "cargo test git::": "running 8 tests ... is_within_rejects_dotdot_and_outside_paths, git_check_reports_version, runner_times_out_and_kills, output_cap_truncates, branch_name_rejects_leading_dash_and_foreign_names, repo_info_rejects_subdir_project, repo_info_rejects_non_repo_and_detached_head, worktree_add_then_remove_roundtrip all ok; test result: ok. 8 passed; 0 failed",
+        "cargo test": "test result: ok. 116 passed; 0 failed (108 baseline + 8 new); doc/main 0 tests",
+        "grep -rn Command::new src": "git.rs:74 (GIT, run), git.rs:154 (GIT, check), git.rs:477/481 (test-only ping/sleep), job.rs:124 (existing test), process.rs:139 (claude)",
+        "git diff 7e62e10 --stat Cargo.toml capabilities tauri.conf.json": "(empty)"
+      },
+      "fix_1": {
+        "written_by": "builder",
+        "status": "done",
+        "branch": "d4-tasks-worktrees",
+        "commit": "7e81a25",
+        "changed": [
+          "orchestra/desktop/src-tauri/src/git.rs"
+        ],
+        "notes": "remove_empty_dir left unwalked: remove_dir is non-recursive and removes only a link.",
+        "gate_results": "cargo test git:: -> 21 passed; 0 failed (incl. junction, nested junction, stuck-link-errors-before-git, scrub_env, inherited GIT_DIR). cargo test (full) -> 177 passed; 0 failed."
+      }
+    },
+    "s2": {
+      "written_by": "builder",
+      "status": "done",
+      "branch": "d4-tasks-worktrees",
+      "commit": "aa94e2f",
+      "changed": [
+        "orchestra/desktop/src-tauri/src/session/process.rs",
+        "orchestra/desktop/src-tauri/src/session/process/job.rs",
+        "orchestra/desktop/src-tauri/src/session/mod.rs"
+      ],
+      "notes": "P1 finding: git worktree remove --force on a blocked folder fails (255) but already unregisters the worktree, so retries give 128 and the empty folder needs fs::remove_dir; s3/s4 cleanup must not rely on retrying git alone.",
+      "gate_results": {
+        "removal_blocked_until_child_exits": "1 passed. P1 measured: removal while child alive: Err(Failed(Some(255))) (git: failed to delete ... Permission denied), folder exists; retry after kill+wait_exit: Err(Failed(Some(128))) ('not a working tree'; first failed attempt had already deleted files and unregistered), folder exists (empty); std::fs::remove_dir then succeeded first try; a second worktree killed + wait_exit'd BEFORE any remove attempt: worktree_remove Ok first try, folder gone.",
+        "wait_exit_returns_true_after_kill": "1 passed",
+        "wait_exit_times_out_on_live_child": "1 passed",
+        "spawn_reports_missing_dir_not_missing_claude": "1 passed",
+        "stop_and_wait_holds_no_lock_while_waiting": "1 passed",
+        "cargo test": "test result: ok. 121 passed; 0 failed (116 + 5 new)"
+      },
+      "fix_1": {
+        "written_by": "builder",
+        "status": "done",
+        "branch": "d4-tasks-worktrees",
+        "commit": "15df48b",
+        "changed": [
+          "orchestra/desktop/src-tauri/src/session/process.rs"
+        ],
+        "notes": "Not addressed (non-test, out of fix scope): mod.rs:659 stop_and_wait re-reads proc; job.rs:96 Job::active fail-open; any further reviewer notes. No other try_recv-after-latch tests in s2.",
+        "gate_results": "wait_exit_returns_true_after_kill x200 loop: 0 failures; full cargo test: 172 passed; 0 failed"
+      }
+    },
+    "s3": {
+      "written_by": "builder",
+      "status": "done",
+      "branch": "d4-tasks-worktrees",
+      "commit": "874750e",
+      "changed": [
+        "orchestra/desktop/src-tauri/src/session/task.rs",
+        "orchestra/desktop/src-tauri/src/session/mod.rs",
+        "orchestra/desktop/src-tauri/src/session/store.rs",
+        "orchestra/desktop/src-tauri/src/commands.rs",
+        "orchestra/desktop/src-tauri/src/lib.rs",
+        "orchestra/CLAUDE.md"
+      ],
+      "notes": "cancel_task is queued-only (no worktree removal anywhere in s3); Sessions::stop_and_wait still has no caller until s4.",
+      "gate_results": {
+        "cargo test schema1_file_loads_as_schema2_with_no_tasks": "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 143 filtered out",
+        "cargo test schema3_is_refused": "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 143 filtered out",
+        "cargo test task_status_does_not_reuse_session_status": "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 143 filtered out",
+        "cargo test queue_respects_running_limit": "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 143 filtered out",
+        "cargo test task_session_spawns_in_worktree_not_project": "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 143 filtered out",
+        "cargo test resume_of_task_session_uses_worktree": "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 143 filtered out",
+        "cargo test resume_refused_when_worktree_missing": "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 143 filtered out",
+        "cargo test restore_marks_missing_worktree_error_and_spawns_nothing": "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 143 filtered out",
+        "cargo test create_task_refuses_non_repo_and_detached_head": "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 143 filtered out",
+        "cargo test done_task_suspends_child_and_frees_slot": "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 143 filtered out",
+        "cargo test stored_worktree_outside_base_is_rejected_on_load": "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 143 filtered out",
+        "cargo test task_summary_has_no_path": "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 143 filtered out",
+        "cargo test": "test result: ok. 144 passed; 0 failed (121 + 23 new, incl. extra: follow_up_is_refused_when_the_limit_is_full, branch_collision_takes_a_suffix, cancel_applies_to_queued_tasks_only, task_is_saved_with_its_session_link, task.rs unit tests, task_args test); run 3x consecutively, stable",
+        "grep -n -i git orchestra/CLAUDE.md": "30:Tauri Windows prerequisites (MSVC build tools, WebView2) and Git (Git for Windows; tasks",
+        "git -C orchestra diff 7e62e10 --stat -- Cargo.toml capabilities tauri.conf.json": "(empty)"
+      }
+    },
+    "s4": {
+      "written_by": "builder",
+      "status": "done",
+      "branch": "d4-tasks-worktrees",
+      "commit": "7212a38",
+      "changed": [
+        "orchestra/desktop/src-tauri/src/git.rs",
+        "orchestra/desktop/src-tauri/src/session/task.rs",
+        "orchestra/desktop/src-tauri/src/session/mod.rs",
+        "orchestra/desktop/src-tauri/src/commands.rs",
+        "orchestra/desktop/src-tauri/src/lib.rs"
+      ],
+      "notes": "landed_commit is not a persisted field (store.rs is outside s4's files): the landed short id lives in the task note, and cleanup_pending notes carry the outcome (Landed or Discarded) for retries.",
+      "deviation_from_approved_plan": [
+        "Owner-approved amendment (log: HUMAN GATE 2026-10-14): land refuses when any commit in base..orchestra/<id> carries Claude attribution (Co-Authored-By naming Claude/Anthropic, Claude-Session, Generated with [Claude Code], claude.ai/code or claude.com/claude-code link, noreply@anthropic.com as author/committer/in message; case-insensitive). Pattern list copied into git.rs::carries_claude_attribution, nothing read from graph_agents. Fixed refusal names the offending short id; branch, worktree and the unstaged leftovers stay untouched (check runs before Orchestra commits leftovers, and again after, plus on the commit and merge messages built from the task title). Tests: attribution_detector_flags_each_pattern, attribution_detector_ignores_prose_and_human_coauthors, commits_reads_the_whole_message_for_the_check, land_refuses_commits_carrying_claude_attribution (end to end), land_refuses_a_noreply_author_and_accepts_prose_about_claude.",
+        "P1 consequence (orchestrator log, builders.s1/s2 measurement): run_cleanup calls stop_and_wait before the first git worktree remove (a timed-out wait goes to cleanup_pending without touching the folder); after a failed remove it prunes and finishes with git::remove_empty_dir (is_within-checked, non-recursive) with backoff; never remove_dir_all. Tests: cleanup_waits_for_the_child_before_the_first_remove, cleanup_pending_when_removal_fails_then_retry_succeeds (real held folder), cleanup_finishes_a_half_removed_worktree, cleanup_never_touches_path_outside_base, pending_cleanup_is_retried_once_after_restore.",
+        "Added beyond plan text, inside s4 files: Task.busy (in-memory guard against concurrent land/discard/retry, and resume refused while busy); an interrupted Landing status becomes Done on restore with a note; commands.rs TaskIdArgs and a arg test; TaskDiff also carries commits (short id, subject, 4 KiB body) and files_truncated."
+      ],
+      "gate_results": {
+        "cargo test land": "running 10 tests: land_merges_into_base_with_no_ff_and_cleans_up, land_commits_uncommitted_worktree_changes_without_trailers, land_refuses_dirty_checkout_and_changes_nothing, land_refuses_when_checkout_moved_to_other_branch, land_conflict_aborts_and_keeps_branch_and_worktree, land_refuses_when_nothing_changed, land_requires_a_done_task, land_refuses_commits_carrying_claude_attribution, land_refuses_a_noreply_author_and_accepts_prose_about_claude, restore_turns_an_interrupted_landing_into_done all ok; test result: ok. 10 passed; 0 failed",
+        "cargo test discard_removes_worktree_and_branch": "test result: ok. 1 passed; 0 failed",
+        "cargo test cleanup_pending_when_removal_fails_then_retry_succeeds": "test result: ok. 1 passed; 0 failed",
+        "cargo test cleanup_never_touches_path_outside_base": "test result: ok. 1 passed; 0 failed",
+        "cargo test diff_is_capped_and_marks_truncated": "test result: ok. 1 passed; 0 failed",
+        "cargo test diff_lists_binary_and_untracked_files": "test result: ok. 1 passed; 0 failed",
+        "cargo test (run 3x)": "test result: ok. 172 passed; 0 failed (144 + 28 new), identical on all three runs; cargo build: 0 warnings",
+        "git -C orchestra diff 7e62e10 --stat -- desktop/src-tauri/Cargo.toml desktop/src-tauri/capabilities desktop/src-tauri/tauri.conf.json": "(empty)"
+      },
+      "fix_1": {
+        "written_by": "builder",
+        "status": "done",
+        "branch": "d4-tasks-worktrees",
+        "commit": "4ac509b",
+        "changed": [
+          "orchestra/desktop/src-tauri/src/git.rs",
+          "orchestra/desktop/src-tauri/src/session/mod.rs"
+        ],
+        "notes": "Not done (left as notes): note-encoded Landed/Discarded outcome; prose false positive. Fail-closed parse/count mismatch has no dedicated test (signature test covers the config case).",
+        "gate_results": "cargo test (src-tauri): 184 passed; 0 failed (177 + 7 new: land_refusals_leave_the_session_replyable, discard/land/retry junction canary tests, discarded_queued_task_never_starts, commits_survive_a_signature_showing_config, merge_takes_the_branch_not_a_tag_of_the_same_name). npm test: 58 passed. No IPC shape changed."
+      },
+      "fix_2": {
+        "written_by": "builder",
+        "status": "done",
+        "branch": "d4-tasks-worktrees",
+        "commit": "b118638",
+        "changed": [
+          "orchestra/desktop/src-tauri/src/git.rs",
+          "orchestra/desktop/src-tauri/src/session/mod.rs"
+        ],
+        "notes": "",
+        "gate_results": "s4 done_when filters: land 15 passed/0 failed; discard_removes_worktree_and_branch, cleanup_pending_when_removal_fails_then_retry_succeeds, cleanup_never_touches_path_outside_base, diff_is_capped_and_marks_truncated, diff_lists_binary_and_untracked_files 1 passed each; full cargo test: 191 passed, 0 failed; npm test: 58 passed (5 files); Cargo.toml/capabilities/tauri.conf.json diff vs 7e62e10 empty."
+      }
+    },
+    "s5": {
+      "written_by": "builder",
+      "status": "done",
+      "branch": "d4-tasks-worktrees",
+      "commit": "1e05204",
+      "changed": [
+        "orchestra/desktop/src/types.ts",
+        "orchestra/desktop/src/ipc.ts",
+        "orchestra/desktop/src/ipc.test.ts",
+        "orchestra/desktop/src/state.ts",
+        "orchestra/desktop/src/state.test.ts",
+        "orchestra/desktop/src/tasks.ts",
+        "orchestra/desktop/src/tasks.test.ts",
+        "orchestra/desktop/src/App.tsx",
+        "orchestra/desktop/src/App.css",
+        "orchestra/desktop/src/components/NewSession.tsx",
+        "orchestra/desktop/src/components/TaskList.tsx",
+        "orchestra/desktop/src/components/TaskDetail.tsx",
+        "orchestra/desktop/src/components/DiffView.tsx"
+      ],
+      "notes": "Landing is grouped with Done; Discard is offered for queued/needs_input/done/error to match Rust; create_task result is merged under any newer event, other results upsert.",
+      "gate_results": {
+        "cd orchestra/desktop && npm test": "Test Files 5 passed (5); Tests 58 passed (58) (41 before, +17 new); 0 failed",
+        "cd orchestra/desktop && npm run build": "tsc && vite build: built, exit 0",
+        "grep -rni innerhtml orchestra/desktop/src": "no matches (grep exit 1)",
+        "git -C orchestra diff 7e62e10 --stat -- mobile protocol fleet": "(empty)"
+      },
+      "human_read_pending": [
+        "1. npm run tauri dev with a throwaway git repo as a project: queue three tasks with limit 2; one stays queued until another is done",
+        "2. answer a task permission prompt in the inbox",
+        "3. open the review of a done task: commits (full message), file list, diff",
+        "4. Land one (confirm names project, base branch, file count, merge method); git log in the repo shows a merge commit on the base branch and the worktree folder and branch are gone",
+        "5. Discard one (confirm first); worktree and branch gone",
+        "6. quit with a task done, relaunch, send a follow-up in the session, see it resume in the worktree (edits in the worktree, not the checkout)"
+      ]
+    }
+  },
+  "reviews": {
+    "s1": {
+      "written_by": "reviewer",
+      "verdict": "REJECT",
+      "attempt": 1,
+      "commit": "9267833",
+      "summary": "REJECT. worktree_remove (git worktree remove --force) follows a junction inside the worktree and deletes the target's contents outside the worktree base; is_within checks only the root. Re-derived in my own detached worktree at 9267833: worktree_add a task worktree, mklink /J nm -> a dir holding keep.txt outside base, worktree_remove -> Ok and keep.txt deleted (git 2.51.0.windows.1; same with plain git). s4's discard/land cleanup calls it with no junction guard, so an agent junctioning node_modules wipes the project's real one. Everything else holds: no shell, fixed GIT, typed TaskBranch/CommitId, leading-dash and check-ref-format on BaseBranch, CREATE_NO_WINDOW, null stdin/stderr, cap drains, timeout kills. is_within probes passed (junction out, upper-case base, \\?\\ prefix, verbatim .., C:foo, \foo). Re-ran done_when: git:: 8/8 at s1, full cargo test 172/0 at 1e05204, Command::new only git.rs/process.rs/test lines, Cargo/capabilities/tauri.conf diff empty, author njcurtis3, no trailer, diff only git.rs + lib.rs.",
+      "findings": [
+        {
+          "file": "orchestra/desktop/src-tauri/src/git.rs",
+          "line": 314,
+          "severity": "blocker",
+          "origin": "architect",
+          "issue": "worktree_remove runs `git worktree remove --force <path>`, which on Git for Windows recurses through directory junctions (untracked) inside the worktree and deletes the files of the target. Input: task worktree base/p/t1 containing junction nm -> C:/elsewhere/victim (with keep.txt); worktree_remove(repo, base, base/p/t1) returns Ok and victim/keep.txt is gone. is_within only validates the worktree root, so the containment promise in design.exit_wait_and_cleanup ('a tampered state.json cannot direct a deletion', and never deleting outside the worktree folder) is broken by worktree contents the agent controls. s4 remove_worktree (session/mod.rs:965) calls it on every land/discard. Fix: before git remove, walk the worktree without following reparse points and unlink every junction/symlink (fs::remove_dir / remove_file on the link itself), or refuse and leave cleanup_pending; add a test with a junction to an outside dir asserting the target survives."
+        },
+        {
+          "file": "orchestra/desktop/src-tauri/src/git.rs",
+          "line": 73,
+          "severity": "note",
+          "origin": "",
+          "issue": "run() inherits GIT_DIR / GIT_WORK_TREE / GIT_INDEX_FILE from the parent environment; if set (e.g. cargo test run from a git hook, or the app launched from one), they override -C and git acts on the wrong repo/index. Consider env_remove on these."
+        },
+        {
+          "file": "orchestra/desktop/src-tauri/src/git.rs",
+          "line": 141,
+          "severity": "note",
+          "origin": "",
+          "issue": "Timeout kills only git.exe, not hooks or filter processes it spawned (post-checkout hook, git-lfs smudge during worktree add). A grandchild holding the stdout pipe also makes a successful call return Timeout after recv_timeout. Acceptable for s1; worth a job object if hooks prove common."
+        },
+        {
+          "file": "orchestra/desktop/src-tauri/src/git.rs",
+          "line": 206,
+          "severity": "note",
+          "origin": "",
+          "issue": "BaseBranch::parse is pub and accepts '@{-1}' and '@' (check-ref-format --branch resolves @{-N} and exits 0). Harmless today because its only input is symbolic-ref output and the value is only compared as a string, but the type does not guarantee a literal branch name."
+        },
+        {
+          "file": "orchestra/desktop/src-tauri/src/git.rs",
+          "line": 236,
+          "severity": "note",
+          "origin": "",
+          "issue": "symbolic-ref --short HEAD returns 'heads/main' when a tag 'main' also exists. s4 compares it with the same command's output, so consistent; any later use as a ref name would be wrong."
+        },
+        {
+          "file": "orchestra/desktop/src-tauri/src/git.rs",
+          "line": 305,
+          "severity": "note",
+          "origin": "",
+          "issue": "design.git_invocation says --end-of-options before ref operands; worktree add omits it. Operands are validated (absolute path, TaskBranch, hex CommitId) so not exploitable."
+        }
+      ],
+      "attempt_2": {
+        "written_by": "reviewer",
+        "verdict": "PASS",
+        "attempt": 2,
+        "commit": "7e81a25",
+        "summary": "PASS. The fix closes the attempt-1 blocker. I re-derived unlink_links: symlink_metadata plus FILE_ATTRIBUTE_REPARSE_POINT, links unlinked and re-stat'd, any failure returns Err before git, root-is-link, depth and entry bounds fail closed. I copied the walk verbatim into a standalone probe and ran it against real git 2.51. Canary survived for top-level, nested, junctions to the worktree's parent/base/repo, a dangling junction and a junction loop back into the worktree. A read-only file removes cleanly. A read-only junction (attrib +r /L) fails closed. A read-only dir makes git fail partway, but nothing outside is touched. I could not test dir symlinks: mklink /D is refused without privilege. Scrub is in exec, so check() and run() both get it, and run passes core.longpaths. No remove_dir_all outside tests. In my own worktree: git:: 21/0, full cargo test 177/0 three runs, Command::new grep and Cargo/capabilities/conf diff clean. Author njcurtis3, no trailer, diff only git.rs. Notes: the set_var(GIT_DIR) test races unscrubbed test git helpers in session/process tests. Read-only dirs/junctions leave cleanup stuck.",
+        "findings": [
+          {
+            "severity": "note",
+            "file": "orchestra/desktop/src-tauri/src/git.rs",
+            "line": 1157,
+            "origin": "builder",
+            "issue": "inherited_git_dir_does_not_redirect_git sets process-wide GIT_DIR while other tests run in parallel. The test-only git helpers in session/mod.rs:1644/1823/1828 and session/process.rs:349 spawn Command::new(\"git\") without the scrub, so if they interleave with the window they run against envdir-other (git init/commit misdirected, assertion fails). Flake-only, confined to temp; 3 full runs passed 177/0. Fix: drop the set_var test (scrub_env_removes_every_repo_selecting_variable already covers it) or run the probe in a child process."
+          },
+          {
+            "severity": "note",
+            "file": "orchestra/desktop/src-tauri/src/git.rs",
+            "line": 423,
+            "origin": "",
+            "issue": "Fail-closed but stuck: a read-only directory inside the worktree makes git worktree remove --force fail with Permission denied after deleting the rest (measured), and a junction marked read-only (attrib +r /L) makes remove_dir fail so the walk errors (measured). Either leaves the task in cleanup_pending on every retry with no data loss. Consider clearing FILE_ATTRIBUTE_READONLY on a link/dir before unlink, inside the worktree only."
+          },
+          {
+            "severity": "note",
+            "file": "orchestra/desktop/src-tauri/src/git.rs",
+            "line": 443,
+            "origin": "",
+            "issue": "TOCTOU: the walk and git are separate steps, so a process still alive in the worktree could make a new junction between them. Safe only because callers stop_and_wait (job object) first. The doc comment should say worktree_remove assumes nothing is running in the worktree."
+          },
+          {
+            "severity": "note",
+            "file": "orchestra/desktop/src-tauri/src/git.rs",
+            "line": 338,
+            "origin": "",
+            "issue": "MAX_WALK_ENTRIES 500k fails closed on a very large node_modules/monorepo checkout, leaving cleanup pending forever. Acceptable, but it should surface as a distinct message, not the generic 'holds a link that could not be removed'."
+          },
+          {
+            "severity": "note",
+            "file": "orchestra/desktop/src-tauri/src/git.rs",
+            "line": 350,
+            "origin": "",
+            "issue": "Directory symlinks (mklink /D) and volume mount points were not measured: this machine refuses mklink /D without privilege, and mounting needs admin. Code-wise both carry FILE_ATTRIBUTE_REPARSE_POINT|DIRECTORY and go through remove_dir, which removes only the reparse point."
+          }
+        ]
+      }
+    },
+    "s5": {
+      "written_by": "reviewer",
+      "verdict": "PASS",
+      "attempt": 1,
+      "commit": "1e05204",
+      "summary": "PASS. Re-derived every TS type and decoder against the Rust at 1e05204: TaskSummary (12 fields, Option fields serialize as null), all nine snake_case TaskStatus values, TaskDiff incl. files_truncated and commits, CommitView, DiffFile statuses (added/modified/deleted only), and the {args:{task_id}} / CreateTaskArgs shapes for all seven commands (deny_unknown_fields) match exactly; task-updated payload is TaskSummary. Action offers match Rust gates (land/review: done; discard: queued/needs_input/done/error; cancel: queued; retry: cleanup_pending). All untrusted text is React text nodes; full commit bodies render in a pre; land confirm names branch, base, project, file count, no-ff merge; discard confirm; buttons disabled in flight; refusals shown. Subscribe precedes list; snapshot never overwrites an event copy; land/discard/retry results are terminal states that task::sync never touches, so overwriting cannot regress. Re-ran in my own worktree: npm test 58 passed, npm run build exit 0, innerhtml grep empty, mobile/protocol/fleet diff empty, no Rust in 1e05204, author njcurtis3, no trailer. Two minor notes.",
+      "findings": [
+        {
+          "file": "orchestra/desktop/src/components/TaskDetail.tsx",
+          "line": 34,
+          "issue": "Note: after a land refusal, refuse() emits task-updated(done) before land_task drops its busy guard; the effect re-fetches get_task_diff on Landing->Done and, if that invoke reaches Rust inside that window, gets 'another action is running on this task', leaving diffError shown and Land disabled until the owner reselects the task. Window is microseconds vs an IPC round trip, so unlikely; a retry or refetch-on-refusal would close it.",
+          "severity": "low",
+          "origin": ""
+        },
+        {
+          "file": "orchestra/desktop/src/components/TaskDetail.tsx",
+          "line": 152,
+          "issue": "Note: the discard confirm says 'Delete the worktree and branch' for a queued task, which has neither (Rust only cancels it). Wording only.",
+          "severity": "low",
+          "origin": ""
+        }
+      ]
+    },
+    "s2": {
+      "written_by": "reviewer",
+      "verdict": "REJECT",
+      "attempt": 1,
+      "commit": "aa94e2f",
+      "summary": "REJECT on one concrete flake; the production code is right. I reran all six done_when gates at tip 1e05204 in a detached worktree: all pass, and the full suite is 172 passed, 0 failed. P1 reproduced the same way (255, then 128, then remove_dir OK, then a clean remove after wait_exit). Then I re-derived the ordering: the reader sets the latch and calls notify_all BEFORE sink(Output::Exit), which is the design. But wait_exit_returns_true_after_kill asserts rx.try_iter().last() is Exit straight after wait_exit returns, so the test races the reader thread. Over 190 repeat runs of the lib test binary it failed 3 times, with 'Exit was sent before wait_exit returned' at process.rs:317. The fix is to wait for Exit with rx.recv_timeout, or drop the assertion. Checked and OK: the condvar loop has no missed wakeup and honours the deadline. stop_and_wait holds no Inner while waiting. The reader never needs the latch lock to make progress, so there is no deadlock with on_output. The missing-dir check runs before spawn. stop, resume and shutdown are unchanged. Author is njcurtis3, no trailer, and the diff stays in the 3 s2 files.",
+      "findings": [
+        {
+          "file": "orchestra/desktop/src-tauri/src/session/process.rs",
+          "line": 317,
+          "severity": "blocker",
+          "origin": "builder",
+          "issue": "wait_exit_returns_true_after_kill is flaky, and it is a done_when gate. The latch is set (process.rs ~251) before sink(Output::Exit) (~256), as design.exit_wait_and_cleanup specifies. So wait_exit can return true before the reader thread has sent Exit, and the non-blocking rx.try_iter().last() then sees no Exit. Measured: 1/150 failures running the test alone, and 2/40 with --test-threads=8 next to wait_exit_times_out_on_live_child. Panic: 'Exit was sent before wait_exit returned'. Fix: assert with rx.recv_timeout(Duration::from_secs(5)) and drain to the Exit, or remove the assertion. Do not reorder latch and sink in production code: the design wants the latch first, so a waiter does not depend on on_output."
+        },
+        {
+          "file": "orchestra/desktop/src-tauri/src/session/mod.rs",
+          "line": 659,
+          "severity": "note",
+          "origin": "",
+          "issue": "stop_and_wait re-reads s.proc after stop() released Inner. If a resume swaps in a new proc in that gap, it waits on the new live child and returns Ok(false) after the timeout. That is safe (cleanup goes to cleanup_pending) but avoidable: have stop return the proc it killed, or clone it under the same lock."
+        },
+        {
+          "file": "orchestra/desktop/src-tauri/src/session/process/job.rs",
+          "line": 96,
+          "severity": "note",
+          "origin": "",
+          "issue": "Job::active returns 0 when QueryInformationJobObject fails, so wait_exit reports true without having checked the grandchildren. That only happens with an invalid handle, so it is practically unreachable, but it is fail-open where everything else in wait_exit fails closed."
+        },
+        {
+          "file": "orchestra/desktop/src-tauri/src/session/process.rs",
+          "line": 205,
+          "severity": "note",
+          "origin": "",
+          "issue": "design.spawn_error_fix says to keep the claude.exe message only for 'a NotFound with an existing dir'. The dir is checked once, before spawn. If it vanishes between the check and CreateProcess, the claude.exe message comes back. This is a TOCTOU window of microseconds, acceptable as is. Re-checking dir.is_dir() inside the NotFound arm would close it."
+        },
+        {
+          "file": "orchestra/desktop/src-tauri/src/session/process.rs",
+          "line": 356,
+          "severity": "note",
+          "origin": "",
+          "issue": "removal_blocked_until_child_exits asserts retry.is_err(). That pins the git behaviour measured on this machine (the first blocked remove already unregistered the worktree), not something orchestra guarantees. It is honest, documented and recorded in the log, but a git version that keeps the registration on a failed delete would fail this probe even though cleanup is correct. Consider recording the retry result instead of asserting it."
+        }
+      ],
+      "attempt_2": {
+        "written_by": "reviewer",
+        "verdict": "PASS",
+        "attempt": 2,
+        "commit": "15df48b",
+        "summary": "PASS. 15df48b touches only the test: wait_exit_returns_true_after_kill now drains rx with a 5 s bounded recv_timeout loop to Output::Exit and asserts it arrived. Production ordering (latch + notify_all before sink(Exit)) is unchanged, as the design wants. In my own detached worktree at 15df48b I re-ran all six done_when gates (each 1 passed; full suite 172 passed, 0 failed), then looped the test binary 300 times: 200 runs of the wait_exit_ filter with --test-threads=8 (the pairing that failed 2/40 at attempt 1) and 100 runs alone, 0 failures. No other s2 test asserts on Exit after the latch: the others drop _rx, and the mod.rs test uses the Fake. On the two notes not addressed: the stop_and_wait proc re-read is safe and stays a note. Job::active failing open is unreachable in practice, since the handle is owned for the life of the Arc and the creator has query access. Even if it fired, s3's remove_worktree survives the P1 half-removal: it prunes, retries remove_empty_dir on backoff, and otherwise ends cleanup_pending. That makes it a note, not a blocker.",
+        "findings": [
+          {
+            "severity": "note",
+            "origin": "",
+            "where": "orchestra/desktop/src-tauri/src/session/process/job.rs:96",
+            "what": "Job::active returns 0 on QueryInformationJobObject failure, so wait_exit can report the tree gone without checking grandchildren. Not a blocker: no concrete input reaches it (handle is open and owned for the ProcessHandle's life, created with full access), and if it did the consequence is bounded. A blocked worktree_remove half-removes (P1), and remove_worktree (mod.rs ~965) then prunes and retries remove_empty_dir on CLEANUP_BACKOFF_MS, falling to cleanup_pending, so no worktree registration is lost silently. Failing closed (treat query failure as 'still active' until deadline) would be the tidier choice."
+          },
+          {
+            "severity": "note",
+            "origin": "",
+            "where": "orchestra/desktop/src-tauri/src/session/mod.rs:1466-1469",
+            "what": "stop_and_wait still re-reads s.proc after stop() released Inner (line now ~1468, not 659). A resume in that gap makes it wait on the new live child and return Ok(false) after timeout, which land_task/run_cleanup treat as 'still running' / cleanup_pending, so it fails safe. Having stop return the killed proc would remove the gap."
+          },
+          {
+            "severity": "note",
+            "origin": "",
+            "where": "orchestra/desktop/src-tauri/src/session/process.rs:319-326",
+            "what": "The recv_timeout loop sits after wait_exit(10 s), so its 5 s budget only covers reader-thread latency after the latch, which is microseconds. It is well bounded, and a hang cannot happen because the deadline is recomputed each pass."
+          }
+        ]
+      }
+    },
+    "s4": {
+      "written_by": "reviewer",
+      "verdict": "REJECT",
+      "attempt": 1,
+      "commit": "7212a38",
+      "summary": "REJECT. I re-ran done_when in a detached worktree at 1e05204: every filter passes, full cargo test is 172/0, and the Cargo/capabilities/conf diff is empty. Author is njcurtis3, there is no trailer, and the diff stays inside the s4 files. (1) Data loss outside the base: git worktree remove --force follows an NTFS junction inside the worktree and empties its target. With a junction worktree/node_modules pointing at a canary dir outside the base, discard_task returned Discarded and the canary file was deleted. Measured in raw git 2.51 and via discard_task. The claude of any task can make a junction with no privilege. is_within only checks the worktree path itself. (2) A refused land ends the conversation: land calls stop_and_wait before its checks, and stop() marks the session Ended. After a dirty-checkout refusal the task is Done with session_over=true and reply fails with \"session is not running\". (3) The trailer check fails open: with log.showSignature=true, git log puts signature text before each record, CommitId::parse fails, and with an empty list the chunk is dropped. The TOCTOU re-check, abort, -d/-D choice, busy guard, Landing restore and diff cap are sound.",
+      "findings": [
+        {
+          "file": "orchestra/desktop/src-tauri/src/session/mod.rs",
+          "line": 964,
+          "issue": "Cleanup destroys data outside the worktree base through a junction. remove_worktree hands the worktree to git worktree remove --force, which on Windows recurses through NTFS junctions and deletes the target contents. I measured it with git 2.51.0.windows.1: a junction <wt>/link pointing at a canary dir with keep.txt and sub/deep.txt gave remove rc=0 and left the canary empty. I reproduced it end to end with a probe test: done_task, mklink /J <wt>/node_modules <canary outside base>, then discard_task returned Discarded and canary/keep.txt was gone. Land (run_cleanup Landed) and retry_cleanup take the same path. A task claude session can create a junction without privilege (for example a node_modules link into the owner project, the same pattern that emptied orchestra/desktop/node_modules today). is_within only checks the worktree path, never what is inside it. The containment rule and the no-remove_dir_all rule in the design both miss that the removal git itself does follows links. Fix: before the first git worktree remove, walk the worktree without following links (symlink_metadata / FILE_ATTRIBUTE_REPARSE_POINT). Remove each reparse point as a link only (fs::remove_dir on a junction, remove_file on a file symlink), or refuse to cleanup_pending with a fixed note. Add a test with a canary outside the base. Symlinks (mklink /D) need privilege on this machine and were not measured, but they need the same handling.",
+          "severity": "blocker",
+          "origin": "architect"
+        },
+        {
+          "file": "orchestra/desktop/src-tauri/src/session/mod.rs",
+          "line": 766,
+          "issue": "A refused land permanently ends the task conversation. land_task calls stop_and_wait(sid) before any check. stop() calls mark_stopped, which turns a Suspended session into Ended, and sync_task then sets task.session_over=true. Every later refusal (dirty checkout, branch moved, attribution, a hook refusing the leftover commit, nothing to land, conflict) leaves the task Done but with no follow-up. Probe: done_task, owner edits a.txt, land_task returns Err(uncommitted changes), then list_tasks shows session_over=true and reply(sid, please fix it) returns Err(session is not running). That contradicts the intent (refuse, nothing changed, the task stays done) and the G11 follow-up path. It also removes the natural remedy for the trailer refusal (ask claude to reword its commit) and for a failing pre-commit hook. The plan orders stop_and_wait first, hence architect. Fix: only wait for an existing proc to exit (or run the checkout and attribution checks before stopping), and do not mark a Suspended session Ended. Extend land_refuses_dirty_checkout_and_changes_nothing to assert !session_over and that a reply resumes.",
+          "severity": "blocker",
+          "origin": "architect"
+        },
+        {
+          "file": "orchestra/desktop/src-tauri/src/git.rs",
+          "line": 500,
+          "issue": "The attribution check fails open on git log output it cannot parse. commits() splits records on 0x1e and silently drops any chunk whose first field is not a CommitId when no earlier commit has been parsed. With log.showSignature=true in the user or repo config, git log --format=... prints the signature verification text (Good git signature for ...) before each signed commit record; I measured this with an SSH-signed commit in a scratch repo. Every such chunk then fails CommitId::parse and is dropped, the list comes back empty, attribution_refusal finds nothing, commits_ahead is still >0, and a signed commit carrying Co-Authored-By: Claude merges. The owner config does not set this today, but the rule the function states for itself is that a commit that was not read cannot be cleared. Fix: pass --no-show-signature (and -c log.showSignature=false). Return an error for any unparseable chunk with no previous record, and refuse when list.len() != rev-list --count.",
+          "severity": "blocker",
+          "origin": "builder"
+        },
+        {
+          "file": "orchestra/desktop/src-tauri/src/git.rs",
+          "line": 405,
+          "issue": "merge() ignores the result of git merge --abort and reports Conflict (nothing changed in the checkout) without checking that MERGE_HEAD is gone afterwards. If the abort fails (for example index.lock held by a background git run from an IDE), the owner checkout is left mid-merge with conflict markers while Orchestra says the branch and worktree were kept. Re-check MERGE_HEAD after the abort and return a distinct fixed error.",
+          "severity": "note",
+          "origin": ""
+        },
+        {
+          "file": "orchestra/desktop/src-tauri/src/git.rs",
+          "line": 398,
+          "issue": "merge passes the bare name orchestra/<id>, but commits() and commits_ahead() read refs/heads/orchestra/<id>. Git resolves refs/<name> and refs/tags/<name> before refs/heads/<name>, so a tag named orchestra/t1 (which a task session could create, since refs are shared) would be merged instead of the checked branch. Merge refs/heads/<branch>, or the exact tip id that was checked.",
+          "severity": "note",
+          "origin": ""
+        },
+        {
+          "file": "orchestra/desktop/src-tauri/src/session/mod.rs",
+          "line": 868,
+          "issue": "discard_task on a Queued task is not atomic. begin_task sets busy and releases the lock, then update_task sets Discarded. claim_next ignores busy, so a pump in between can claim the task, and start_in then overwrites the status with Running: a discarded task runs. The window is microseconds. cancel_task does it under one lock; do the same here, or make claim_next skip busy tasks.",
+          "severity": "note",
+          "origin": ""
+        },
+        {
+          "file": "orchestra/desktop/src-tauri/src/session/task.rs",
+          "line": 36,
+          "issue": "The Landed/Discarded outcome of a cleanup_pending task lives only in the free-text note, parsed with starts_with(Discarded). This is robust today: notes are Rust-built, the title never enters them, restore and sync never rewrite a cleanup_pending note, and an unrecognised note defaults to Landed and git branch -d, which never loses unmerged work. It is brittle to any future note change, though, and a Landed retry stays pending forever if the owner moves HEAD off the base before the retry (-d then reports not merged). A persisted outcome field (store.rs, outside s4) would be cleaner.",
+          "severity": "note",
+          "origin": ""
+        },
+        {
+          "file": "orchestra/desktop/src-tauri/src/git.rs",
+          "line": 615,
+          "issue": "generated_with_claude matches generated with claude anywhere in a line, so prose such as docs generated with Claude help refuses the land. This fails closed and arguably counts as attribution anyway. The listed patterns (Co-Authored-By naming Claude or Anthropic, Claude-Session, Generated with [Claude Code], both links, noreply@anthropic.com as author or committer) are all detected case-insensitively on every commit in base..branch, including the leftover commit Orchestra makes and the merge message, and human co-authors pass. Nothing is read from graph_agents.",
+          "severity": "note",
+          "origin": ""
+        }
+      ],
+      "attempt_2": {
+        "written_by": "reviewer",
+        "verdict": "PASS",
+        "attempt": 2,
+        "commit": "4ac509b",
+        "summary": "PASS. I re-ran every done_when filter in the shared checkout at 4ac509b: all pass. Full cargo test is 184/0, npm test 58/58, the Cargo/capabilities/conf diff is empty, the author is njcurtis3 with no trailer, and only git.rs and session/mod.rs changed. Blocker 1 is closed by 7e81a25: before git runs, the worktree is walked without following links, and every junction or symlink is removed as a link only. A link that will not go returns Err before git, which leaves the task cleanup_pending. The discard, land and retry tests pass with a canary outside the base. Blocker 2 is closed: the checkout and attribution checks run before the session is touched, and pause_and_wait suspends the session instead of ending it, then waits for the job to exit. run_cleanup still runs stop_and_wait before any remove (P1). My probes confirmed the dirty, attribution, hook and conflict refusals each leave the session replyable. Blocker 3's concrete input (log.showSignature) is closed. But the commit message and fix_1 claim a rev-list count check and an error on unparseable output, and neither exists in commits(). A replace ref also still hides a message from the scan. Both are notes.",
+        "findings": [
+          {
+            "severity": "note",
+            "file": "orchestra/desktop/src-tauri/src/git.rs:674",
+            "origin": "builder",
+            "detail": "The fail-closed branches that 4ac509b's commit message claims ('counts against rev-list and errors on output it cannot parse') and that builders.s4.fix_1 implies ('Fail-closed parse/count mismatch has no dedicated test') do not exist. commits() still drops, without an error, any chunk whose first field is not a CommitId when no earlier record was parsed. It never compares list.len() with rev-list --count. The attempt-1 input (log.showSignature=true) is closed by -c log.showSignature=false, --no-show-signature, --no-notes, --no-decorate and --encoding, and commits_survive_a_signature_showing_config passes. I found no remaining config that puts text in front of a record, so I could not produce a concrete wrong result. The commit message overstates what the code does, though, and that message is now permanent history. Add the two checks (Err on an unparseable first chunk; Err when the parsed count differs from commits_ahead), or correct the claim."
+          },
+          {
+            "severity": "note",
+            "file": "orchestra/desktop/src-tauri/src/git.rs:674",
+            "origin": "builder",
+            "detail": "The attribution scan reads through replace refs. refs are shared with the task worktree, so a task session can run git replace <its commit> <clean commit>. I measured this in raw git with a marker message, because the commit guard rightly blocks writing a real trailer even in scratch. With the exact commits() argv, %H shows the original sha and %B shows the replacement's clean message. rev-list --count is 1 either way. git merge then records the original object, and git --no-replace-objects log shows the original message on the merged parent. A count check would not catch this. Only a deliberate session could do it, which is why this is a note. Fix: run commits() (and commits_ahead) as git --no-replace-objects, or set GIT_NO_REPLACE_OBJECTS=1."
+          },
+          {
+            "severity": "note",
+            "file": "orchestra/desktop/src-tauri/src/session/mod.rs:769",
+            "origin": "builder",
+            "detail": "Because the checks now run before the pause, the attribution scan happens before the child is killed. After the pause it runs again only if Orchestra stages leftovers. merge() merges refs/heads/<branch> as it stands at merge time, not the tip that was checked. A commit that lands on the branch between the first commits() and the kill is merged unchecked. The child of a Done task is idle and the job object kills its whole tree, so the window is tiny, but it is a regression from attempt 1's order. Fix: after pause_and_wait, re-run commits() and attribution_refusal unconditionally (cheap), or record the checked tip and merge that id."
+          },
+          {
+            "severity": "note",
+            "file": "orchestra/desktop/src-tauri/src/git.rs:540",
+            "origin": "",
+            "detail": "A merge refused by a hook is reported as a conflict. Probe: a commit-msg hook that exits 1. git merge --no-ff -m m refs/heads/orchestra/t2 returns rc=1 and leaves MERGE_HEAD, so merge() aborts (correctly, nothing is left mid-merge) and returns Conflict. Land then sets the note 'conflicts, merge orchestra/<id> by hand' and says the merge has conflicts. That is safe but tells the owner the wrong reason. The new abort re-check is correct: MERGE_HEAD is read with unwrap_or(true), and a failed abort returns a distinct fixed error."
+          },
+          {
+            "severity": "note",
+            "file": "orchestra/desktop/src-tauri/src/session/mod.rs:1006",
+            "origin": "",
+            "detail": "Checked and sound, recorded so the next reader can skip it. claim_next now skips busy tasks. discard is the only action begin_task allows on a Queued task, so FIFO and MAX_RUNNING_TASKS are unchanged, and begin_task still refuses a task that is starting. The s3 tests pass in the full run. merge uses refs/heads/<branch>, and branch -d/-D with the bare name is safe because git branch only names refs/heads. pause_and_wait bumps spawn_gen so the exit is ignored, frees a slot only if one was held, and leaves a Done task Done (task::sync maps Suspended+Done to Done, session_over false). resume_with refuses while the task is busy, so a reply cannot respawn a child into the worktree mid-land. Plain sessions, commands.rs and the IPC shapes are untouched. The note-encoded Landed/Discarded outcome and the prose false positive remain as attempt 1 described them."
+          }
+        ]
+      },
+      "attempt_3": {
+        "written_by": "reviewer",
+        "verdict": "PASS",
+        "attempt": 3,
+        "commit": "b118638",
+        "summary": "PASS. Every claim in b118638 and builders.s4.fix_2 has code behind it. commits() returns Err for an unparseable leading chunk (parse_records) and Err when the parsed count differs from commits_ahead (rev-list --count base..refs/heads/<branch>). run() passes --no-replace-objects and GIT_NO_REPLACE_OBJECTS=1, and every production git call goes through it. All three git::commits callers fail closed. A refusal leaves the task Done, the session replyable, and HEAD, the branch and the worktree unchanged. I re-derived the parser bound: a forged header can only add an entry, which trips the count check. A real record always starts right after git's own terminator and always has four fields, so a message cannot swallow one. Four under-count attempts in real git all failed. Raw probes confirmed the fix for showSignature with an SSH-signed commit, replace refs, separator continuation, and each pattern form. Re-ran: done_when filters (land 15/0), cargo test 191/0, npm 58/58. The protected diff is empty. The author is njcurtis3, there is no trailer, and only git.rs and session/mod.rs changed. Note: info/grafts still hides a commit; measured.",
+        "findings": [
+          {
+            "severity": "note",
+            "origin": "builder",
+            "file": "orchestra/desktop/src-tauri/src/git.rs:76",
+            "detail": "Grafts still hide a commit from the scan. --no-replace-objects does not disable <common git dir>/info/grafts. I measured this in scratch with the exact commits() argv: base -> C1 (message with a Claude trailer) -> C2 (clean), plus a grafts line '<C2> <base>'. log shows only C2, rev-list --count is 1, so the count check passes and nothing is flagged. git merge --no-ff refs/heads/orchestra/t1 then succeeds. Once the grafts file is removed, the merged history contains C1 and its trailer. Only a session that sets out to do this can trigger it: it must write into the owner's .git, and such a session could just as well write refs or hooks. That makes it a note, the same severity attempt 2 gave replace refs. The commit message's claim covers only replace refs, and that claim is true. Fix, measured: set GIT_GRAFT_FILE in run() to a path that does not exist. rev-list --count then went from 1 to 2. A .git/shallow file cutting at the task tip does not hide anything: there is no merge base, and the merge fails with 'refusing to merge unrelated histories'."
+          },
+          {
+            "severity": "note",
+            "origin": "builder",
+            "file": "orchestra/desktop/src-tauri/src/session/mod.rs:769",
+            "detail": "Carried over from attempt 2, unchanged and not claimed as fixed: land checks commits() before pause_and_wait. After the pause it re-reads them only when Orchestra commits leftovers. merge() merges refs/heads/<branch> as it stands at merge time. A commit made between the first check and the kill merges unchecked. The window is tiny: the child of a Done task is idle, and the job object kills its whole tree. Re-run commits() unconditionally after the pause, or merge the tip id that was checked."
+          },
+          {
+            "severity": "note",
+            "origin": "",
+            "file": "orchestra/desktop/src-tauri/src/git.rs:81",
+            "detail": "Side effects of applying GIT_NO_REPLACE_OBJECTS to every command: merge, commit, worktree add, diff and branch -d now see real objects in the owner's repo, and hooks run by merge or commit inherit the variable. On a repo with no replace refs (the normal case) nothing changes. On a repo where the owner uses replace refs on purpose, merge-base and the diff are computed on the real graph, not the view the owner sees. The result stays consistent: what the review shows is what lands, and the commit is valid history. I found no harmful effect."
+          },
+          {
+            "severity": "note",
+            "origin": "",
+            "file": "orchestra/desktop/src-tauri/src/git.rs:710",
+            "detail": "Checked and sound. Over-count: a header forged in a message yields an extra parsed entry, and commits() returns 'could not read every task commit'. This is tested in commits_errors_when_a_forged_header_makes_the_count_differ and end to end in land_refuses_when_the_task_commits_cannot_be_read_and_stays_replyable, which also checks session_over=false, a working reply, unchanged HEAD and branch, and the worktree present. Under-count: I tried C2 messages ending in RS+junk, three FS, a trailing FS, and RS + 39 hex, each over a C1 that carried a trailer. Every case parsed 2 records and found the trailer. A real record cannot be absorbed, because splitting happens on git's own terminator and %H%x1f%ae%x1f%ce%x1f always emits three FS. A count/log race between the two git calls also fails closed. With log.showSignature=true and an SSH-signed commit, plain log puts the signature text first, while Orchestra's argv gives clean records. Each pattern form (Co-Authored-By, lowercase co-authored-by, Claude-Session, Generated with [Claude Code] plus link, claude.ai/code) survives into the parsed message, and a noreply@anthropic.com author lands in author_email. The detector cases are covered by attribution_detector_flags_each_pattern. The new tests fail without the new code: replace ref, count check, leading chunk."
+          }
+        ]
+      }
+    },
+    "s3": {
+      "written_by": "reviewer",
+      "verdict": "PASS",
+      "attempt": 1,
+      "commit": "874750e",
+      "summary": "PASS. Re-ran all 12 named done_when tests at tip 1e05204 (each 1 passed), full cargo test (172 passed, 0 failed), the git grep (Prerequisites line 29-30) and the Cargo/capabilities/tauri.conf stat (empty); 874750e is njcurtis3, no Claude trailer, only the 6 s3 files. Beyond the fixture, I generated a genuine D3 state.json by running 7e62e10's own code (idle, permission-pending and stopped sessions), then loaded it at tip: schema 2, all 3 sessions and their settings and expired item intact, no task_id, tasks [], and a plain resume spawned in the project folder. Re-derived the limit: claim, the starting flag, start_in's Running flip and resume's check-plus-begin_resume-plus-sync all happen under one Inner lock, so the pump, a restore with paused tasks and follow-ups cannot exceed 2. cwd_of guards all three spawn sites; the generation bump on Idle retires the old child's late exit; kill and wait run off-lock. The builder's choices (cancel to discarded, abandoned paused resume to done, cfg(test) on_output) are sound. Notes: a plain session whose folder vanishes mid-run now ends instead of staying resumable; resume_with does not gate on task status.",
+      "findings": [
+        {
+          "file": "orchestra/desktop/src-tauri/src/session/mod.rs",
+          "line": 928,
+          "severity": "low",
+          "origin": "builder",
+          "issue": "Plain-session behaviour change. resume_with maps every CwdError::Project, including a project folder that vanished after load (is_dir false), to fail_resume, which leaves the session permanently Ended with an error item. Before (7e62e10 plus s2's spawn dir check), a vanished folder was a spawn error followed by abort_resume, so the session stayed Suspended and could be resumed once the folder came back. Example: the owner renames the project folder, replies, then renames it back. The session can no longer continue. The design only required refusing without spawning. Suggest abort_resume semantics (refuse, stay Suspended) for the is_dir case and fail_resume only when the project entry itself is gone."
+        },
+        {
+          "file": "orchestra/desktop/src-tauri/src/session/mod.rs",
+          "line": 939,
+          "severity": "low",
+          "origin": "builder",
+          "issue": "resume_with checks the task limit but not the task's status. A task whose status sync leaves alone (Error, and later CleanupPending or Landing) is not counted by is_active, yet its suspended session can still be resumed whenever its worktree exists. In s3 this is reachable only from a state file with an unknown status ('frozen' loads as Error and keeps an in-base worktree), and that reply spawns claude outside MAX_RUNNING_TASKS. s4's busy flag covers landing, but cleanup_pending and error are not covered. Suggest refusing a task resume unless the status is Done or NeedsInput."
+        },
+        {
+          "file": "orchestra/desktop/src-tauri/src/session/mod.rs",
+          "line": 636,
+          "severity": "low",
+          "origin": "",
+          "issue": "start_task stores the worktree and branch before start_in saves. A crash or kill in that window persists a Queued task that already has a worktree and an orchestra/tN branch. On relaunch the pump picks orchestra/tN-2, worktree_add then fails on the existing path, and the task goes to Error, leaving an orphan worktree and branch for manual cleanup. The window is narrow, so this is a note."
+        },
+        {
+          "file": "orchestra/desktop/src-tauri/src/session/mod.rs",
+          "line": 584,
+          "severity": "info",
+          "origin": "",
+          "issue": "A pump already inside start_task when shutdown starts can still spawn: claim_next checks shutting_down, but start_in does not. The child is contained by the KILL_ON_JOB_CLOSE job, and its state is not saved, so this is only a note."
+        },
+        {
+          "file": "orchestra/desktop/src-tauri/src/session/task.rs",
+          "line": 270,
+          "severity": "info",
+          "origin": "",
+          "issue": "Judged the builder's choices. (1) A paused (NeedsInput, Suspended) task whose resume spawn fails ends up Done, not paused: Running plus Suspended maps to Done. Both states can take a reply and neither counts toward the limit, so this is only cosmetic (the paused note is lost). (2) cancel to Discarded with the note 'Cancelled before it started' fits the closed enum. (3) on_output as cfg(test): every production sink goes through handle_output with a generation (0 for start, the bumped value for resume), so retired children are always filtered."
+        }
+      ]
+    }
+  },
+  "integrator": {
+    "written_by": "the node that wrote this key - here, always the string integrator",
+    "merged": [],
+    "conflicts": [],
+    "verification": "what command proved it works, and its output"
+  },
+  "ops": {
+    "written_by": "the node that wrote this key - here, always the string ops",
+    "gated": true,
+    "actions": []
+  },
+  "log": [
+    "orchestrator: opened run 2026-10-14. Pre-flight: orchestra is a git repo, main @ 7e62e10 (clean, pushed). Not a fleet-definition edit. Spawning scout.",
+    "orchestrator: scout key verified (24 facts, 11 unknowns, 8 risks). Shaping, not killing: task needs its own entity + schema 2; worktree cleanup must wait for process exit (no exit signal today, Idle keeps claude alive); landing into the user checkout needs an owner decision (target branch, clean requirement, gate). Spawning architect.",
+    "orchestrator: architect key verified (single-loop, s1..s5, 11 gate options G1-G11). Presenting to human gate.",
+    "orchestrator: HUMAN GATE passed 2026-10-14 - owner said \"approve\" to all recommendations G1-G11 PLUS the orchestrator-proposed amendment to s4: land refuses if any task commit (base..orchestra/<id>) carries Claude attribution (Co-Authored-By: Claude, Claude-Session:, Generated with [Claude Code], claude.ai/code link, or a Claude <noreply@anthropic.com> author), using a pattern list copied into orchestra (no import from graph_agents), with a fixed refusal message; amendment stays within s4 files (git.rs/task.rs). Branch d4-tasks-worktrees off main 7e62e10. Spawning builder s1.",
+    "orchestrator: builders.s1 (9267833, cargo 116) and builders.s2 (aa94e2f, cargo 121) verified. P1 MEASURED on this machine: git worktree remove while a child holds the dir fails (exit 255, Permission denied) but still deletes the checkout files and unregisters the worktree, leaving an empty dir; a later git remove fails \"not a working tree\" (128); non-recursive fs::remove_dir then succeeds. Stop+wait_exit before the first remove succeeds first time. Consequence for s4 (within its intent, no owner decision needed): cleanup MUST stop_and_wait before the first git worktree remove, and the cleanup_pending retry must handle \"not a working tree\" + leftover dir with a contained, non-recursive remove_dir (still no remove_dir_all), plus git worktree prune. Passed to the s4 builder. Spawning builder s3.",
+    "orchestrator: builders.s3 verified (874750e, cargo 144). Builder choices for review: cancel_task is queued-only and sets discarded; an abandoned resume puts a paused task to done, not back to paused; on_output now test-only. Nothing calls stop_and_wait yet: s4 cleanup must. Spawning builder s4 with the trailer-check amendment and the P1 cleanup consequence.",
+    "builder s4: committed 7212a38 on d4-tasks-worktrees; cargo test 172 passed, 0 failed (3 runs). Amendment (Claude-attribution refusal) and P1 cleanup consequence implemented as approved; recorded in builders.s4.deviation_from_approved_plan.",
+    "orchestrator: builders.s4 verified (7212a38, cargo 172). Trailer refusal and P1 cleanup in. For review: landed_commit and the Landed/Discarded outcome of a cleanup_pending task live only in the free-text note (store.rs outside s4 files), and the retry reads that note to pick the branch delete - reviewer should judge that. Spawning builder s5.",
+    "orchestrator: builders.s5 verified (1e05204, npm 58, build ok). All 5 slices built on d4-tasks-worktrees: 9267833, aa94e2f, 874750e, 7212a38, 1e05204. Spawning 5 reviewers in parallel (all high); reviewers must not edit the shared checkout - probes go in their own detached worktree under the scratchpad.",
+    "orchestrator: reviews.s5 PASS attempt 1 (2 low notes in TaskDetail.tsx). INCIDENT: the s5 reviewer junctioned orchestra/desktop/node_modules into its probe worktree; git worktree remove --force followed the junction and emptied the real node_modules. Restored with npm ci; orchestrator verified npm ls clean, npm test 58/58, git status clean. Same hazard applies to D4 itself: a task session can create a junction inside its worktree pointing outside, and s4 cleanup runs git worktree remove. Sent to the s4 reviewer as a review question (probe with a canary), and warned s1-s3 reviewers.",
+    "orchestrator: reviews.s2 REJECT attempt 1: production code correct, but done_when test wait_exit_returns_true_after_kill is flaky (3/190) - it reads the channel with try_recv right after wait_exit while the latch is (correctly) set before sink(Exit); fix the test with recv_timeout. Also observed: the reviewer's git worktree remove --force failed with \"Filename too long\" (cargo target inside the worktree) after unregistering it - a second real-world instance of the half-removed state, relevant to s4 cleanup with long paths. Holding the s2 fix until the s1/s3/s4 reviews return so no builder changes the branch under a running reviewer.",
+    "orchestrator: reviews.s4 REJECT attempt 1, 3 blockers: (1) junction data loss - git worktree remove --force follows NTFS junctions inside the worktree; probe deleted a canary outside the base and discard still reported Discarded; (2) land_task calls stop_and_wait before its refusal checks, turning the Suspended session into Ended, so a refused land kills the conversation; (3) trailer check fails open when git log output is unparseable (log.showSignature=true). Plus 5 notes (merge --abort failure ignored, bare branch name vs tag, discard-queued vs pump race, note-encoded outcome, prose false positive). Fixes are within s4 intent/files; no owner decision needed. Waiting on s1/s3 reviews, then sequential fix rounds s2 then s4 on the branch.",
+    "orchestrator: reviews.s3 PASS attempt 1 (3 notes + 2 info; main note: a plain session whose project folder vanishes while running is now Ended on reply instead of staying Suspended - a D2 behaviour regression). Starting s2 fix_1 (test-only) now; s1 review still running in its own worktree.",
+    "orchestrator: reviews.s1 REJECT attempt 1: same junction data loss, located in s1's git::worktree_remove (git.rs:314) - is_within checks only the worktree root. Fix belongs to s1 (the primitive) and s4 consumes it. Plan: s2 fix_1 (running) -> s1 fix_1 (junction-safe worktree_remove + scrub GIT_DIR/GIT_WORK_TREE/GIT_INDEX_FILE env) -> s4 fix_1 (refusal checks before stop, keep session resumable, --no-show-signature + parsed-count check, merge --abort failure, full refs/heads name, core.longpaths) -> fresh reviewers attempt_2 for s1, s2, s4.",
+    "orchestrator: PAUSED 2026-10-14 on usage limit. builders.s1.fix_1 verified (7e81a25, cargo 177). Stopped mid-flight: s4 fix_1 builder (may have left uncommitted edits on d4-tasks-worktrees - inspect git status/diff before resuming; discard or let a new s4 builder continue) and the s2 attempt_2 reviewer (no verdict; its detached worktree scratchpad/rev2-s2 may remain - remove with git worktree remove, never a recursive delete). TODO on resume: s4 fix_1 -> fresh reviewers attempt_2 for s1 (7e81a25), s2 (15df48b), s4 -> merge --no-ff -> close-run -> audit-fleet. Owner-pending: s3 low note (plain session with vanished folder now Ends on reply), Archer-Store registry question.",
+    "orchestrator: resumed after usage-limit pause. builders.s4.fix_1 verified (4ac509b, cargo 184, npm 58). reviews.s1.attempt_2 PASS (7e81a25): canary survived top-level, nested, parent/base/repo-pointing, dangling and looping junctions; dir symlinks untestable without privilege. Notes: GIT_DIR test could race unscrubbed test-only git helpers; a read-only dir/junction in a worktree leaves the task stuck in cleanup_pending (safe, but stuck). s2 and s4 attempt_2 reviews running.",
+    "orchestrator: reviews.s4.attempt_2 PASS (4ac509b) with a top note the orchestrator confirmed by grep: commits() (git.rs:674) has NO rev-list count comparison and still silently drops an unparseable chunk before the first record - contrary to the 4ac509b commit message and builders.s4.fix_1. git::commits_ahead exists but land does not compare it with commits().len(). The known input (log.showSignature) is closed by flags; the required fail-closed guarantee is not present. Also: a replace ref hides a commit message from the scan. s4 is at the 2-attempt cap; escalating to owner whether to run a small third round before merge.",
+    "orchestrator: reviews.s2.attempt_2 PASS (15df48b; 300 loop runs, 0 failures). All five slices now PASS on their latest attempt. Merge held pending the owner decision on the s4 fail-closed gap.",
+    "orchestrator: 2026-10-14 owner authorized a third round on s4 past the 2-attempt cap (\"option 1, one more round then merge\"): builder fix_2 makes the attribution scan fail closed (parsed count vs commits_ahead, refuse on unparseable chunk), adds --no-replace-objects, tests both fail-closed paths, and its commit message notes 4ac509b overstated; fresh reviewer writes attempt_3; then merge.",
+    "orchestrator: reviews.s4.attempt_3 PASS (b118638; every claim verified against code; under-count not constructible in real git). Top note: a task writing the project .git/info/grafts can still hide a commit from the scan (--no-replace-objects does not disable grafts; GIT_GRAFT_FILE pointed at a missing path would). Merged d4-tasks-worktrees into orchestra main --no-ff: 7e62149 (clean). On main: cargo test 191 passed 0 failed, npm test 58 passed, npm run build ok. Not pushed.",
+    "orchestrator: CLOSED 2026-10-14. close-run.py closeable: 5/5 slices PASS and in main via merge 7e62149 (s3, s5 attempt 1; s1, s2 attempt 2; s4 attempt 3 with owner-authorized extra round). Deferred follow-ups: grafts can hide a commit from the attribution scan (set GIT_GRAFT_FILE to a missing path); read-only dir/junction in a worktree leaves cleanup_pending stuck; GIT_DIR test may race unscrubbed test helpers; plain session with vanished project folder now Ends on reply (s3); note-encoded Landed/Discarded outcome; Job::active fail-open; s5 UI notes (Land disabled after refused-land reload, discard wording for queued). Owner GUI checks pending (s5 human_read_pending, incl. P2 resume-in-worktree after relaunch). ROADMAP.md D4 ticks are local bookkeeping. main not pushed."
+  ]
+}
