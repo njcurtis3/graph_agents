@@ -1,0 +1,664 @@
+{
+  "$comment": "Shared state for ONE work-graph run. Lives at .graph/runs/<run-id>/state.json. Every node reads this on start and appends to its OWN key on finish - the builder writes its own builders.<slice> key, including the branch it worked on. Never rewrite another node's key. Every node key carries written_by, naming the node that wrote it: that is the ONLY record of authorship this file has, and without it 'never rewrite another node's key' is unverifiable - an orchestrator hand-writing all six keys is indistinguishable from six nodes doing their jobs. verify-state.py --audit checks it. This file is the edge: it is how context crosses between agents that cannot see each other.",
+  "run_id": "2026-10-10-orchestra-d3-notify-detail",
+  "goal": "start D3 (orchestra/ROADMAP.md D3: desktop notifications and session detail - OS notification on needs-input/finish, session detail view with transcript and cost/usage, follow-up prompts to idle sessions, per-session model and permission mode from a Rust-validated allowlist)",
+  "app": "orchestra",
+  "status": "done",
+  "scout": {
+    "written_by": "scout",
+    "facts": [
+      "git: orchestra on branch main @ 329e93c, working tree clean (read-only git rev-parse and status). The scout-facts collector was denied by the permission classifier and was not re-run or worked around.",
+      "build and tests: cargo test (desktop/src-tauri) = 67 passed, 0 failed, compiled green. npm test (desktop, vitest) = 25 passed in 3 files (ipc.test.ts, reply.test.ts, state.test.ts). npm run build (tsc + vite) not run.",
+      "claude CLI 2.1.296. claude --help (scratchpad/scout-d3-probe/help.txt, outside repo): --model <model> takes an alias (fable, opus, sonnet) or a full model name; --permission-mode <mode> choices: acceptEdits, auto, bypassPermissions, manual, dontAsk, plan; -r/--resume [value]; --output-format choices text, json, stream-json. The haiku alias is not listed in help.",
+      "orchestra/desktop/src-tauri/src/session/protocol.rs:9-25 Message enum: Init, Assistant{text,tool_name}, CanUseTool, UnsupportedControlRequest, Result{is_error,text}, Ignored, Unknown. Nothing else is parsed.",
+      "orchestra/desktop/src-tauri/src/session/protocol.rs:38-56 assistant: concatenates text blocks (44-48); keeps only the first tool_use block name (49-51), dropping its id and input; message.usage and message.model are dropped.",
+      "orchestra/desktop/src-tauri/src/session/protocol.rs:78-81 result: keeps only is_error and result text. total_cost_usd, usage, modelUsage, duration_ms, num_turns are dropped.",
+      "orchestra/desktop/src-tauri/src/session/protocol.rs:82 user (tool_result blocks) and rate_limit_event -> Ignored. system subtypes other than init -> Ignored (protocol.rs:35). Tool results are never read.",
+      "Fixture shapes (tests/fixtures/stream_json, redacted): assistant tool_use = msg.message.content[] {type:tool_use, id, name:Bash, input:{command, description}, caller:{type:direct}} (permission_allow.jsonl). Assistant text = content[] {type:text, text}. message.usage = {input_tokens, cache_creation_input_tokens, cache_read_input_tokens, output_tokens, iterations[]}.",
+      "Fixture shapes: user tool_result = msg.message.content[] {tool_use_id, type:tool_result, content: string (Bash completed with no output; array form not observed), is_error:false}; plus top-level msg.tool_use_result {stdout, stderr, interrupted, isImage, noOutputExpected} (permission_allow.jsonl).",
+      "Fixture shapes: result = {type:result, subtype, is_error, result, session_id, duration_ms (1146, 2865, 9960 seen), duration_api_ms, num_turns (1-2), total_cost_usd (0.00204274 seen), usage{input_tokens, cache_creation_input_tokens, cache_read_input_tokens, output_tokens, iterations[]}, modelUsage{model: {inputTokens, outputTokens, cacheReadInputTokens, cacheCreationInputTokens, costUSD, contextWindow, maxOutputTokens}}, permission_denials[], terminal_reason} (multi_turn.jsonl, permission_allow.jsonl, ask_user_question.jsonl).",
+      "Cost observation: in multi_turn.jsonl the second result modelUsage.cacheReadInputTokens is 36755 = 18144 + 18611 (the two turns per-turn cache reads), and total_cost_usd rises 0.00204 to 0.00400. This suggests modelUsage and total_cost are session-cumulative while usage is per turn. Inference from the fixture, not confirmed.",
+      "orchestra/desktop/src-tauri/src/session/state.rs:478-489 reply_line(text) is the follow-up path: refused unless status == Idle (479-481); builds a user line; resolves all Finished/Error items. Commit::Reply at state.rs:504-511 returns Idle to Working when epoch is unchanged.",
+      "orchestra/desktop/src-tauri/src/session/mod.rs:387-396 Sessions::reply: Suspended goes to resume_with (391-394, D2 lazy resume: spawns with --resume and writes the reply first); otherwise send_locked(reply_line) (395). Write-then-commit path is mod.rs:471-496. Follow-ups to an Idle session already work end to end at the backend (test mod.rs:713-725; replay state.rs:683-690).",
+      "orchestra/desktop/src-tauri/src/commands.rs:32-38 Answer::Reply{session_id,text} is the IPC entry (dispatch commands.rs:92; invoke answer at commands.rs:78-84). ipc.ts answer() sends {kind:reply} (types.ts Answer union).",
+      "UI for follow-up exists only on Finished inbox items: orchestra/desktop/src/components/InboxItemView.tsx:185-214 renders the Reply box only when !item.resolved (line 192). Error items have NO reply box (InboxItemView.tsx:43-48), yet an Idle session can end its turn with an Error item (state.rs:401-426 pushes Error when is_error, then Idle at 425). A session-level prompt box must cover this case too.",
+      "orchestra/desktop/src-tauri/src/session/process.rs:25 PROGRAM claude. process.rs:28-38 ARGS is const [&str; 9]: -p, --input-format stream-json, --output-format stream-json, --verbose, --include-hook-events, --permission-prompt-tool stdio. process.rs:42-49 build_args appends --resume <id> after ARGS (44-47); cmd.args at process.rs:127. No --model or --permission-mode today.",
+      "orchestra/desktop/src-tauri/src/session/process.rs:199-208 test resume_args_follow_fixed_args asserts args.len() == ARGS.len()+2 and args[ARGS.len()..] == [--resume, id]; it must change when per-session flags are added. process.rs:211-215 asserts the ARGS set.",
+      "orchestra/desktop/src-tauri/src/session/mod.rs:47-49 Spawner signature (&Path, Option<&ClaudeSessionId>, Sink); call sites mod.rs:297 (start, resume None) and mod.rs:418 (resume_with, resume Some); test fake at mod.rs:611-615. Settings must be threaded through all of them. A resumed process is a brand-new spawn, so settings must be re-passed on resume.",
+      "orchestra/desktop/src-tauri/src/session/store.rs:18 SCHEMA = 1. store.rs:83-86 load() requires schema == 1 exactly; any other value -> UnknownSchema (banner, saving off). store.rs:87 whole-file serde failure -> LoadError::Unreadable. store.rs:92-103 save serializes Snapshot with serde_json::to_vec on the writer thread.",
+      "orchestra/desktop/src-tauri/src/session/state.rs:119-128 PersistedSession has no serde default attribute and no deny_unknown_fields. A new field needs serde default (or Option) to load old files. mod.rs:848-864 test helper stored_session() builds PersistedSession as a full literal, so it breaks at compile time until updated.",
+      "orchestra/desktop/src-tauri/src/session/state.rs:345-354 recompute(): WaitingQuestion / WaitingPermission from the pending_order head, Working when none; NeedsAttention is sticky (346-348). state.rs:372-374 Init Starting to Working. state.rs:383-400 CanUseTool. state.rs:401-426 Result gives a Finished or Error item, then Idle (425). state.rs:427-436 unsupported control request gives NeedsAttention. state.rs:532-548 suspend gives Suspended or Ended. state.rs:558-573 mark_exit gives Ended (code 0, or resume failure) or Failed.",
+      "orchestra/desktop/src-tauri/src/session/mod.rs:327-350 Sessions::on_output is the one place every stdout line changes status: apply at 335-337, then publish at 346. mod.rs:216-226 publish() computes events and snapshot under inner, then emits under emit_order. state.rs header (lines 1-2) says the state machine does no I/O and takes no clock, so the notifier belongs in mod.rs (or the Emit hook), not state.rs.",
+      "orchestra/desktop/src-tauri/src/session/mod.rs:33-34 and 145-151: the emit callback runs under emit_order and must never call back into Sessions. A notifier called after publish, outside locks, avoids that. Restore never runs apply(): mod.rs:173-204 calls suspend only, so restored sessions produce no transitions and no notifications. mod.rs:329-332 readers are ignored during shutdown.",
+      "Focus check API present in the locked tauri: WebviewWindow::is_focused() returns Result<bool> at tauri-2.12.2/src/webview/webview_window.rs:1863 (cargo registry source).",
+      "orchestra/desktop/src-tauri/Cargo.lock:3069-3070 tauri 2.12.2; Cargo.lock:3198-3200 tauri-plugin-dialog 2.8.1; Cargo.lock:3240-3242 tauri-plugin-window-state 2.5.0. tauri-plugin-notification is NOT in the lock. Cargo.toml:21 tauri = 2; Cargo.toml:24-25 plugins. lib.rs:13-17 registers plugins on the builder.",
+      "tauri-plugin-notification: docs.rs latest is 2.6.0, with a normal dependency on tauri ^2.12, which the locked tauri 2.12.2 satisfies (docs.rs crate page, fetched 2026-10-10). The plugin docs say the Rust example only registers the plugin and calls the builder, and require Rust >= 1.90.",
+      "Rust-only use needs no capability: commands.rs:9 and :46 already call app.dialog().file().blocking_pick_folder() from Rust, and capabilities/default.json grants only core:default (lines 8-10). The notification Rust API should behave the same, so no notification:default is needed if it is only called from Rust (inference from the dialog precedent, not compiled).",
+      "Windows toast identity: the plugin docs table says Only works for installed apps. Shows powershell name and icon in development (plugin docs page, fetched 2026-10-10). A tauri dev build does not get Orchestra identity on toasts.",
+      "Transcript and snapshot cost today: the full history is cloned under the lock on EVERY stdout line. mod.rs:91-100 Inner::inbox() clones all items; mod.rs:102-122 Inner::snapshot() clones every session PersistedSession; mod.rs:124-129 events_for emits InboxUpdated(self.inbox()) with the FULL inbox for every line; mod.rs:216-226 publish runs on every line (mod.rs:346); lib.rs:35-36 serializes the full inbox over IPC as inbox-updated.",
+      "Per-session storage: lib.rs:28-29 app_data_dir.join(state.json) is the only file; store.rs:121-171 Writer is snapshot-only (one thread, coalesces to the newest revision). No per-session file exists. Session ids are s<n> (mod.rs:279), safe as file names; restore parses them at mod.rs:182. ~/.claude/projects exists on this machine (Claude own conversation store; contents not read, format not a contract).",
+      "Frontend layout: App.tsx:101-104 renders main.columns with SessionList and Inbox. No router, no selection state. App.tsx:24 useReducer(reducer, initialState); state.ts:48-61 reducer actions sessions-loaded, session-updated, inbox-loaded, inbox-updated. Nothing tracks a selected session.",
+      "SessionList.tsx:16-25 LIVE record gates the Stop button (Stop at :49). SessionList.tsx:21-53 renders one card per session with status badge and last_message; there is no detail on click.",
+      "IPC event channels: session-updated (ipc.ts:155 onSessionUpdated, decodeSession) and inbox-updated (ipc.ts:167 onInboxUpdated, decodeInbox), both emitted from lib.rs:35-36. Invoke wrappers in ipc.ts: pickProject, listProjects, startSession, storageStatus, listSessions, listInbox, answer, stopSession. A transcript event needs a new channel, a new Event variant (mod.rs:40-43), and a strict decoder that drops bad payloads.",
+      "CSP: orchestra/desktop/src-tauri/tauri.conf.json:24 csp = default-src 'self' ... connect-src ipc: http://ipc.localhost (no unsafe-inline, no unsafe-eval). Notifications need no CSP change.",
+      "Capabilities: orchestra/desktop/src-tauri/capabilities/default.json:5-10 windows [main], permissions [core:default] only. The dialog plugin is used from Rust only (commands.rs:46) and needs no grant.",
+      "IPC arg structs: commands.rs:19-24 StartArgs and :26-30 StopArgs are deny_unknown_fields. start_session (commands.rs:59-65) takes only project_id and prompt, so per-session settings need new fields on StartArgs (or a new command) with the same strictness. Sessions::start (mod.rs:271) has no settings parameter."
+    ],
+    "unknowns": [
+      "--permission-mode with --permission-prompt-tool stdio: unknown whether bypassPermissions, dontAsk, auto or acceptEdits suppress can_use_tool requests entirely, which would make the inbox gate disappear for that session. Not probed: probing needs live model turns (API cost). Needs a one-off run with a write command, outside the repo.",
+      "--model: unknown whether the haiku alias is accepted (help lists fable, opus, sonnet; the spike fixture used model haiku, id claude-haiku-5-5). Full ids should work, but unverified. Needs a live probe, which costs API calls.",
+      "Resume: unknown whether a resumed claude restores model and permission mode from its transcript when the flags are omitted. Plan on re-passing them on every spawn (process.rs:42-49, mod.rs:418).",
+      "total_cost_usd: per-turn or session-cumulative? The multi_turn fixture suggests cumulative (see facts). The UI label depends on it. Needs a two-turn live run, or the claude docs.",
+      "Windows toasts in tauri dev: plugin docs say an installed app is needed and dev shows PowerShell identity. Not tested (no toast fired this run). A real Orchestra identity needs an installed or shortcut-registered build. Confirm before promising that it works from tauri dev.",
+      "Rust-only notification call with no capability, and the 2.6.0 API shape: inferred from the dialog precedent and the plugin docs. Not compiled. Confirm when the dependency is added.",
+      "Schema decision: adding per-session settings as serde-default fields keeps schema 1 readable by this build, and older builds ignore unknown fields (PersistedSession has no deny_unknown_fields). An enum-typed field whose variant an older build lacks would make that build whole load Unreadable (store.rs:87). Choose: bump to schema 2 (older builds then show the banner, by design) or store validated strings. Not decided here.",
+      "The array form of tool_result content (a list of blocks, including images) is not in any fixture. The transcript decoder must tolerate string and array, and cap image or base64 payloads.",
+      "npm run build (tsc + vite) was not run; vitest does not typecheck. cargo clippy not run.",
+      "The scout-facts collector was denied by the auto-mode permission classifier, so its output is not in this report. The git facts above were gathered directly with read-only commands.",
+      "D2 follow-up item 1 (ROADMAP D2: every stdout line copies the inbox history) is still open. D3 adds more per-line work unless it lands first."
+    ],
+    "risks": [
+      "PLAN-KILLER (a): adding a transcript to SessionState/PersistedSession makes every stdout line clone and emit more under the lock (mod.rs:102-122, 216-226, 346). A long session then costs O(n^2) and grows state.json without bound, and state.json is rewritten whole on each save (store.rs:92-103). Keep the transcript in a separate append-only per-session file with its own writer thread, under app_data_dir passed in beside state.json (lib.rs:28-29), and send only new entries as an event. Fixing the D2 full-inbox clone and emit (mod.rs:91-100, 124-129, lib.rs:35-36) first is cheaper and reduces the risk.",
+      "PLAN-KILLER (b): Windows toasts. Per the plugin docs, toasts from an unpackaged tauri dev build show PowerShell name and icon and only work for installed apps. A works-in-dev check can pass without Orchestra identity being exercised, so the notification test must include an installed or shortcut-registered build.",
+      "Allowlist safety: bypassPermissions (and possibly dontAsk or auto) may remove can_use_tool prompts, which would silently remove the inbox gate for that session. The allowlist should exclude such modes or gate them explicitly. This is an architect decision, but claude actual behaviour is unverified (see unknowns).",
+      "Schema: a new enum-typed field without a schema bump makes older builds report Unreadable and save nothing (store.rs:87). A bump makes this build refuse older files (store.rs:84). Decide before the field lands.",
+      "Tests that break by design: process.rs:199-208 (exact arg layout), mod.rs:848-864 (PersistedSession literal), mod.rs:611-615 (Spawner closure). Plan the signature change in one slice.",
+      "Follow-up UI gap: the reply box exists only on unresolved Finished items (InboxItemView.tsx:192). An Idle session whose last item is Error has no reply box (InboxItemView.tsx:43-48). A session-detail prompt must handle both, and must refuse while Working (state.rs:479-481).",
+      "Notifications must fire only on transitions (compare status before and after apply, mod.rs:335-337), never on restore (mod.rs:173-204 does not call apply) or during shutdown (mod.rs:329-332). Suppress when is_focused() is true (webview_window.rs:1863). Do not call Sessions from the emit callback (mod.rs:33-34).",
+      "Cost display: if total_cost_usd is session-cumulative (see unknowns), summing per result overcounts. Store the last total and show deltas, or label it as the session total.",
+      "Transcript content can be large (a tool_result can carry a whole file stdout). Cap each entry, as MAX_RESULT_BYTES does (state.rs:15), and sanitize before rendering."
+    ]
+  },
+  "architect": {
+    "written_by": "architect",
+    "shape": "single-loop",
+    "parallel_safe": false,
+    "rationale": "single-loop with five ordered commits on one branch of the orchestra git repo. Not a diamond: the slices cannot be given disjoint file sets. src-tauri/src/session/mod.rs is the hub every backend feature changes (s1 publish/events_for, s2 Spawner signature and resume path, s3 on_output transcript hook and new Event variant, s5 notifier after publish); lib.rs is touched by s3 (transcript dir, event channel, command) and s5 (plugin, notifier); commands.rs by s2 and s3; types.ts/ipc.ts by s2 and s4; state.ts by s1 and s4. Separate branches would guarantee a fan-in conflict in mod.rs. Cargo.toml and Cargo.lock appear only in s5. s1 goes first because it restructures publish/events_for, which s3 extends with per-line work; s4 goes last because it consumes the settings types from s2 and the IPC from s3. Risk tags: every slice touches a file another slice also touches (mod.rs, or types.ts/ipc.ts/state.ts), which is high by the fleet rule. In addition, s2 decides which flags reach the claude command line and whether the inbox gate can be bypassed; s3 writes tool output (which can contain secrets from the user project) to disk and derives a file path from a session id; s5 adds a native plugin dependency and a hook beside the locks. s4 is high only by the shared-file rule. It has no sensitive data, so its reviewer can focus on merge-by-seq and canPrompt.",
+    "plan": [
+      {
+        "slice": "s1",
+        "intent": "D2 follow-up (1) (gate G1): stop cloning the whole inbox and the whole snapshot on every stdout line. (a) SessionState gets a non-persisted inbox_rev counter, bumped on every inbox mutation. Session keeps the last emitted rev, and events_for emits InboxUpdated only when the rev changed, carrying only the items of that session. (b) A snapshot is queued only when status, inbox_rev or claude_session_id changed, or from an explicit command (start, answer, reply, stop, add_project). Text-only lines (last_message, last_activity_at) mark the session dirty and are saved by the next significant save or by shutdown, which always snapshots. (c) Frontend reducer: inbox-updated upserts by id (the event copy wins) and never drops items of other sessions; inbox-loaded keeps mergeInbox.",
+        "files": [
+          "orchestra/desktop/src-tauri/src/session/mod.rs",
+          "orchestra/desktop/src-tauri/src/session/state.rs",
+          "orchestra/desktop/src/state.ts",
+          "orchestra/desktop/src/state.test.ts"
+        ],
+        "done_when": "cd orchestra/desktop/src-tauri && C:/Users/natha/.cargo/bin/cargo test text_lines_emit_no_inbox_event_and_queue_no_save -> 1 passed; cd orchestra/desktop/src-tauri && C:/Users/natha/.cargo/bin/cargo test inbox_event_carries_only_that_sessions_items -> 1 passed; cd orchestra/desktop/src-tauri && C:/Users/natha/.cargo/bin/cargo test shutdown_saves_text_only_changes -> 1 passed; cd orchestra/desktop/src-tauri && C:/Users/natha/.cargo/bin/cargo test -> 0 failed (>= 70 passed); cd orchestra/desktop && npm test -> 0 failed, including a state.test.ts case: inbox-updated upserts and keeps items of other sessions",
+        "risk": "high",
+        "risk_reason": "changes when state.json is written (a missed save is a lost answer resolution after a crash) and rewrites publish in mod.rs, which s2, s3 and s5 also touch",
+        "notes": "Beyond the stated D3 scope; in the run only if the human approves G1. Inbox history pruning or capping is not part of this slice. When done, the D2 follow-up (1) line in orchestra/ROADMAP.md may be ticked in place; ROADMAP.md is gitignored and is not committed."
+      },
+      {
+        "slice": "s2",
+        "intent": "Per-session model and permission mode. Rust enums Model {Opus, Sonnet, Fable} and PermissionMode {Manual, AcceptEdits, Plan} (allowlist per gates G3/G4), each mapped to a fixed static str. StartArgs gains optional model and permission_mode (deny_unknown_fields kept; an unlisted value is a serde error and is never passed through). Absent means no flag, which is the behaviour today. The Spawner signature becomes (&Path, &SpawnArgs{resume: Option<&ClaudeSessionId>, settings: SessionSettings}, Sink). build_args appends --model/--permission-mode after ARGS and before --resume. Both call sites (start, resume_with) pass the stored settings, so a resume re-passes them. Settings live on Session and on StoredSession (store.rs) as serde(default) Option<String> fields within schema 1, parsed through the same allowlist on load; an unknown stored value loads as None and the session is still listed. NewSession.tsx gains two selects (Default/Opus/Sonnet/Fable; Default/Manual/Accept edits/Plan). SessionSummary carries the settings so SessionList can show them.",
+        "files": [
+          "orchestra/desktop/src-tauri/src/session/process.rs",
+          "orchestra/desktop/src-tauri/src/session/mod.rs",
+          "orchestra/desktop/src-tauri/src/session/store.rs",
+          "orchestra/desktop/src-tauri/src/session/settings.rs",
+          "orchestra/desktop/src-tauri/src/commands.rs",
+          "orchestra/desktop/src/types.ts",
+          "orchestra/desktop/src/ipc.ts",
+          "orchestra/desktop/src/ipc.test.ts",
+          "orchestra/desktop/src/components/NewSession.tsx",
+          "orchestra/desktop/src/components/SessionList.tsx"
+        ],
+        "done_when": "cd orchestra/desktop/src-tauri && C:/Users/natha/.cargo/bin/cargo test args_carry_settings_after_fixed_args -> 1 passed; cd orchestra/desktop/src-tauri && C:/Users/natha/.cargo/bin/cargo test resume_repasses_settings -> 1 passed (the fake spawner records settings on start and on resume_with); cd orchestra/desktop/src-tauri && C:/Users/natha/.cargo/bin/cargo test start_args_reject_unlisted_values -> 1 passed (haiku, bypassPermissions, dontAsk, auto, default and a value with a leading -- are all rejected); cd orchestra/desktop/src-tauri && C:/Users/natha/.cargo/bin/cargo test schema1_file_without_settings_loads -> 1 passed; cd orchestra/desktop/src-tauri && C:/Users/natha/.cargo/bin/cargo test unknown_stored_mode_loads_as_none -> 1 passed; cd orchestra/desktop/src-tauri && C:/Users/natha/.cargo/bin/cargo test -> 0 failed; cd orchestra/desktop && npm test -> 0 failed; cd orchestra/desktop && npm run build -> exit 0; git -C orchestra diff 329e93c --stat -- desktop/src-tauri/capabilities desktop/src-tauri/tauri.conf.json -> empty",
+        "risk": "high",
+        "risk_reason": "decides which strings reach the claude command line, and a wrong mode silently removes the inbox permission gate; changes the Spawner signature and resume path in mod.rs, which s1/s3/s5 share; changes the on-disk record",
+        "notes": "process.rs resume_args_follow_fixed_args and the mod.rs Spawner fake (611-615) change by design. Pre-merge human-read probe P1 (gate G3) confirms the chosen modes still emit can_use_tool before the allowlist is trusted."
+      },
+      {
+        "slice": "s3",
+        "intent": "Transcript backend, kept out of SessionState, PersistedSession and state.json. New session/transcript.rs with a pure entries_from_value(&Value) -> Vec<Entry>. Entry kinds: UserPrompt{text} (recorded by Orchestra on start, reply and resume), AssistantText{text}, ToolUse{id,name,input_preview}, ToolResult{tool_use_id,is_error,content}, TurnResult{is_error,subtype,total_cost_usd,duration_ms,num_turns,usage{input,output,cache_read,cache_creation}}, and Truncated. tool_result content accepts a string or an array of blocks: text blocks are joined, image/base64 blocks become the placeholder [image], unknown blocks become [block type]. Caps: 8 KiB per text or content field and 2 KiB for tool input JSON, truncated on a char boundary with a truncated flag. Per-session file cap is 16 MiB; past it, one Truncated entry is written and appends stop. A TranscriptStore owned by Sessions has a Disk(app_data_dir/transcripts) or Memory backend (Memory for tests, or when storage is off). The file name comes only from an id that is s followed by digits and exists in the session map. Each session gets one append-only JSONL file, appended synchronously from its reader thread under a per-session mutex that is never held together with Inner. Each entry gets a seq, lazily initialised from the file on first touch. on_output parses the line once, computes entries before taking Inner, appends them, and passes them to publish as Event::TranscriptAppended{session_id, entries}. lib.rs emits that as transcript-appended. A new command get_transcript{session_id} (deny_unknown_fields) returns the last 1000 entries plus next_seq. protocol.rs exposes a parse-from-Value entry so each line is parsed once. Cost is never summed: the latest TurnResult is the session total as reported by claude.",
+        "files": [
+          "orchestra/desktop/src-tauri/src/session/transcript.rs",
+          "orchestra/desktop/src-tauri/src/session/protocol.rs",
+          "orchestra/desktop/src-tauri/src/session/mod.rs",
+          "orchestra/desktop/src-tauri/src/commands.rs",
+          "orchestra/desktop/src-tauri/src/lib.rs"
+        ],
+        "done_when": "cd orchestra/desktop/src-tauri && C:/Users/natha/.cargo/bin/cargo test transcript -> all passed, 0 failed; the run includes tool_result_accepts_string_and_array, image_block_is_replaced, entry_is_capped_on_char_boundary, file_cap_writes_marker_then_stops, rejects_bad_session_id, permission_allow_fixture_yields_tool_use_and_result, multi_turn_fixture_cost_is_last_not_sum and transcript_text_never_in_snapshot (a serialized Snapshot contains no tool_result content and no tool input); cd orchestra/desktop/src-tauri && C:/Users/natha/.cargo/bin/cargo test -> 0 failed; git -C orchestra diff 329e93c -- desktop/src-tauri/src/session/state.rs desktop/src-tauri/src/session/store.rs, grep -ci transcript -> 0",
+        "risk": "high",
+        "risk_reason": "writes tool output, which can include secrets from the user project, to disk; derives a file path from a session id; adds per-line I/O on the reader thread; mod.rs and lib.rs are shared with other slices",
+        "notes": "Persistence is gate G2 (recommended: persist). D3 never deletes transcript files."
+      },
+      {
+        "slice": "s5",
+        "intent": "OS notifications. New src-tauri/src/notify.rs with a pure decide(before: SessionStatus, after: SessionStatus, new_item: Option<InboxKind>) -> Option<Notice> where Notice.kind is one of NeedsInput, Finished, Errored, Failed. It fires on entering WaitingPermission/WaitingQuestion/NeedsAttention from a non-waiting status, on entering Idle with a new Finished or Error item, and on entering Failed. It never fires on waiting->waiting, on Stop (Ended), on Suspended, or on Starting->Working. Sessions takes a Notify callback; on_output records the status before apply and calls decide after publish, outside Inner and emit_order. Restore never calls apply, and shutdown makes on_output return early, so neither one notifies. lib.rs registers tauri-plugin-notification 2.6.x and implements the callback: it skips when is_focused() on the main window is Ok(true), otherwise it calls app.notification().builder() with title Orchestra and body <project>: needs your input / finished / turn failed / session failed, then show(). The callback never calls Sessions. No capability is added, because the plugin is called from Rust only, as dialog is. The body carries the project name and the kind only: no prompt, question or result text.",
+        "files": [
+          "orchestra/desktop/src-tauri/src/notify.rs",
+          "orchestra/desktop/src-tauri/src/session/mod.rs",
+          "orchestra/desktop/src-tauri/src/lib.rs",
+          "orchestra/desktop/src-tauri/Cargo.toml",
+          "orchestra/desktop/src-tauri/Cargo.lock"
+        ],
+        "done_when": "cd orchestra/desktop/src-tauri && C:/Users/natha/.cargo/bin/cargo test notify -> all passed, 0 failed, including needs_input_on_entering_wait, no_notice_wait_to_wait, finished_on_turn_end, errored_on_error_result, no_notice_on_stop_or_suspend, restore_notifies_nothing and shutdown_notifies_nothing (a recording notifier in the mod.rs rig); cd orchestra/desktop/src-tauri && C:/Users/natha/.cargo/bin/cargo test -> 0 failed; cd orchestra/desktop/src-tauri && C:/Users/natha/.cargo/bin/cargo tree -i tauri-plugin-notification --depth 0 -> tauri-plugin-notification v2.6.x; git -C orchestra diff 329e93c --stat -- desktop/src-tauri/tauri.conf.json desktop/src-tauri/capabilities -> empty; human-read on an installed build: the owner runs npm run tauri build in orchestra/desktop, installs the NSIS or MSI bundle, unfocuses the window, starts one session that hits a permission prompt and one that finishes, sees two toasts titled Orchestra with the app icon (not PowerShell), and sees none while the window is focused",
+        "risk": "high",
+        "risk_reason": "new native dependency in Cargo.toml/Cargo.lock; the notifier hook sits in mod.rs on_output beside the locks (a deadlock if it is called under Inner/emit_order or calls back into Sessions); tests cannot see its real effect",
+        "notes": "A tauri dev toast shows PowerShell identity by design (plugin docs), and that is not a failure. The plugin requires Rust >= 1.90, so check rustc --version before adding it. If 2.6.x does not resolve against tauri 2.12.2, or the Rust call needs a capability, stop and report instead of adding notification:default."
+      },
+      {
+        "slice": "s4",
+        "intent": "Session detail view and follow-up prompts. The reducer gains a selected session id. Clicking a session card opens SessionDetail in place of the Inbox column, and Back returns. The detail header shows status, project, model and mode. A cost block shows the latest TurnResult, labelled session total reported by claude, plus last-turn tokens. The transcript list subscribes to transcript-appended first, then calls get_transcript and merges by seq, so nothing is lost or duplicated. Text renders as React text only: no markdown and no dangerouslySetInnerHTML; long fields are collapsed. The prompt box is enabled for Idle (whether the last item is Finished or Error) and for Suspended (which goes through the existing reply and the D2 lazy resume). It is disabled, with a visible reason, for Starting/Working/Waiting*/NeedsAttention, and absent for Ended/Failed. It sends answer with kind reply as today, and the Rust refusal remains the authority. Strict decoders for the new event and command drop malformed payloads.",
+        "files": [
+          "orchestra/desktop/src/components/SessionDetail.tsx",
+          "orchestra/desktop/src/components/SessionList.tsx",
+          "orchestra/desktop/src/App.tsx",
+          "orchestra/desktop/src/App.css",
+          "orchestra/desktop/src/state.ts",
+          "orchestra/desktop/src/state.test.ts",
+          "orchestra/desktop/src/detail.ts",
+          "orchestra/desktop/src/detail.test.ts",
+          "orchestra/desktop/src/types.ts",
+          "orchestra/desktop/src/ipc.ts",
+          "orchestra/desktop/src/ipc.test.ts"
+        ],
+        "done_when": "cd orchestra/desktop && npm test -> 0 failed; detail.test.ts covers canPrompt for all nine statuses (true only for idle and suspended), mergeTranscript dedupe and order by seq, and costLabel using the last TurnResult rather than a sum; ipc.test.ts covers decodeTranscript dropping malformed entries; cd orchestra/desktop && npm run build -> exit 0; grep -rn dangerouslySetInnerHTML orchestra/desktop/src -> no matches; human-read: in npm run tauri dev the owner opens the detail of a session, sees assistant text, a tool call, a tool result and the cost, then sends a follow-up to an Idle session whose last item is Error and to a Paused one",
+        "risk": "high",
+        "risk_reason": "no sensitive data, but types.ts, ipc.ts and state.ts are also touched by s1/s2 (fleet rule); the reviewer should focus on merge-by-seq and canPrompt",
+        "notes": "Desktop app only. Orchestra ui is native-desktop + native-mobile and mobile/ is untouched; there is no responsive-web requirement. Once s2-s5 land, the four D3 lines in orchestra/ROADMAP.md are ticked in place; the file is gitignored and is not committed."
+      }
+    ],
+    "edges": [
+      "s1 -> s3: s3 adds TranscriptAppended to the events_for/publish restructured in s1, and relies on per-line publish no longer being O(history)",
+      "s2 -> s4: s4 shows the SessionSummary settings fields and types added in s2",
+      "s3 -> s4: s4 consumes get_transcript, the transcript-appended event and the Entry shapes from s3",
+      "s2 -> s3 -> s5: commit order only (shared mod.rs/lib.rs), not an artifact edge"
+    ],
+    "commit_order": [
+      "s1",
+      "s2",
+      "s3",
+      "s5",
+      "s4"
+    ],
+    "not_doing": [
+      "Pruning or capping inbox history in state.json (D2 follow-up 1 is fixed for per-line cost only, not total size)",
+      "D2 follow-ups 2-5 (window.rs outer size, deleted folder, transient error on the first resumed turn, hardening)",
+      "The haiku alias, full model ids or free-text model entry; bypassPermissions, dontAsk and auto; changing the settings of an existing session (settings are fixed at start)",
+      "Reading the claude-owned ~/.claude/projects transcripts; backfilling transcripts for sessions from before D3",
+      "Deleting or rotating transcript files; a session-delete feature",
+      "Markdown rendering, syntax highlighting or search in the transcript",
+      "Notification click handling, action buttons, sound settings, a do-not-disturb toggle, or any frontend notification API (no capability)",
+      "mobile/, protocol/, fleet/, tauri.conf.json, capabilities, CSP",
+      "A schema bump (stays at schema 1)",
+      "Committing orchestra/ROADMAP.md (gitignored; ticked in place only)"
+    ],
+    "gate_decisions": [
+      "G1: include the D2 follow-up (1) fix as slice s1 of D3, before any per-line transcript work. Recommended: yes.",
+      "G2: transcript persistence. Recommended: persist as append-only JSONL per session under app_data_dir/transcripts (s3 as written).",
+      "G3: permission-mode allowlist. Recommended: manual, acceptEdits, plan, plus Default = no flag. This CLI (2.1.296) does NOT accept default: its choices are acceptEdits, auto, bypassPermissions, manual, dontAsk and plan, so the suggested default becomes manual. acceptEdits by design lets file edits through without an inbox item, and the UI labels it so. Pre-merge human-read probe P1 (one-off, outside the repo, a few API turns): run claude -p with --permission-prompt-tool stdio under each of manual, acceptEdits and plan, ask for a Bash write, and confirm a can_use_tool control_request arrives. Any mode that does not emit it is removed before merge.",
+      "G4: model allowlist opus, sonnet, fable (the three aliases in claude --help) plus Default = no flag. Validated as a Rust enum on the IPC struct (serde rejects anything else) and again on load. haiku stays out until a live probe shows the alias is accepted.",
+      "G5: schema stays at 1. Settings are serde(default) Option<String> fields on StoredSession, parsed through the allowlist on load (unknown -> None). Reason: the D2 build has no deny_unknown_fields, so it loads a D3 file and ignores the fields. Storing strings rather than a serde enum on disk means a future variant can never make the whole load of an older build Unreadable (store.rs:87). Accepted cost: if the owner downgrades to D2 and that build saves, the settings are dropped and those sessions resume with no flags.",
+      "G6: cost is shown as the latest total_cost_usd, labelled session total reported by claude, and never summed. Whether it resets in a --resume process is unknown; if it does, the reset will show in the UI rather than be hidden.",
+      "G7: the notification body carries the project name and kind only (no question, prompt or result text), because toasts show on the lock screen."
+    ],
+    "gate_options": {
+      "G1": {
+        "recommended": "yes: s1 lands first",
+        "alternative": "no: drop s1; s3 then emits transcript entries without touching publish/events_for, per-line cost stays O(history), and D3 adds to it"
+      },
+      "G2": {
+        "recommended": "persist (append-only JSONL per session, caps as in s3)",
+        "alternative": "memory-only bounded ring per session (for example 1000 entries / 4 MiB), lost on restart. Simpler, with no file path and no secrets on disk, but the detail view of a resumed session starts empty"
+      },
+      "G3": {
+        "recommended": "manual, acceptEdits, plan + Default (no flag), gated by probe P1",
+        "alternatives": [
+          "manual and plan only (drop acceptEdits so every write still reaches the inbox)",
+          "always pass an explicit mode, defaulting to manual, so a defaultMode in the user settings (such as bypassPermissions) can no longer remove the gate; this changes the current behaviour of existing sessions"
+        ]
+      },
+      "G4": {
+        "recommended": "opus, sonnet, fable + Default (no flag)",
+        "alternative": "add haiku after a live probe confirms the alias"
+      },
+      "G5": {
+        "recommended": "schema 1 with serde-default string fields",
+        "alternative": "bump to schema 2 with a 1->2 load path; a D2 build then shows the unknown-schema banner and saves nothing (a louder downgrade, more code)"
+      },
+      "G7": {
+        "recommended": "project name + kind only",
+        "alternative": "include the first 100 chars of the question or result"
+      }
+    }
+  },
+  "approved_by_human": true,
+  "scope_exceptions": [
+    "ORCHESTRATOR-OWNED, normally empty. Paths a builder may write that the approved plan does not list. guard-builder-scope.py DENIES a builder's Write/Edit outside architect.plan[].files, and this is the only way through it. Adding one is a deliberate, recorded act: pair it with deviation_from_approved_plan on the slice that needed it, and say why the gate's file set was wrong. Never add a path to silence the guard on work the human did not approve."
+  ],
+  "builders": {
+    "s1": {
+      "status": "done",
+      "branch": "d3-notify-detail",
+      "commit": "ba6841b",
+      "changed": [
+        "orchestra/desktop/src-tauri/src/session/mod.rs",
+        "orchestra/desktop/src-tauri/src/session/state.rs",
+        "orchestra/desktop/src/state.ts",
+        "orchestra/desktop/src/state.test.ts"
+      ],
+      "notes": "No persisted/read 'dirty' flag: a text-only line is simply not snapshotted, and the next snapshot or shutdown carries it (an unread field would warn).",
+      "gate_results": "cargo test text_lines_emit_no_inbox_event_and_queue_no_save -> 1 passed; cargo test inbox_event_carries_only_that_sessions_items -> 1 passed; cargo test shutdown_saves_text_only_changes -> 1 passed; cargo test -> 70 passed; 0 failed (0 build warnings); npm test -> 3 files, 25 passed, 0 failed (includes 'inbox-updated upserts and keeps items of other sessions', replacing the old 'replaces the whole inbox' case)",
+      "written_by": "builder"
+    },
+    "s2": {
+      "status": "done",
+      "branch": "d3-notify-detail",
+      "commit": "b3528de",
+      "changed": [
+        "orchestra/desktop/src-tauri/src/session/settings.rs",
+        "orchestra/desktop/src-tauri/src/session/process.rs",
+        "orchestra/desktop/src-tauri/src/session/mod.rs",
+        "orchestra/desktop/src-tauri/src/session/store.rs",
+        "orchestra/desktop/src-tauri/src/commands.rs",
+        "orchestra/desktop/src/types.ts",
+        "orchestra/desktop/src/ipc.ts",
+        "orchestra/desktop/src/ipc.test.ts",
+        "orchestra/desktop/src/components/NewSession.tsx",
+        "orchestra/desktop/src/components/SessionList.tsx"
+      ],
+      "notes": "SessionSummary.model/permission_mode are optional in the TS type only, because state.test.ts (outside s2's set) builds SessionSummary literals and tsc covers tests; the decoder always sets them.",
+      "probe_p1": "Scratch dir under %TEMP% outside the repo (removed after), claude 2.1.296, ARGS + --model sonnet + --permission-mode <m>, one user line asking for one Bash command, killed at first control_request or result. Round 1 (echo hi): NO mode (incl. no flag) emitted can_use_tool because echo is auto-allowed; inconclusive. Round 2 (touch of a file in the scratch dir): no flag -> can_use_tool Bash; manual -> can_use_tool Bash; plan -> can_use_tool ExitPlanMode (Bash not attempted); acceptEdits -> no can_use_tool, touch auto-accepted (acceptEdits auto-accepts filesystem commands by design). Round 3 (python -c 'print(1+1)', a non-edit command): none -> can_use_tool Bash; acceptEdits -> can_use_tool Bash. Conclusion: all of manual, acceptEdits, plan and no-flag emit can_use_tool for permission-needing tools; acceptEdits only skips edit-class commands. Allowlist kept as approved. Cost about 0.05 USD per completed turn.",
+      "gate_results": "cargo test args_carry_settings_after_fixed_args -> 1 passed; resume_repasses_settings -> 1 passed; start_args_reject_unlisted_values -> 1 passed (haiku, Opus, --model, bypassPermissions, dontAsk, auto, default, --dangerously-skip-permissions, Plan, empty all rejected); schema1_file_without_settings_loads -> 1 passed; unknown_stored_mode_loads_as_none -> 1 passed; cargo test -> 79 passed, 0 failed, 0 warnings; npm test -> 3 files, 27 passed, 0 failed; npm run build -> exit 0; git -C orchestra diff 329e93c --stat -- desktop/src-tauri/capabilities desktop/src-tauri/tauri.conf.json -> empty",
+      "written_by": "builder"
+    },
+    "s3": {
+      "status": "done",
+      "branch": "d3-notify-detail",
+      "commit": "7c427b9",
+      "changed": [
+        "orchestra/desktop/src-tauri/src/session/transcript.rs",
+        "orchestra/desktop/src-tauri/src/session/protocol.rs",
+        "orchestra/desktop/src-tauri/src/session/mod.rs",
+        "orchestra/desktop/src-tauri/src/commands.rs",
+        "orchestra/desktop/src-tauri/src/lib.rs"
+      ],
+      "notes": "on_output now takes the Inner lock twice per line (liveness check, then apply) so disk I/O runs outside it; protocol::parse_line is test-only now. UserPrompt is appended after a successful write, not before.",
+      "gate_results": "cargo test transcript -> 12 passed, 0 failed (tool_result_accepts_string_and_array, image_block_is_replaced, entry_is_capped_on_char_boundary, file_cap_writes_marker_then_stops, rejects_bad_session_id, permission_allow_fixture_yields_tool_use_and_result, multi_turn_fixture_cost_is_last_not_sum all ok; transcript_text_never_in_snapshot ok in session::tests); cargo test -> 93 passed, 0 failed, 0 warnings; git -C orchestra diff 329e93c -- desktop/src-tauri/src/session/state.rs desktop/src-tauri/src/session/store.rs | grep -ci transcript -> 0",
+      "written_by": "builder",
+      "fix_1": {
+        "written_by": "builder",
+        "status": "done",
+        "branch": "d3-notify-detail",
+        "commit": "a533f9f",
+        "changed": [
+          "orchestra/desktop/src-tauri/src/session/transcript.rs"
+        ],
+        "notes": "",
+        "gate_results": [
+          {
+            "command": "cd orchestra/desktop/src-tauri && cargo test transcript",
+            "output": "14 passed; 0 failed (includes torn_tail_keeps_max_seq_and_starts_on_a_new_line, garbage_line_in_the_middle_does_not_reset_seq)"
+          },
+          {
+            "command": "cd orchestra/desktop/src-tauri && cargo test",
+            "output": "106 passed; 0 failed; no warnings"
+          }
+        ]
+      },
+      "fix_2": {
+        "written_by": "builder",
+        "status": "done",
+        "branch": "d3-notify-detail",
+        "commit": "413f619",
+        "changed": [
+          "orchestra/desktop/src-tauri/src/session/transcript.rs"
+        ],
+        "notes": "",
+        "gate_results": [
+          {
+            "command": "cd orchestra/desktop/src-tauri && cargo test transcript",
+            "output": "16 passed; 0 failed (incl. tear_inside_a_multibyte_char_keeps_history_and_numbering, newline_before_a_torn_tail_counts_toward_the_cap)"
+          },
+          {
+            "command": "cargo test (full)",
+            "output": "test result: ok. 108 passed; 0 failed; no warnings"
+          }
+        ]
+      }
+    },
+    "s5": {
+      "status": "done",
+      "branch": "d3-notify-detail",
+      "commit": "e7412a4",
+      "changed": [
+        "orchestra/desktop/src-tauri/src/notify.rs",
+        "orchestra/desktop/src-tauri/src/session/mod.rs",
+        "orchestra/desktop/src-tauri/src/lib.rs",
+        "orchestra/desktop/src-tauri/Cargo.toml",
+        "orchestra/desktop/src-tauri/Cargo.lock"
+      ],
+      "notes": "tauri-plugin-notification 2.6.0 resolved against locked tauri 2.12.2 with no tauri bump (lock diff is additions only); rustc 1.99.0. Toast identity and no-toast-when-focused are human-read on an installed build, not claimed.",
+      "human_read_pending": "Owner: npm run tauri build in orchestra/desktop, install the NSIS or MSI bundle, unfocus the window, start one session that hits a permission prompt and one that finishes: two toasts titled Orchestra with the app icon (not PowerShell), none while the window is focused.",
+      "gate_results": "cargo test notify -> 11 passed, 0 failed (needs_input_on_entering_wait, no_notice_wait_to_wait, finished_on_turn_end, errored_on_error_result, no_notice_on_stop_or_suspend, restore_notifies_nothing, shutdown_notifies_nothing plus 4 more); cargo test -> 104 passed, 0 failed, 0 warnings; cargo tree -i tauri-plugin-notification --depth 0 -> tauri-plugin-notification v2.6.0; git -C orchestra diff 329e93c --stat -- desktop/src-tauri/tauri.conf.json desktop/src-tauri/capabilities -> empty",
+      "written_by": "builder"
+    },
+    "s4": {
+      "status": "done",
+      "branch": "d3-notify-detail",
+      "commit": "4a4a7a9",
+      "changed": [
+        "orchestra/desktop/src/components/SessionDetail.tsx",
+        "orchestra/desktop/src/components/SessionList.tsx",
+        "orchestra/desktop/src/App.tsx",
+        "orchestra/desktop/src/App.css",
+        "orchestra/desktop/src/state.ts",
+        "orchestra/desktop/src/state.test.ts",
+        "orchestra/desktop/src/detail.ts",
+        "orchestra/desktop/src/detail.test.ts",
+        "orchestra/desktop/src/types.ts",
+        "orchestra/desktop/src/ipc.ts",
+        "orchestra/desktop/src/ipc.test.ts"
+      ],
+      "notes": "ROADMAP.md D3 ticks NOT done: the scope hook denies the write (ROADMAP.md is outside the approved set), so the orchestrator or owner must tick the four D3 lines in place (gitignored, not committed).",
+      "human_read_pending": "Owner in npm run tauri dev: open a session detail and see assistant text, a tool call, a tool result and the cost; send a follow-up to an Idle session whose last item is Error and to a Paused one.",
+      "gate_results": "npm test -> 4 files, 41 passed, 0 failed (detail.test.ts: canPrompt over all nine statuses true only for idle and suspended, mergeTranscript dedupe and seq order, costLabel last-not-sum; ipc.test.ts: decodeTranscript drops malformed entries); npm run build -> exit 0; grep -rn dangerouslySetInnerHTML orchestra/desktop/src -> 0 matches; cargo test (unchanged by s4) -> 104 passed, 0 failed",
+      "written_by": "builder",
+      "fix_1": {
+        "written_by": "builder",
+        "status": "done",
+        "branch": "d3-notify-detail",
+        "commit": "27545c6",
+        "changed": [
+          "orchestra/desktop/src/App.tsx",
+          "orchestra/desktop/src/components/SessionDetail.tsx"
+        ],
+        "notes": "No component-render harness in desktop tests; coverage is by code inspection (key={selectedSession.id} remounts SessionDetail/PromptBox).",
+        "gate_results": [
+          {
+            "cmd": "cd orchestra/desktop && npm test",
+            "output": "Test Files 4 passed (4); Tests 41 passed (41)"
+          },
+          {
+            "cmd": "cd orchestra/desktop && npm run build",
+            "output": "built in 649ms; exit 0"
+          }
+        ]
+      }
+    }
+  },
+  "reviews": {
+    "s1": {
+      "$comment": "RE-REVIEWS NEST, and this is the rule every reader follows. The TOP LEVEL of reviews.<slice> IS attempt 1. A re-review writes attempt_2, then attempt_3, and so on, each with the same fields as the top level. Every attempt SURVIVES PERMANENTLY - history is never overwritten, flattened, or migrated up. The LATEST attempt supplies the verdict: that is what close-run.py, brief.py and verify-state.py resolve through, and what fleetview's finalVerdict() has always shown. `ever_rejected` - did ANY attempt REJECT - is DISPLAY ONLY, forever, so a rejection stays visible after it is fixed; it must never gate anything, or the fleet stops being able to loop. NO NODE MAY REWRITE AN EARLIER ATTEMPT: a second reviewer writes its own attempt_N and leaves the ones before it alone, top-level verdict included - relocating that verdict would destroy the history the board keeps and leave a key stamped written_by:reviewer with someone else as its real author. The KEY INDEX numbers an attempt, not the `attempt` field inside it; the field is display. An EMPTY attempt_N is not a re-review, it is a key nobody wrote - write the whole attempt or none of it. The walk STOPS AT THE FIRST GAP, so an attempt_3 with no attempt_2 is ignored and the earlier verdict stands: A GAP IS MALFORMED AND NO NODE MAY LEAVE ONE. Write the next UNUSED N and never skip - a mis-numbered re-review is not reported anywhere, it is simply unread, and a REJECT nobody reads is a REJECT nobody acts on. The cap is attempt_9, matching fleetview's `for (i = 2; i < 10; i++)` exactly so the two readers cannot disagree; attempt_10 and beyond is reported loudly and resolved by nobody.",
+      "written_by": "reviewer",
+      "verdict": "PASS",
+      "attempt": 1,
+      "summary": "PASS. Re-ran on tip 4a4a7a9: cargo test 104 passed/0 failed (all three named s1 tests ok), npm test 41 passed, npm run build exit 0; also exported ba6841b via git archive and ran cargo test there: 70 passed/0 failed. Re-derived: every inbox mutation in state.rs (push_item, resolve, suspend expiry) bumps inbox_rev, and resolve now bumps only on a real transition; events_for emits InboxUpdated with only that session's items when rev differs; restore seeds emitted/saved after suspend so no spurious event. SaveKey (status, inbox_rev, claude id) skips only text-only lines; every explicit command still forces a save; snapshots are whole-Inner, so the next save of any session carries the text, and shutdown snapshots unconditionally (not gated by shutting_down), so the D2 quit fix and revision ordering under emit_order hold. Without a dirty flag a crash loses last_message/last_activity_at/unknown_count since the last significant save - cosmetic, judged acceptable. Reducer upserts by id and keeps other sessions' items. Diff limited to the 4 approved files; author njcurtis3, no trailer.",
+      "findings": [
+        {
+          "file": "orchestra/desktop/src/state.ts",
+          "line": 58,
+          "issue": "inbox-updated lets the event copy win outright, unlike mergeInbox's monotonic resolved rule. If an event computed before list_inbox were delivered after its response, an item could regress to unresolved; with per-session deltas it now stays wrong until that session's inbox changes again (before s1 any session's next event healed it). Not reachable today: at load every session is suspended and nothing emits. Cheap hardening: resolved/expired = have || event.",
+          "severity": "note",
+          "origin": "architect"
+        },
+        {
+          "file": "orchestra/desktop/src-tauri/src/session/mod.rs",
+          "line": 266,
+          "issue": "Planned dirty flag dropped. Clean exit is covered (shutdown always snapshots, test shutdown_saves_text_only_changes), but on a crash or kill the text-only fields since the last significant save (last_message, last_activity_at, unknown_count) are lost. Answers, resolutions and status are never lost because they bump inbox_rev or status. Acceptable; the comment there correctly says 'a clean exit never loses it'.",
+          "severity": "note",
+          "origin": ""
+        },
+        {
+          "file": "orchestra/desktop/src-tauri/src/session/mod.rs",
+          "line": 146,
+          "issue": "SaveKey must be extended by any later slice that adds persisted state changed on a stdout line without touching status or inbox (e.g. per-line cost/usage), or that state is saved only on crash-free exit. Watch s2/s3/s5 seams.",
+          "severity": "note",
+          "origin": ""
+        }
+      ]
+    },
+    "s2": {
+      "verdict": "PASS",
+      "attempt": 1,
+      "written_by": "reviewer",
+      "summary": "PASS. Read b3528de in full. Only enum as_str() static strings reach argv. StartArgs keeps deny_unknown_fields; serde rejects haiku, Opus, bypassPermissions, dontAsk, auto, default, Plan, empty and '--' values. build_args puts --model/--permission-mode after ARGS and before --resume. The only two spawner call sites (start, resume_with; lib.rs passes process::spawn) both pass the stored settings. StoredSession fields are serde(default) Option<String> and re-parsed through the allowlist in restore, so a stored haiku/bypassPermissions loads as None and the session stays listed. Checked claude 2.1.296 --help: manual/acceptEdits/plan and opus/sonnet/fable are valid CLI values. The TS decoder always sets both fields via oneOfOrNull. Every consumer at the tip (SessionList, SessionDetail) is undefined-safe. Re-ran the 5 named tests (1 passed each), cargo test (104 passed, 0 failed), npm test (41 passed), npm run build (ok). capabilities/tauri.conf.json diff 329e93c..4a4a7a9 is empty. Author njcurtis3, no trailer. The P1 probe supports keeping acceptEdits: non-edit Bash still emits can_use_tool. Three notes, no blockers.",
+      "findings": [
+        {
+          "severity": "note",
+          "origin": "",
+          "title": "acceptEdits auto-accepts edit-class shell commands, not just Edit/Write tools",
+          "detail": "P1 round 2 shows `touch` via Bash ran with no can_use_tool under acceptEdits. Claude's acceptEdits also covers filesystem shell commands such as mkdir/touch/mv/cp/rm in the working dir, which is broader than 'Accept edits' suggests in NewSession. The gate accepted this. Consider a hint on the select label."
+        },
+        {
+          "severity": "note",
+          "origin": "",
+          "title": "A non-string stored model/permission_mode still makes the file Unreadable",
+          "detail": "store.rs types the fields as Option<String>. A file with \"model\": 3 fails serde and the whole load is LoadError::Unreadable. An unknown *string* loads as None, as G5 requires. A wrong-typed value is a malformed file, the same as any other field, and Rust never writes one. So this is not a regression."
+        },
+        {
+          "severity": "note",
+          "origin": "",
+          "title": "TS allowlists must stay in lockstep with the Rust enums",
+          "detail": "decodeSession throws on a model/permission_mode outside MODELS/PERMISSION_MODES, and decodeSessions maps every entry, so one stray value would fail the whole list. Today Rust can only emit allowlisted values, so it is safe. If a variant is added to one side only, the frontend breaks."
+        }
+      ]
+    },
+    "s4": {
+      "written_by": "reviewer",
+      "verdict": "PASS",
+      "attempt": 1,
+      "summary": "PASS. Re-ran on tip 4a4a7a9: npm test 41/41, npm run build exit 0, cargo test 104 passed, grep for dangerouslySetInnerHTML/innerHTML/markdown in desktop/src -> none. Diff is exactly the 11 approved files; author njcurtis3, no trailer. Re-derived against Rust: Entry (tag kind, snake_case) flattened into Record{seq,at}, Usage, TranscriptPage{entries,next_seq}, TranscriptBatch{session_id,entries}, TranscriptArgs{session_id} all match the TS types/decoders. Rust appends before emitting, and SessionDetail awaits listen before get_transcript, then unions by seq, so no gap/dupe. canPrompt is a Record over all nine statuses (idle/suspended only), notes for the five disabled ones, no box for ended/failed; send goes via answer{kind:reply}, and Rust reply() routes Suspended to resume_with and Idle to reply_line regardless of Finished/Error. costLabel takes the newest turn_result with a cost, never sums. Per-entry decode failures are dropped. Notes: the follow-up draft carries across a session switch (PromptBox not keyed by session id), and a narrow listener window before cleanup. Neither is a blocker.",
+      "findings": [
+        {
+          "file": "orchestra/desktop/src/components/SessionDetail.tsx",
+          "line": 148,
+          "severity": "medium",
+          "origin": "builder",
+          "issue": "PromptBox (and SessionDetail) are not keyed by session id; App renders SessionDetail in the same slot for every selection, so React keeps PromptBox's text/busy state across a switch. Type a follow-up in session A, click session B's card: the draft is still in the box under B's header and Send delivers it to B as a reply. Entries are reset on id change but the draft is not. Fix: key={session.id} on SessionDetail in App.tsx (or on PromptBox). Not a blocker because the text is visible and sending needs an explicit click."
+        },
+        {
+          "file": "orchestra/desktop/src/components/SessionDetail.tsx",
+          "line": 23,
+          "severity": "low",
+          "origin": "builder",
+          "issue": "The transcript-appended callback does not check `cancelled`. If the selection changes while listen() is still resolving, an event for the old session delivered before the deferred u() runs is merged into the new session's entries (setEntries is shared state). Window is tiny; guard with `if (!cancelled && batch.session_id === id)`."
+        },
+        {
+          "file": "orchestra/desktop/src/detail.ts",
+          "line": 38,
+          "severity": "note",
+          "origin": "",
+          "issue": "costLabel trusts that claude's total_cost_usd is cumulative across a --resume (D2 lazy resume spawns a new process). If the CLI resets it per process, the label 'session total' understates after a resume. Matches the plan and the Rust doc comment; flagged for the human-read check only."
+        }
+      ],
+      "attempt_2": {
+        "written_by": "reviewer",
+        "verdict": "PASS",
+        "attempt": 2,
+        "commit": "27545c6",
+        "summary": "PASS. Diff a533f9f..27545c6 is two lines in App.tsx and SessionDetail.tsx; author njcurtis3, no trailer. key={selectedSession.id} sits on the SessionDetail element App renders for state.selected. selectedSession is re-found from state.sessions on each render, so session-updated (status) events change props but not the key: no remount, and the draft, entries and subscription survive. Effect deps are [id, onError], and onError is App's useCallback fail with [] deps, so a status update does not re-subscribe either. All draft/busy state is in PromptBox, under the keyed element. PromptBox calls its hooks before the showsPrompt early return, so a status change cannot unmount it. The listener now checks !cancelled; the cleanup still unlistens, and the late-resolve path still calls u(). I re-ran npm test (41 passed, 0 failed), npm run build (exit 0) and the dangerouslySetInnerHTML grep (no matches). Both attempt-1 findings are resolved, and nothing else changed.",
+        "findings": [
+          {
+            "severity": "note",
+            "file": "orchestra/desktop/src/components/SessionDetail.tsx",
+            "line": 155,
+            "origin": "",
+            "detail": "If you switch sessions while a send to session A is in flight, A's answer still completes, which is correct. setText/setBusy then run on an unmounted component, a harmless no-op in React 18. Not a defect."
+          },
+          {
+            "severity": "note",
+            "file": "orchestra/desktop/src-tauri/src/session/transcript.rs",
+            "line": 0,
+            "origin": "",
+            "detail": "The orchestra working tree has an uncommitted change to transcript.rs, presumably from concurrent work. It is not part of 27545c6 and does not affect the npm gates. Flagged only so the integrator does not sweep it in."
+          }
+        ]
+      }
+    },
+    "s5": {
+      "verdict": "PASS",
+      "attempt": 1,
+      "written_by": "reviewer",
+      "commit": "e7412a4",
+      "summary": "PASS. I re-ran these on tip 4a4a7a9, whose Rust matches e7412a4 because s6 touched only desktop/src: cargo test notify (11 passed, all 7 named tests present), cargo test (104 passed, 0 failed, no warnings), cargo build (ok) and cargo tree (tauri-plugin-notification v2.6.0 against tauri v2.12.2). The Cargo.lock diff only adds lines (47 new packages). tauri.conf.json and capabilities have no diff since 329e93c. Author and committer are njcurtis3, with no trailer. I worked out decide() against state.rs apply/mark_exit/finish/suspend myself. The inbox only ever grows (push_item is the only mutation, resolve flips a flag), so the len-grew/last() check finds the new item correctly. No path reaches Ended or Suspended with a notice. In on_output, publish_saving drops Inner, then emit_order, before notify runs. The transcript file lock is scoped to append. The per-session gate is never held on the reader thread. Restore never calls apply, and shutdown returns early twice. The focus check uses .ok(), so a missing window or an Err shows the toast without panicking. The body is format!(\"{project_name}: {what}\") from fixed strings. The real toast is still owner-read and not claimed here.",
+      "findings": [
+        {
+          "severity": "note",
+          "origin": "",
+          "title": "No test proves the notifier runs with no lock held",
+          "detail": "The rig's recording notifier never calls back into Sessions, so a regression that moved (self.notify)(..) above publish_line would still pass. Reading the code confirms the order today. A notifier that calls r.sessions.list_sessions() in one test would turn that into a deadlock the test catches."
+        },
+        {
+          "severity": "note",
+          "origin": "",
+          "title": "A failed toast is dropped without a trace",
+          "detail": "lib.rs does `let _ = ...show()`. This is best-effort, matches how emit is handled, and the spec does not ask for more. If a toast fails on an installed build, nothing records it."
+        },
+        {
+          "severity": "note",
+          "origin": "",
+          "title": "A failed resume is silent, as specified",
+          "detail": "When a resumed process refuses the id (Result is_error while resuming) or exits nonzero, the session goes to Ended with an Error item. decide() is silent on Ended. That matches the spec's 'never on Ended', but it means a background resume failure gives no toast. Whether that is wanted is a product call."
+        },
+        {
+          "severity": "note",
+          "origin": "",
+          "title": "is_focused blocks the reader thread on the main thread",
+          "detail": "In Tauri 2, is_focused() makes a synchronous round trip to the event loop. Every mutating command is async (off the main thread), the sync commands only take Inner briefly, and the reader holds no lock at this point, so I found no deadlock. After the event loop exits it returns Err, and a toast would still be attempted."
+        }
+      ]
+    },
+    "s3": {
+      "verdict": "PASS",
+      "attempt": 1,
+      "written_by": "reviewer",
+      "commit": "7c427b9",
+      "summary": "PASS. Re-ran on tip 4a4a7a9: cargo test transcript (12 passed, all 8 named tests present), full cargo test (104 passed, 0 failed, no warnings), npm test (41 passed), npm run build (ok); the state.rs/store.rs grep gate returns 0; author njcurtis3, no trailer; diff is limited to the 5 approved files. I re-derived each property from the code rather than the builder's notes. Snapshot/StoredSession/PersistedSession carry no transcript field. A file name is built only by TranscriptStore::path, gated by is_session_id (s plus digits, at most 20 bytes), and every caller checks the session map first. Caps use truncate_bytes, which backs off to a char boundary. The 16 MiB cap writes one Truncated record, then stops, and that holds across a restart. Image and base64 blocks never leak their data. The two Inner acquisitions in on_output are not a hazard: a shutdown in between yields at most one true line on disk that is not emitted. Recording the prompt after the write is correct. Notes: load() reads only the last line, so a torn tail resets seq to 1; a stale sN.jsonl can be inherited if ids restart; id/name are not capped.",
+      "findings": [
+        {
+          "severity": "medium",
+          "kind": "note",
+          "origin": "",
+          "title": "A torn last line makes seq restart at 1 and glues the next record onto the fragment",
+          "detail": "TranscriptStore::load parses only text.lines().rev().take(1). Take a file whose final line is a partial record without a newline, e.g. ...\n{\"seq\":7,\"at\":1,\"kind\":\"assis. That can come from a disk-full write_all, a crash, or app exit while a reader thread that passed the live check is mid-append. The parse fails, next_seq stays 1, and the next append writes {\"seq\":1,...} straight after the fragment. That line is lost, and later records reuse seq 2, 3, ... which are already in the file. detail.ts merges by seq with 'the copy already held wins', so after a reload the new entries are hidden behind the old ones with the same seq. Fix: take the max seq over all parseable lines, and write a leading '\n' when the file does not end with one. Not a REJECT, because the trigger is an abnormal write, and session state and state.json are unaffected.",
+          "file": "orchestra/desktop/src-tauri/src/session/transcript.rs:244-257"
+        },
+        {
+          "severity": "low",
+          "kind": "note",
+          "origin": "architect",
+          "title": "Transcript files outlive the id counter: a reused sN inherits an old sN.jsonl",
+          "detail": "Ids come from next_session in state.json. The transcripts dir is never pruned, and nothing ties it to that counter. If state.json is missing while transcripts/ survives, ids restart at s1 and the new s1 appends to the old s1.jsonl. That happens when a user deletes state.json to reset, or when a crash loses the async snapshot queued by start(). The detail view then opens with another conversation. If that file had reached its cap, the new session also records nothing. The plan's 'exists in the session map' check is satisfied, but it does not prevent this. A cheap guard is to truncate or rotate sN.jsonl when start() allocates a fresh id."
+        },
+        {
+          "severity": "low",
+          "kind": "note",
+          "origin": "",
+          "title": "ToolUse.id/name and ToolResult.tool_use_id are not capped",
+          "detail": "Only text, content and input_preview are capped, so an oversized id or name from claude goes into the file and the event as-is. Claude generates these, so the risk is small. A 256-byte cap would complete the bounds."
+        },
+        {
+          "severity": "low",
+          "kind": "note",
+          "origin": "",
+          "title": "Memory backend keeps up to 16 MiB per session for the whole run",
+          "detail": "With storage off, FileState.mem is never evicted, so memory is bounded only by 16 MiB times the number of sessions. That is acceptable for a run with storage off, and recorded here for reference."
+        },
+        {
+          "severity": "info",
+          "kind": "note",
+          "origin": "",
+          "title": "Judged: prompt recorded after a successful write; on_output's double Inner lock",
+          "detail": "Recording after the write means a prompt that never reached claude is never shown, which is correct. The race this opens is a reader appending claude's reply before the prompt is recorded. Real claude takes far longer than one append to answer, and the frontend sorts by seq, so the worst case is a cosmetic reorder. For on_output: stop() between the live check and apply only marks Stopped, and the line is still recorded truthfully. Shutdown between them means the entry is on disk but not emitted, which get_transcript recovers. No transcript write starts after shutting_down is observed. The transcript mutex and Inner are never nested: append is called with no Inner guard, and read takes Inner only for the contains_key check before taking the file lock."
+        }
+      ],
+      "attempt_2": {
+        "written_by": "reviewer",
+        "verdict": "REJECT",
+        "attempt": 2,
+        "commit": "a533f9f",
+        "summary": "REJECT. I re-ran cargo test transcript on a533f9f (14 passed, both new tests among them) and the full cargo test (106 passed, 0 failed, no warnings). The diff touches only transcript.rs; the author is njcurtis3 and there is no trailer. The ASCII case is fixed. next_seq is now the max seq plus 1 across all parseable lines, a torn tail gets a newline first (also when that first write is the Truncated marker, which I probed), the byte count includes that newline, and treating any Truncated record as full is sound. Empty and missing files still start at seq 1. The attempt-1 properties are unchanged. The fix is not complete, though. load() still uses fs::read_to_string. A tear inside a multi-byte UTF-8 character makes the whole file invalid UTF-8, so the read fails and load treats the file as missing. I probed this with 7 good lines and then a fragment cut inside the e-acute of café. The next append got seq 1 and was written onto the end of the fragment, and read() returned 0 entries, so every earlier entry went missing from get_transcript. That is the attempt-1 bug again, and worse. Claude's output often contains non-ASCII characters.",
+        "findings": [
+          {
+            "severity": "high",
+            "kind": "blocker",
+            "origin": "builder",
+            "title": "A tear inside a multi-byte UTF-8 char still restarts seq at 1, still glues onto the fragment, and hides the whole transcript",
+            "detail": "transcript.rs load() (and read()) use fs::read_to_string(p).ok(). A torn tail can end at any byte, for example from a disk-full write_all partial write or a crash. When it ends inside a multi-byte character, read_to_string returns Err(InvalidData) and .ok() turns that into 'no file'. So next_seq=1, bytes=0, needs_newline=false and full=false. Probe input: complete_lines(7) followed by '{\"seq\":8,\"at\":1,\"kind\":\"user_prompt\",\"text\":\"caf' plus the first byte only of U+00E9. append(\"s9\", [user_prompt(\"after\")]) returned seq 1 and wrote it straight after the fragment, with no newline. read(\"s9\") returned 0 entries and next_seq 2, because read() also fails on the file and falls back to the empty mem Vec. The 7 good records and all later ones become invisible to get_transcript for good. The byte count also restarts at 0, so the 16 MiB cap is applied from 0 on top of the existing file. Fix: read with fs::read, then String::from_utf8_lossy (or split the bytes on b'\n'). Set bytes from the byte length and needs_newline from the last byte != b'\n'. Use the same reader in read(). Add a test with a fragment cut inside a multi-byte char."
+          },
+          {
+            "severity": "info",
+            "kind": "note",
+            "origin": "",
+            "title": "The newline inserted before a torn tail is not counted in the cap check",
+            "detail": "The cap check (st.bytes + text.len() + line.len() + 1) runs before the leading '\n' is inserted. That byte is added to st.bytes afterwards, so the file can end up 1 byte over max_file_bytes. The Truncated marker already goes past the cap by its own length, so this is harmless. Noted for completeness."
+          },
+          {
+            "severity": "low",
+            "kind": "note",
+            "origin": "",
+            "title": "A failed write clears needs_newline anyway",
+            "detail": "If write_all fails (for example the open fails), needs_newline is still set to false and bytes still goes up. Once the disk recovers, the next append can be glued onto the torn tail. This matches the existing policy that a failed write is still counted, so it is a note only."
+          }
+        ]
+      },
+      "attempt_3": {
+        "written_by": "reviewer",
+        "verdict": "PASS",
+        "attempt": 3,
+        "commit": "413f619",
+        "summary": "PASS. On 413f619 I re-ran cargo test transcript (16 passed, all 8 named tests among them) and a full cargo test after a forced rebuild (108 passed, 0 failed, no warnings). The state.rs/store.rs grep gate returns 0. The tree is clean, the diff since 27545c6 touches only transcript.rs, the author is njcurtis3 and there is no trailer. I re-derived the fix from the code. load() and read() share read_raw, which reads bytes with from_utf8_lossy, so an invalid-UTF-8 file no longer reads as missing. bytes is the raw length and torn comes from the last raw byte. The cap check adds the separator newline on every entry of a batch, and that matches the bytes actually written. needs_newline is cleared only when write_all returns Ok. I added temporary probes and then removed them. A 4-byte emoji torn after 2 bytes plus a 0xFF byte inside a complete line: history was kept (seq = max+1). The Truncated marker was written and still held after a restart. A write that failed on a read-only file kept needs_newline, and the next write started on its own line. Notes: any read error is still treated as missing, as in 7c427b9. The Truncated marker can push the file a few dozen bytes past 16 MiB.",
+        "findings": [
+          {
+            "severity": "low",
+            "file": "orchestra/desktop/src-tauri/src/session/transcript.rs:230-237",
+            "origin": "",
+            "issue": "read_raw maps every fs::read error to None, as if the file were missing. If a transient read error happens on first touch (on Windows, AV or an indexer holding the file gives a sharing violation, or permission is denied), load() sets loaded=true, next_seq=1, bytes=0, full=false and needs_newline=false for the rest of the process. The next append then repeats seq numbers, can glue onto a torn tail and resets the cap accounting. This is unchanged from 7c427b9 (read_to_string().ok()), so it is not a regression. It is acceptable for the slice because the error is rare and needs an external process. A follow-up could treat only ErrorKind::NotFound as missing and leave loaded=false otherwise."
+          },
+          {
+            "severity": "low",
+            "file": "orchestra/desktop/src-tauri/src/session/transcript.rs:302-309",
+            "origin": "",
+            "issue": "The Truncated marker is written without checking that it fits. A file within ~50 bytes of the cap can end up a marker's length past 16 MiB. This follows the intent ('past it, one Truncated entry is written'), it is bounded to one short record and was there before this fix, so it is a note only. Every non-marker write, the torn-tail separator newline included, is correctly bounded."
+          },
+          {
+            "severity": "info",
+            "file": "orchestra/desktop/src-tauri/src/session/transcript.rs:311-325",
+            "origin": "",
+            "issue": "After a failed write, st.bytes still grows by text.len() (and by the leading newline again on retry). The cap side is conservative, not unsafe: the count only ever exceeds the real size. A partial write_all leaves needs_newline set, so the next write starts on a new line. A blank line only appears if the partial write happened to end on a newline, and lines() skips it on parse. Probed: read-only file, then writable again, gives seq continuity and the new record on its own line."
+          },
+          {
+            "severity": "info",
+            "file": "orchestra/desktop/src-tauri/src/session/transcript.rs:228",
+            "origin": "",
+            "issue": "U+FFFD from the lossy decode cannot forge a record. In a torn tail it falls inside an unterminated JSON string, so the line fails to parse. An invalid byte inside a complete line's string value still parses, with U+FFFD in the text. That correctly keeps the record and its seq. No panic path: from_utf8_lossy is total, and parse failures are filtered out."
+          },
+          {
+            "severity": "info",
+            "file": "orchestra/desktop/src-tauri/src/session/transcript.rs",
+            "origin": "",
+            "issue": "The attempt-1 properties are unchanged. Neither a533f9f nor 413f619 touches path()/is_session_id, mod.rs, the Snapshot/state/store types or the image/base64 handling, and transcript_text_never_in_snapshot and image_block_is_replaced still pass."
+          }
+        ]
+      }
+    }
+  },
+  "integrator": {
+    "written_by": "the node that wrote this key - here, always the string integrator",
+    "merged": [],
+    "conflicts": [],
+    "verification": "what command proved it works, and its output"
+  },
+  "ops": {
+    "written_by": "the node that wrote this key - here, always the string ops",
+    "gated": true,
+    "actions": []
+  },
+  "log": [
+    "orchestrator: opened run 2026-10-10. Pre-flight: orchestra is a git repo, main @ 329e93c (pushed). Spawning scout.",
+    "orchestrator: scout key verified (36 facts, 11 unknowns, 9 risks). Not plan-killing but shaping: transcript must live outside the snapshot (and the D2 per-line full-inbox clone should be fixed first); Windows toasts need an installed build to verify; permission modes that may suppress can_use_tool must be excluded or gated. Spawning architect.",
+    "orchestrator: architect key verified (single-loop, s1,s2,s3,s5,s4 order; gate G1-G7 in gate_options). Note: claude 2.1.296 has no `default` permission mode; allowlist uses manual. Presenting to human gate.",
+    "orchestrator: HUMAN GATE passed 2026-10-10 - owner said \"approve\": all recommendations G1-G7 (s1 D2 fix included; transcripts on disk per session; modes Default/manual/acceptEdits/plan with paid probe P1 before merge; models Default/opus/sonnet/fable; schema 1 optional fields; cost = latest total; toast body project+kind only). Branch d3-notify-detail off main 329e93c. Spawning builder.",
+    "orchestrator: builders.s1-s5 verified (ba6841b, b3528de, 7c427b9, e7412a4, 4a4a7a9; cargo 104, npm 41, build ok). P1 probe: all four modes still emit can_use_tool for permission-needing tools; allowlist unchanged. ROADMAP.md tick denied by scope guard (not in plan files) - orchestrator will tick the gitignored local file after close as bookkeeping. Spawning 5 reviewers in parallel (all high).",
+    "orchestrator: reviews s1-s5 all PASS attempt 1. Two notes worth fixing before merge raised to owner: s4 follow-up draft persists across session switch (could send A's text to B; fix key={session.id}); s3 load() reads only the last line, so a torn final line resets seq to 1 and glues the next record onto the fragment (transcript.rs:244-257). Awaiting owner decision; not merged.",
+    "orchestrator: 2026-10-14 owner decided \"fix both first, then merge\". Fix round on d3-notify-detail, sequential: s3 (transcript.rs load(): max seq over all parseable lines, newline-guard a torn tail), then s4 (key SessionDetail by session id so the follow-up draft does not carry across a switch). Builders record the round as fix_1 inside their own key; fresh reviewers write attempt_2.",
+    "orchestrator: fix round results. s3 fix_1 a533f9f, s4 fix_1 27545c6. reviews.s4.attempt_2 PASS. reviews.s3.attempt_2 REJECT: a tear inside a multi-byte UTF-8 char makes read_to_string fail in load()/read(), so the file reads as missing (seq 1 glued onto fragment, read() returns 0 entries, cap byte count restarts at 0). s3 is at the 2-attempt cap; escalated to owner, not merged.",
+    "orchestrator: 2026-10-14 owner authorized a third attempt on s3 beyond the 2-attempt cap (\"option 1, third attempt then merge\"): builder fix_2 with from_utf8_lossy reader per reviews.s3.attempt_2, fresh reviewer writes attempt_3, then merge.",
+    "orchestrator: reviews.s3.attempt_3 PASS (413f619). All slices PASS (s1,s2,s5 attempt 1; s4 attempt 2; s3 attempt 3). Merged d3-notify-detail into main --no-ff: 7e62e10 (clean, no conflicts). On main: cargo test 108 passed 0 failed, npm test 41 passed, npm run build ok. Not pushed. Open low notes: s3 treats any read error as missing (only NotFound should be); Truncated marker can exceed 16 MiB by a few dozen bytes.",
+    "orchestrator: CLOSED 2026-10-14. close-run.py closeable: all 5 slices PASS and in main via merge 7e62e10 (s3 on attempt 3 with owner-authorized extra round, s4 on attempt 2). Dropped/deferred: low notes (s3 read-error-as-missing, Truncated marker overshoot; s4 none), owner GUI checks incl. Windows toast on an installed build. ROADMAP.md D3 ticks are local bookkeeping (gitignored). main not pushed."
+  ]
+}
