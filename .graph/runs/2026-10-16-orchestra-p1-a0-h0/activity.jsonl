@@ -1,0 +1,430 @@
+{"t":1792165241.2,"ev":"tool","agent":"orchestrator","tool":"Bash"}
+{"t":1792165247.6,"ev":"tool","agent":"orchestrator","tool":"Bash"}
+{"t":1792165265.8,"ev":"tool","agent":"orchestrator","tool":"Agent"}
+{"t":1792165265.8,"ev":"start","agent":"scout","id":"ab799d8161b3e244f"}
+{"t":1792165270.0,"ev":"tool","agent":"scout","id":"ab799d8161b3e244f","tool":"Bash","tokens":52920}
+{"t":1792165270.9,"ev":"tool","agent":"scout","id":"ab799d8161b3e244f","tool":"Bash","tokens":52920}
+{"t":1792165271.2,"ev":"stop","agent":"orchestrator","id":"a468cb501455b38ac"}
+{"t":1792165271.7,"ev":"tool","agent":"scout","id":"ab799d8161b3e244f","tool":"Bash","tokens":52920}
+{"t":1792165275.1,"ev":"tool","agent":"scout","id":"ab799d8161b3e244f","tool":"Bash","tokens":126500}
+{"t":1792165275.1,"ev":"tool","agent":"scout","id":"ab799d8161b3e244f","tool":"Bash","tokens":126500}
+{"t":1792165275.2,"ev":"tool","agent":"scout","id":"ab799d8161b3e244f","tool":"Bash","tokens":126500}
+{"t":1792165278.2,"ev":"tool","agent":"scout","id":"ab799d8161b3e244f","tool":"Bash","tokens":180912}
+{"t":1792165279.7,"ev":"tool","agent":"scout","id":"ab799d8161b3e244f","tool":"Bash","tokens":180912}
+{"t":1792165282.6,"ev":"tool","agent":"scout","id":"ab799d8161b3e244f","tool":"Grep","tokens":249482}
+{"t":1792165290.7,"ev":"tool","agent":"scout","id":"ab799d8161b3e244f","tool":"Bash","tokens":410031}
+{"t":1792165290.8,"ev":"tool","agent":"scout","id":"ab799d8161b3e244f","tool":"Bash","tokens":410031}
+{"t":1792165295.5,"ev":"tool","agent":"scout","id":"ab799d8161b3e244f","tool":"Bash","tokens":557964}
+{"t":1792165296.4,"ev":"tool","agent":"scout","id":"ab799d8161b3e244f","tool":"Bash","tokens":557964}
+{"t":1792165299.2,"ev":"stop","agent":"orchestrator","id":"adcffd19eb2d13905"}
+{"t":1792165302.1,"ev":"tool","agent":"scout","id":"ab799d8161b3e244f","tool":"Bash","tokens":715584}
+{"t":1792165303.0,"ev":"tool","agent":"scout","id":"ab799d8161b3e244f","tool":"Bash","tokens":715584}
+{"t":1792165319.8,"ev":"tool","agent":"scout","id":"ab799d8161b3e244f","tool":"Bash","tokens":883215}
+{"t":1792165321.1,"ev":"tool","agent":"scout","id":"ab799d8161b3e244f","tool":"Bash","tokens":883215}
+{"t":1792165327.0,"ev":"tool","agent":"scout","id":"ab799d8161b3e244f","tool":"Bash","tokens":1059741}
+{"t":1792165327.3,"ev":"tool","agent":"scout","id":"ab799d8161b3e244f","tool":"Bash","tokens":1059741}
+{"t":1792165330.8,"ev":"stop","agent":"orchestrator","id":"ab14f8d1c3adf3352"}
+{"t":1792165357.0,"ev":"tool","agent":"scout","id":"ab799d8161b3e244f","tool":"Bash","tokens":1248654}
+{"t":1792165358.7,"ev":"tool","agent":"scout","id":"ab799d8161b3e244f","tool":"Bash","tokens":1248654}
+{"t":1792165362.2,"ev":"stop","agent":"orchestrator","id":"a792d4e58e593e036"}
+{"t":1792165365.3,"ev":"tool","agent":"scout","id":"ab799d8161b3e244f","tool":"Bash","tokens":1468575}
+{"t":1792165365.4,"ev":"tool","agent":"scout","id":"ab799d8161b3e244f","tool":"Bash","tokens":1468575}
+{"t":1792165370.8,"ev":"tool","agent":"scout","id":"ab799d8161b3e244f","tool":"Bash","tokens":1702233}
+{"t":1792165370.8,"ev":"tool","agent":"scout","id":"ab799d8161b3e244f","tool":"Bash","tokens":1702233}
+{"t":1792165376.5,"ev":"tool","agent":"scout","id":"ab799d8161b3e244f","tool":"Bash","tokens":1868221}
+{"t":1792165382.2,"ev":"tool","agent":"scout","id":"ab799d8161b3e244f","tool":"Bash","tokens":2132189}
+{"t":1792165394.5,"ev":"stop","agent":"orchestrator","id":"ad2e77f935c44ecf4"}
+{"t":1792165423.0,"ev":"tool","agent":"scout","id":"ab799d8161b3e244f","tool":"Bash","tokens":2220821}
+{"t":1792165426.5,"ev":"stop","agent":"orchestrator","id":"ae331708007bba7f4"}
+{"t":1792165429.0,"ev":"tool","agent":"scout","id":"ab799d8161b3e244f","tool":"Bash","tokens":2399757}
+{"t":1792165458.9,"ev":"stop","agent":"orchestrator","id":"a603fc97c1c94c48b"}
+{"t":1792165479.9,"ev":"tool","agent":"scout","id":"ab799d8161b3e244f","tool":"Bash","tokens":2580939}
+{"t":1792165491.9,"ev":"stop","agent":"orchestrator","id":"adb3bc307ad1894a1"}
+{"t":1792165553.8,"ev":"stop","agent":"orchestrator","id":"a03d5086bc7e63844"}
+{"t":1792165558.1,"ev":"tool","agent":"scout","id":"ab799d8161b3e244f","tool":"Bash","tokens":3023361}
+{"t":1792165585.7,"ev":"stop","agent":"orchestrator","id":"a86d8cfff8a25e42b"}
+{"t":1792165597.0,"ev":"tool","agent":"scout","id":"ab799d8161b3e244f","tool":"Bash","tokens":3521789}
+{"t":1792165617.6,"ev":"stop","agent":"orchestrator","id":"aac1f084d1c01b7b6"}
+{"t":1792165632.6,"ev":"tool","agent":"scout","id":"ab799d8161b3e244f","tool":"Bash","tokens":4063273}
+{"t":1792165642.7,"ev":"tool","agent":"scout","id":"ab799d8161b3e244f","tool":"Bash","tokens":4345693}
+{"t":1792165649.4,"ev":"stop","agent":"orchestrator","id":"a79ed79abc60655c9"}
+{"t":1792165653.9,"ev":"tool","agent":"scout","id":"ab799d8161b3e244f","tool":"Bash","tokens":4631211}
+{"t":1792165662.0,"ev":"tool","agent":"scout","id":"ab799d8161b3e244f","tool":"Bash","tokens":4776242}
+{"t":1792165667.3,"ev":"tool","agent":"scout","id":"ab799d8161b3e244f","tool":"Bash","tokens":4922617}
+{"t":1792165676.5,"ev":"tool","agent":"scout","id":"ab799d8161b3e244f","tool":"Bash","tokens":5069855}
+{"t":1792165681.1,"ev":"stop","agent":"orchestrator","id":"a65ac927d7a0a14ce"}
+{"t":1792165684.6,"ev":"tool","agent":"scout","id":"ab799d8161b3e244f","tool":"Bash","tokens":5219264}
+{"t":1792165692.5,"ev":"tool","agent":"scout","id":"ab799d8161b3e244f","tool":"Bash","tokens":5521492}
+{"t":1792165696.2,"ev":"tool","agent":"scout","id":"ab799d8161b3e244f","tool":"Bash","tokens":5674125}
+{"t":1792165701.1,"ev":"tool","agent":"scout","id":"ab799d8161b3e244f","tool":"SubagentHandback","tokens":5980037}
+{"t":1792165701.7,"ev":"stop","agent":"scout","id":"ab799d8161b3e244f","tokens":5980037}
+{"t":1792165705.9,"ev":"tool","agent":"orchestrator","tool":"Bash"}
+{"t":1792165710.4,"ev":"tool","agent":"orchestrator","tool":"Bash"}
+{"t":1792165734.1,"ev":"tool","agent":"orchestrator","tool":"Bash"}
+{"t":1792165734.8,"ev":"tool","agent":"orchestrator","tool":"Agent"}
+{"t":1792165734.8,"ev":"start","agent":"architect","id":"aa0c345beca4dc497"}
+{"t":1792165740.6,"ev":"tool","agent":"architect","id":"aa0c345beca4dc497","tool":"Bash","tokens":26908}
+{"t":1792165740.7,"ev":"stop","agent":"orchestrator","id":"af907f57f1b40ca05"}
+{"t":1792165746.0,"ev":"tool","agent":"architect","id":"aa0c345beca4dc497","tool":"Bash","tokens":48601}
+{"t":1792165750.8,"ev":"tool","agent":"architect","id":"aa0c345beca4dc497","tool":"Bash","tokens":74622}
+{"t":1792165766.9,"ev":"stop","agent":"orchestrator","id":"ab42b30dea7a09370"}
+{"t":1792165777.6,"ev":"tool","agent":"architect","id":"aa0c345beca4dc497","tool":"Bash","tokens":139536}
+{"t":1792165798.7,"ev":"stop","agent":"orchestrator","id":"a501fc27fd0ed6f8e"}
+{"t":1792165831.2,"ev":"stop","agent":"orchestrator","id":"ab007de3c3144ad57"}
+{"t":1792165832.0,"ev":"tool","agent":"architect","id":"aa0c345beca4dc497","tool":"Bash","tokens":208064}
+{"t":1792165861.2,"ev":"tool","agent":"architect","id":"aa0c345beca4dc497","tool":"Bash","tokens":287532}
+{"t":1792165863.5,"ev":"stop","agent":"orchestrator","id":"ac91831facb3adc01"}
+{"t":1792165954.1,"ev":"tool","agent":"architect","id":"aa0c345beca4dc497","tool":"Bash","tokens":374248}
+{"t":1792165955.3,"ev":"stop","agent":"orchestrator","id":"a342857248e90e09b"}
+{"t":1792165959.5,"ev":"tool","agent":"architect","id":"aa0c345beca4dc497","tool":"Bash","tokens":478430}
+{"t":1792165965.4,"ev":"tool","agent":"architect","id":"aa0c345beca4dc497","tool":"Bash","tokens":584974}
+{"t":1792165987.3,"ev":"stop","agent":"orchestrator","id":"aa75d37eb45a4e586"}
+{"t":1792166000.5,"ev":"tool","agent":"architect","id":"aa0c345beca4dc497","tool":"Bash","tokens":696376}
+{"t":1792166020.0,"ev":"stop","agent":"orchestrator","id":"a8aabb18c0021f423"}
+{"t":1792166119.0,"ev":"tool","agent":"architect","id":"aa0c345beca4dc497","tool":"Bash","tokens":956208}
+{"t":1792166129.1,"ev":"tool","agent":"architect","id":"aa0c345beca4dc497","tool":"Bash","tokens":1099700}
+{"t":1792166144.8,"ev":"stop","agent":"orchestrator","id":"ac7f743abe711b14f"}
+{"t":1792166163.9,"ev":"tool","agent":"architect","id":"aa0c345beca4dc497","tool":"Bash","tokens":1396104}
+{"t":1792166170.9,"ev":"tool","agent":"architect","id":"aa0c345beca4dc497","tool":"Bash","tokens":1549198}
+{"t":1792166180.0,"ev":"stop","agent":"orchestrator","id":"a7c67f657e10e5974"}
+{"t":1792166186.3,"ev":"tool","agent":"architect","id":"aa0c345beca4dc497","tool":"Bash","tokens":1703312}
+{"t":1792166199.2,"ev":"tool","agent":"architect","id":"aa0c345beca4dc497","tool":"Bash","tokens":1858914}
+{"t":1792166216.2,"ev":"tool","agent":"architect","id":"aa0c345beca4dc497","tool":"Bash","tokens":1938085}
+{"t":1792166217.8,"ev":"stop","agent":"orchestrator","id":"a05741b4fc3937582"}
+{"t":1792166227.4,"ev":"tool","agent":"architect","id":"aa0c345beca4dc497","tool":"Bash","tokens":2098349}
+{"t":1792166243.2,"ev":"tool","agent":"architect","id":"aa0c345beca4dc497","tool":"Bash","tokens":2344582}
+{"t":1792166250.8,"ev":"stop","agent":"orchestrator","id":"aa702f962c4a0791d"}
+{"t":1792166272.9,"ev":"tool","agent":"architect","id":"aa0c345beca4dc497","tool":"Bash","tokens":2593240}
+{"t":1792166274.6,"ev":"tool","agent":"architect","id":"aa0c345beca4dc497","tool":"Bash","tokens":2593240}
+{"t":1792166281.8,"ev":"tool","agent":"architect","id":"aa0c345beca4dc497","tool":"Bash","tokens":2765432}
+{"t":1792166284.7,"ev":"stop","agent":"orchestrator","id":"ad1bebc26185d56c1"}
+{"t":1792166308.7,"ev":"tool","agent":"architect","id":"aa0c345beca4dc497","tool":"Bash","tokens":2938822}
+{"t":1792166321.7,"ev":"stop","agent":"orchestrator","id":"a00f9a5f4d73072bc"}
+{"t":1792166338.6,"ev":"tool","agent":"architect","id":"aa0c345beca4dc497","tool":"Bash","tokens":3119004,"say":"Now the remaining fields and the merge into state.json."}
+{"t":1792166344.3,"ev":"tool","agent":"architect","id":"aa0c345beca4dc497","tool":"Bash","tokens":3212195,"say":"Now the remaining fields and the merge into state.json."}
+{"t":1792166358.7,"ev":"stop","agent":"orchestrator","id":"ac7001feb5eaf40a3"}
+{"t":1792166380.0,"ev":"tool","agent":"architect","id":"aa0c345beca4dc497","tool":"SubagentHandback","tokens":3399497,"say":"Now the remaining fields and the merge into state.json."}
+{"t":1792166380.5,"ev":"stop","agent":"architect","id":"aa0c345beca4dc497","tokens":3399497,"say":"Now the remaining fields and the merge into state.json."}
+{"t":1792166387.0,"ev":"tool","agent":"orchestrator","tool":"Bash"}
+{"t":1792166392.2,"ev":"tool","agent":"orchestrator","tool":"Bash"}
+{"t":1792166414.3,"ev":"stop","agent":"orchestrator","id":"abf73540ae1f3ef04"}
+{"t":1792167661.5,"ev":"tool","agent":"orchestrator","tool":"Bash"}
+{"t":1792167669.3,"ev":"tool","agent":"orchestrator","tool":"Bash"}
+{"t":1792167683.2,"ev":"tool","agent":"orchestrator","tool":"Bash"}
+{"t":1792167713.6,"ev":"start","agent":"builder","id":"a7e8281b65a753c3c"}
+{"t":1792167713.7,"ev":"start","agent":"builder","id":"ae44d97795fdd1132"}
+{"t":1792167713.7,"ev":"start","agent":"builder","id":"a4e6c83aaefe0032b"}
+{"t":1792167713.8,"ev":"tool","agent":"orchestrator","tool":"Agent"}
+{"t":1792167713.8,"ev":"tool","agent":"orchestrator","tool":"Agent"}
+{"t":1792167713.8,"ev":"tool","agent":"orchestrator","tool":"Agent"}
+{"t":1792167721.5,"ev":"tool","agent":"builder","id":"a7e8281b65a753c3c","tool":"Bash"}
+{"t":1792167721.7,"ev":"stop","agent":"orchestrator","id":"a78b38114f1c54371"}
+{"t":1792167721.9,"ev":"tool","agent":"builder","id":"ae44d97795fdd1132","tool":"Bash"}
+{"t":1792167722.7,"ev":"tool","agent":"builder","id":"a4e6c83aaefe0032b","tool":"Bash"}
+{"t":1792167725.9,"ev":"tool","agent":"builder","id":"ae44d97795fdd1132","tool":"Bash"}
+{"t":1792167726.6,"ev":"tool","agent":"builder","id":"a7e8281b65a753c3c","tool":"Bash"}
+{"t":1792167728.8,"ev":"tool","agent":"builder","id":"a4e6c83aaefe0032b","tool":"Bash"}
+{"t":1792167732.5,"ev":"tool","agent":"builder","id":"ae44d97795fdd1132","tool":"Bash"}
+{"t":1792167734.2,"ev":"tool","agent":"builder","id":"a7e8281b65a753c3c","tool":"Bash"}
+{"t":1792167734.8,"ev":"tool","agent":"builder","id":"a4e6c83aaefe0032b","tool":"Bash"}
+{"t":1792167736.4,"ev":"tool","agent":"builder","id":"a7e8281b65a753c3c","tool":"Bash"}
+{"t":1792167741.0,"ev":"tool","agent":"builder","id":"a7e8281b65a753c3c","tool":"Bash"}
+{"t":1792167741.4,"ev":"tool","agent":"builder","id":"ae44d97795fdd1132","tool":"Bash"}
+{"t":1792167745.2,"ev":"stop","agent":"orchestrator","id":"a15e5f198c4b54b2c"}
+{"t":1792167746.2,"ev":"stop","agent":"orchestrator","id":"a42b749d5ddbec15e"}
+{"t":1792167746.4,"ev":"stop","agent":"orchestrator","id":"a1d19974a1a4e44f1"}
+{"t":1792167746.5,"ev":"tool","agent":"builder","id":"a7e8281b65a753c3c","tool":"Bash"}
+{"t":1792167776.3,"ev":"tool","agent":"builder","id":"a7e8281b65a753c3c","tool":"Read"}
+{"t":1792167782.0,"ev":"stop","agent":"orchestrator","id":"ac5aa555a2b2fba8b"}
+{"t":1792167802.3,"ev":"tool","agent":"builder","id":"a7e8281b65a753c3c","tool":"Write"}
+{"t":1792167818.4,"ev":"stop","agent":"orchestrator","id":"a446b8dd7569f9dea"}
+{"t":1792167835.5,"ev":"tool","agent":"builder","id":"a7e8281b65a753c3c","tool":"Bash"}
+{"t":1792167854.7,"ev":"stop","agent":"orchestrator","id":"a73474a63abc83310"}
+{"t":1792167857.7,"ev":"tool","agent":"builder","id":"a7e8281b65a753c3c","tool":"Bash"}
+{"t":1792167860.4,"ev":"tool","agent":"builder","id":"a7e8281b65a753c3c","tool":"SubagentHandback"}
+{"t":1792167862.5,"ev":"tool","agent":"builder","id":"a4e6c83aaefe0032b","tool":"Bash"}
+{"t":1792167862.6,"ev":"stop","agent":"builder","id":"a7e8281b65a753c3c"}
+{"t":1792167871.4,"ev":"tool","agent":"builder","id":"ae44d97795fdd1132","tool":"Bash"}
+{"t":1792167873.9,"ev":"stop","agent":"orchestrator","id":"a8d1e51e15766da78"}
+{"t":1792167882.4,"ev":"tool","agent":"builder","id":"ae44d97795fdd1132","tool":"Bash"}
+{"t":1792167894.4,"ev":"tool","agent":"orchestrator","tool":"Bash"}
+{"t":1792167901.9,"ev":"stop","agent":"orchestrator","id":"afdfb1e86338d0998"}
+{"t":1792167903.8,"ev":"tool","agent":"builder","id":"ae44d97795fdd1132","tool":"Bash"}
+{"t":1792167917.0,"ev":"tool","agent":"orchestrator","tool":"Bash"}
+{"t":1792167934.4,"ev":"tool","agent":"builder","id":"ae44d97795fdd1132","tool":"Bash"}
+{"t":1792167938.2,"ev":"tool","agent":"orchestrator","tool":"Bash"}
+{"t":1792167951.2,"ev":"stop","agent":"orchestrator","id":"a80c3b007c4f09e53"}
+{"t":1792167953.4,"ev":"tool","agent":"orchestrator","tool":"Bash"}
+{"t":1792167959.6,"ev":"tool","agent":"builder","id":"a4e6c83aaefe0032b","tool":"Bash"}
+{"t":1792167970.8,"ev":"stop","agent":"orchestrator","id":"adcee02ce7c38d02b"}
+{"t":1792167972.6,"ev":"tool","agent":"orchestrator","tool":"Bash"}
+{"t":1792167976.3,"ev":"tool","agent":"builder","id":"ae44d97795fdd1132","tool":"Bash"}
+{"t":1792167987.3,"ev":"stop","agent":"orchestrator","id":"a0552fda63e1392cb"}
+{"t":1792167992.9,"ev":"tool","agent":"orchestrator","tool":"Bash"}
+{"t":1792168002.3,"ev":"tool","agent":"orchestrator","tool":"ToolSearch"}
+{"t":1792168003.6,"ev":"tool","agent":"builder","id":"ae44d97795fdd1132","tool":"Bash"}
+{"t":1792168014.2,"ev":"tool","agent":"orchestrator","tool":"SendMessage"}
+{"t":1792168014.3,"ev":"tool","agent":"builder","id":"ae44d97795fdd1132","tool":"Bash"}
+{"t":1792168016.9,"ev":"tool","agent":"orchestrator","tool":"SendMessage"}
+{"t":1792168024.0,"ev":"stop","agent":"orchestrator","id":"a6fc8b3d077a7fc37"}
+{"t":1792168034.5,"ev":"tool","agent":"builder","id":"a4e6c83aaefe0032b","tool":"Bash"}
+{"t":1792168034.6,"ev":"tool","agent":"orchestrator","tool":"Agent"}
+{"t":1792168034.6,"ev":"start","agent":"reviewer","id":"afdf2c89ccaf2af90"}
+{"t":1792168052.5,"ev":"tool","agent":"reviewer","id":"afdf2c89ccaf2af90","tool":"Bash"}
+{"t":1792168058.1,"ev":"tool","agent":"orchestrator","tool":"Bash"}
+{"t":1792168065.8,"ev":"stop","agent":"orchestrator","id":"aa7f80e5c54435e57"}
+{"t":1792168069.3,"ev":"stop","agent":"orchestrator","id":"a4d254e61ec194e39"}
+{"t":1792168070.9,"ev":"tool","agent":"reviewer","id":"afdf2c89ccaf2af90","tool":"Bash"}
+{"t":1792168077.4,"ev":"stop","agent":"orchestrator","id":"af57bd23d83080475"}
+{"t":1792168079.1,"ev":"tool","agent":"builder","id":"a4e6c83aaefe0032b","tool":"Bash"}
+{"t":1792168090.6,"ev":"tool","agent":"reviewer","id":"afdf2c89ccaf2af90","tool":"Bash"}
+{"t":1792168098.9,"ev":"stop","agent":"orchestrator","id":"ab6e84b84dbe955d8"}
+{"t":1792168107.5,"ev":"tool","agent":"reviewer","id":"afdf2c89ccaf2af90","tool":"Bash"}
+{"t":1792168112.6,"ev":"tool","agent":"reviewer","id":"afdf2c89ccaf2af90","tool":"Read"}
+{"t":1792168113.8,"ev":"stop","agent":"orchestrator","id":"aa79b5c559da3b857"}
+{"t":1792168130.1,"ev":"tool","agent":"reviewer","id":"afdf2c89ccaf2af90","tool":"Bash"}
+{"t":1792168136.3,"ev":"tool","agent":"builder","id":"ae44d97795fdd1132","tool":"Bash"}
+{"t":1792168141.6,"ev":"tool","agent":"builder","id":"ae44d97795fdd1132","tool":"Bash"}
+{"t":1792168143.8,"ev":"tool","agent":"reviewer","id":"afdf2c89ccaf2af90","tool":"Bash"}
+{"t":1792168146.7,"ev":"stop","agent":"orchestrator","id":"aaff1878b3d19d63a"}
+{"t":1792168146.7,"ev":"stop","agent":"orchestrator","id":"a92083ed39f54dfa2"}
+{"t":1792168152.1,"ev":"tool","agent":"reviewer","id":"afdf2c89ccaf2af90","tool":"Bash"}
+{"t":1792168176.4,"ev":"tool","agent":"reviewer","id":"afdf2c89ccaf2af90","tool":"Bash"}
+{"t":1792168179.1,"ev":"stop","agent":"orchestrator","id":"afeebbef8e1049857"}
+{"t":1792168181.6,"ev":"tool","agent":"reviewer","id":"afdf2c89ccaf2af90","tool":"Bash"}
+{"t":1792168185.9,"ev":"tool","agent":"reviewer","id":"afdf2c89ccaf2af90","tool":"Bash"}
+{"t":1792168190.0,"ev":"tool","agent":"builder","id":"a4e6c83aaefe0032b","tool":"Bash"}
+{"t":1792168198.5,"ev":"tool","agent":"reviewer","id":"afdf2c89ccaf2af90","tool":"SubagentHandback"}
+{"t":1792168199.4,"ev":"stop","agent":"reviewer","id":"afdf2c89ccaf2af90"}
+{"t":1792168207.7,"ev":"tool","agent":"orchestrator","tool":"Bash"}
+{"t":1792168213.5,"ev":"stop","agent":"orchestrator","id":"a60cb3ec1ba80da38"}
+{"t":1792168225.0,"ev":"stop","agent":"orchestrator","id":"a528b70884a70a3c6"}
+{"t":1792168284.2,"ev":"tool","agent":"builder","id":"a4e6c83aaefe0032b","tool":"Bash"}
+{"t":1792168286.8,"ev":"stop","agent":"orchestrator","id":"a066a7613e6003cc1"}
+{"t":1792168377.9,"ev":"tool","agent":"builder","id":"ae44d97795fdd1132","tool":"Bash"}
+{"t":1792168388.4,"ev":"stop","agent":"orchestrator","id":"a89cc98bcc2c09db1"}
+{"t":1792168396.0,"ev":"tool","agent":"builder","id":"a4e6c83aaefe0032b","tool":"Bash"}
+{"t":1792168408.5,"ev":"stop","agent":"orchestrator","id":"a974cedaed1f3e032"}
+{"t":1792168455.0,"ev":"tool","agent":"builder","id":"a4e6c83aaefe0032b","tool":"Bash"}
+{"t":1792168470.9,"ev":"stop","agent":"orchestrator","id":"a8da260e6858b3217"}
+{"t":1792168489.4,"ev":"tool","agent":"builder","id":"a4e6c83aaefe0032b","tool":"Bash"}
+{"t":1792168503.8,"ev":"stop","agent":"orchestrator","id":"aad6f482d318c487b"}
+{"t":1792168524.9,"ev":"tool","agent":"builder","id":"a4e6c83aaefe0032b","tool":"Bash"}
+{"t":1792168537.8,"ev":"stop","agent":"orchestrator","id":"a4a1ed5e4dfa6537e"}
+{"t":1792168545.5,"ev":"tool","agent":"builder","id":"a4e6c83aaefe0032b","tool":"Bash"}
+{"t":1792168565.7,"ev":"tool","agent":"builder","id":"a4e6c83aaefe0032b","tool":"Bash"}
+{"t":1792168571.2,"ev":"stop","agent":"orchestrator","id":"ac7d33844aa42aa30"}
+{"t":1792168623.9,"ev":"tool","agent":"builder","id":"ae44d97795fdd1132","tool":"Bash"}
+{"t":1792168630.1,"ev":"stop","agent":"orchestrator","id":"ad1ba2f0c2dc1cbb2"}
+{"t":1792168634.6,"ev":"tool","agent":"builder","id":"ae44d97795fdd1132","tool":"Bash"}
+{"t":1792168643.9,"ev":"tool","agent":"builder","id":"ae44d97795fdd1132","tool":"Bash"}
+{"t":1792168654.9,"ev":"tool","agent":"builder","id":"ae44d97795fdd1132","tool":"Bash"}
+{"t":1792168662.6,"ev":"stop","agent":"orchestrator","id":"afb24fa5da841d5ac"}
+{"t":1792168703.8,"ev":"tool","agent":"builder","id":"ae44d97795fdd1132","tool":"Bash"}
+{"t":1792168725.0,"ev":"stop","agent":"orchestrator","id":"a0ba74eb9f10d1f90"}
+{"t":1792168738.0,"ev":"tool","agent":"builder","id":"a4e6c83aaefe0032b","tool":"Bash"}
+{"t":1792168753.8,"ev":"stop","agent":"orchestrator","id":"addba17929ebcb474"}
+{"t":1792168798.1,"ev":"tool","agent":"builder","id":"a4e6c83aaefe0032b","tool":"Bash"}
+{"t":1792168819.1,"ev":"stop","agent":"orchestrator","id":"a70300fb203f709ec"}
+{"t":1792168878.9,"ev":"tool","agent":"builder","id":"a4e6c83aaefe0032b","tool":"Bash"}
+{"t":1792168884.3,"ev":"stop","agent":"orchestrator","id":"a6e81d5291383d451"}
+{"t":1792168918.9,"ev":"stop","agent":"orchestrator","id":"a868a9b11c19e05ad"}
+{"t":1792169024.1,"ev":"tool","agent":"builder","id":"a4e6c83aaefe0032b","tool":"Bash"}
+{"t":1792169041.5,"ev":"stop","agent":"orchestrator","id":"a47dcc423978bb3f7"}
+{"t":1792169207.4,"ev":"tool","agent":"builder","id":"a4e6c83aaefe0032b","tool":"Bash"}
+{"t":1792169223.4,"ev":"stop","agent":"orchestrator","id":"af06587b48c54a19f"}
+{"t":1792169240.4,"ev":"tool","agent":"builder","id":"a4e6c83aaefe0032b","tool":"Bash"}
+{"t":1792169255.2,"ev":"stop","agent":"orchestrator","id":"a398838f33aa74b34"}
+{"t":1792169309.0,"ev":"tool","agent":"builder","id":"a4e6c83aaefe0032b","tool":"Bash"}
+{"t":1792169311.1,"ev":"tool","agent":"builder","id":"ae44d97795fdd1132","tool":"Bash"}
+{"t":1792169317.0,"ev":"stop","agent":"orchestrator","id":"ad5f884a3829f5b28"}
+{"t":1792169320.9,"ev":"tool","agent":"builder","id":"ae44d97795fdd1132","tool":"Bash"}
+{"t":1792169327.0,"ev":"stop","agent":"orchestrator","id":"a7ec5026b4d2c9811"}
+{"t":1792169455.1,"ev":"tool","agent":"builder","id":"a4e6c83aaefe0032b","tool":"Bash"}
+{"t":1792169471.4,"ev":"stop","agent":"orchestrator","id":"ae0aaa4cdc6d2e39a"}
+{"t":1792169481.9,"ev":"tool","agent":"builder","id":"a4e6c83aaefe0032b","tool":"Bash"}
+{"t":1792169503.1,"ev":"stop","agent":"orchestrator","id":"a254b9fd8976fcc4f"}
+{"t":1792169505.0,"ev":"tool","agent":"builder","id":"a4e6c83aaefe0032b","tool":"Bash"}
+{"t":1792169534.9,"ev":"stop","agent":"orchestrator","id":"aa76cd9ed59b07a8f"}
+{"t":1792169538.5,"ev":"tool","agent":"builder","id":"a4e6c83aaefe0032b","tool":"Bash"}
+{"t":1792169567.4,"ev":"stop","agent":"orchestrator","id":"a9675f54043fcf85d"}
+{"t":1792169648.6,"ev":"tool","agent":"builder","id":"a4e6c83aaefe0032b","tool":"Bash"}
+{"t":1792169655.6,"ev":"tool","agent":"builder","id":"a4e6c83aaefe0032b","tool":"Bash"}
+{"t":1792169661.6,"ev":"stop","agent":"orchestrator","id":"a0cd5112bbfadb48a"}
+{"t":1792169669.7,"ev":"tool","agent":"builder","id":"a4e6c83aaefe0032b","tool":"Bash"}
+{"t":1792169670.3,"ev":"tool","agent":"builder","id":"a4e6c83aaefe0032b","tool":"SubagentHandback"}
+{"t":1792169670.8,"ev":"stop","agent":"builder","id":"a4e6c83aaefe0032b"}
+{"t":1792169678.0,"ev":"tool","agent":"orchestrator","tool":"Bash"}
+{"t":1792169692.5,"ev":"tool","agent":"orchestrator","tool":"Agent"}
+{"t":1792169692.5,"ev":"start","agent":"reviewer","id":"a8d3df9c4fcd907a6"}
+{"t":1792169699.5,"ev":"tool","agent":"orchestrator","tool":"Bash"}
+{"t":1792169706.2,"ev":"stop","agent":"orchestrator","id":"afec2b6600c92301c"}
+{"t":1792169707.3,"ev":"tool","agent":"reviewer","id":"a8d3df9c4fcd907a6","tool":"Bash","tokens":13603}
+{"t":1792169714.2,"ev":"tool","agent":"reviewer","id":"a8d3df9c4fcd907a6","tool":"Bash","tokens":30250}
+{"t":1792169721.2,"ev":"tool","agent":"reviewer","id":"a8d3df9c4fcd907a6","tool":"Bash","tokens":66940}
+{"t":1792169724.5,"ev":"tool","agent":"reviewer","id":"a8d3df9c4fcd907a6","tool":"Read","tokens":86523}
+{"t":1792169728.3,"ev":"tool","agent":"reviewer","id":"a8d3df9c4fcd907a6","tool":"Bash","tokens":106106}
+{"t":1792169733.4,"ev":"stop","agent":"orchestrator","id":"ae64261e2c9feb328"}
+{"t":1792169739.1,"ev":"tool","agent":"reviewer","id":"a8d3df9c4fcd907a6","tool":"Bash","tokens":164460}
+{"t":1792169765.3,"ev":"stop","agent":"orchestrator","id":"ab40555a68daaaabc"}
+{"t":1792169792.9,"ev":"tool","agent":"reviewer","id":"a8d3df9c4fcd907a6","tool":"Bash","tokens":226998}
+{"t":1792169799.6,"ev":"stop","agent":"orchestrator","id":"a0d64489232f231cf"}
+{"t":1792169800.7,"ev":"tool","agent":"reviewer","id":"a8d3df9c4fcd907a6","tool":"Bash","tokens":290830}
+{"t":1792169837.3,"ev":"stop","agent":"orchestrator","id":"a196d2cf512b09e4e"}
+{"t":1792169920.0,"ev":"tool","agent":"builder","id":"ae44d97795fdd1132","tool":"Bash"}
+{"t":1792169930.2,"ev":"stop","agent":"orchestrator","id":"a950106209626e089"}
+{"t":1792169938.1,"ev":"tool","agent":"builder","id":"ae44d97795fdd1132","tool":"Bash"}
+{"t":1792169962.8,"ev":"stop","agent":"orchestrator","id":"a57978b8ff314f876"}
+{"t":1792169975.4,"ev":"tool","agent":"builder","id":"ae44d97795fdd1132","tool":"Bash"}
+{"t":1792169989.6,"ev":"tool","agent":"builder","id":"ae44d97795fdd1132","tool":"Bash"}
+{"t":1792169994.8,"ev":"stop","agent":"orchestrator","id":"ad96941b6afa92e6f"}
+{"t":1792169997.0,"ev":"tool","agent":"builder","id":"ae44d97795fdd1132","tool":"SubagentHandback"}
+{"t":1792169997.7,"ev":"stop","agent":"builder","id":"ae44d97795fdd1132"}
+{"t":1792170002.9,"ev":"tool","agent":"orchestrator","tool":"Bash"}
+{"t":1792170020.1,"ev":"start","agent":"reviewer","id":"a9a89e71249ada248"}
+{"t":1792170020.1,"ev":"tool","agent":"orchestrator","tool":"Agent"}
+{"t":1792170025.9,"ev":"tool","agent":"reviewer","id":"a9a89e71249ada248","tool":"Bash","tokens":13712}
+{"t":1792170026.1,"ev":"tool","agent":"orchestrator","tool":"Bash"}
+{"t":1792170031.7,"ev":"stop","agent":"orchestrator","id":"a139cffd05b096204"}
+{"t":1792170032.5,"ev":"tool","agent":"reviewer","id":"a9a89e71249ada248","tool":"Bash","tokens":31299}
+{"t":1792170041.3,"ev":"tool","agent":"reviewer","id":"a9a89e71249ada248","tool":"Bash","tokens":71517}
+{"t":1792170047.3,"ev":"tool","agent":"reviewer","id":"a9a89e71249ada248","tool":"Bash","tokens":114501}
+{"t":1792170052.8,"ev":"stop","agent":"orchestrator","id":"a3823e0f3cda9f4d3"}
+{"t":1792170059.5,"ev":"tool","agent":"reviewer","id":"a9a89e71249ada248","tool":"Bash","tokens":164565}
+{"t":1792170088.2,"ev":"stop","agent":"orchestrator","id":"ad4b87045fcb5f098"}
+{"t":1792170232.2,"ev":"tool","agent":"reviewer","id":"a9a89e71249ada248","tool":"Bash","tokens":217773}
+{"t":1792170235.9,"ev":"tool","agent":"reviewer","id":"a8d3df9c4fcd907a6","tool":"Bash","tokens":323350}
+{"t":1792170241.1,"ev":"stop","agent":"orchestrator","id":"a9dca631852080d81"}
+{"t":1792170267.1,"ev":"stop","agent":"orchestrator","id":"ab876a2009b6e4f51"}
+{"t":1792170312.8,"ev":"tool","agent":"reviewer","id":"a9a89e71249ada248","tool":"Bash","tokens":245095}
+{"t":1792170335.6,"ev":"stop","agent":"orchestrator","id":"a0430f9affc78c73a"}
+{"t":1792170374.3,"ev":"tool","agent":"reviewer","id":"a9a89e71249ada248","tool":"Bash","tokens":301199}
+{"t":1792170382.0,"ev":"tool","agent":"reviewer","id":"a9a89e71249ada248","tool":"Bash","tokens":358017}
+{"t":1792170388.8,"ev":"tool","agent":"reviewer","id":"a9a89e71249ada248","tool":"Bash","tokens":415491}
+{"t":1792170399.2,"ev":"stop","agent":"orchestrator","id":"a1abcfa61e52ac892"}
+{"t":1792170401.2,"ev":"tool","agent":"reviewer","id":"a9a89e71249ada248","tool":"Bash","tokens":476102}
+{"t":1792170414.3,"ev":"tool","agent":"reviewer","id":"a9a89e71249ada248","tool":"Bash","tokens":537470}
+{"t":1792170430.5,"ev":"tool","agent":"reviewer","id":"a9a89e71249ada248","tool":"Bash","tokens":601314}
+{"t":1792170432.3,"ev":"stop","agent":"orchestrator","id":"aaf8814dc86a827d0"}
+{"t":1792170466.1,"ev":"stop","agent":"orchestrator","id":"af49e1d2a429320f7"}
+{"t":1792170466.3,"ev":"tool","agent":"reviewer","id":"a9a89e71249ada248","tool":"Bash","tokens":669436}
+{"t":1792170498.1,"ev":"stop","agent":"orchestrator","id":"a515b0ef58aa21a3f"}
+{"t":1792170620.1,"ev":"tool","agent":"reviewer","id":"a8d3df9c4fcd907a6","tool":"Bash","tokens":356091}
+{"t":1792170632.8,"ev":"stop","agent":"orchestrator","id":"a652d3a9746f46869"}
+{"t":1792170682.5,"ev":"tool","agent":"reviewer","id":"a8d3df9c4fcd907a6","tool":"Bash","tokens":422357}
+{"t":1792170694.7,"ev":"stop","agent":"orchestrator","id":"a234dfe61fec0fd1a"}
+{"t":1792170755.8,"ev":"tool","agent":"reviewer","id":"a8d3df9c4fcd907a6","tool":"Bash","tokens":491261}
+{"t":1792170765.2,"ev":"tool","agent":"reviewer","id":"a8d3df9c4fcd907a6","tool":"Bash","tokens":562581}
+{"t":1792170773.5,"ev":"tool","agent":"reviewer","id":"a8d3df9c4fcd907a6","tool":"Bash","tokens":635401}
+{"t":1792170786.2,"ev":"stop","agent":"orchestrator","id":"ae096941313fc5a2f"}
+{"t":1792170789.8,"ev":"tool","agent":"reviewer","id":"a8d3df9c4fcd907a6","tool":"Bash","tokens":710209}
+{"t":1792170795.9,"ev":"tool","agent":"reviewer","id":"a8d3df9c4fcd907a6","tool":"Bash","tokens":789217}
+{"t":1792170818.4,"ev":"stop","agent":"orchestrator","id":"a8621aa71798d77ac"}
+{"t":1792170844.6,"ev":"tool","agent":"reviewer","id":"a8d3df9c4fcd907a6","tool":"Bash","tokens":870061}
+{"t":1792170851.2,"ev":"stop","agent":"orchestrator","id":"a6b1811e3c38e8546"}
+{"t":1792170860.7,"ev":"tool","agent":"reviewer","id":"a8d3df9c4fcd907a6","tool":"Bash","tokens":952119,"say":"Confirmed. Now cleanup worktrees and write the review."}
+{"t":1792170885.5,"ev":"stop","agent":"orchestrator","id":"aca62c07b6e8ff34c"}
+{"t":1792170905.2,"ev":"tool","agent":"reviewer","id":"a8d3df9c4fcd907a6","tool":"Bash","tokens":994201,"say":"Confirmed. Now cleanup worktrees and write the review."}
+{"t":1792170913.4,"ev":"tool","agent":"reviewer","id":"a9a89e71249ada248","tool":"Bash","tokens":704316}
+{"t":1792170917.2,"ev":"stop","agent":"orchestrator","id":"ac68245ec45d7784d"}
+{"t":1792170919.8,"ev":"stop","agent":"orchestrator","id":"a309e96310dc3a022"}
+{"t":1792170923.2,"ev":"tool","agent":"reviewer","id":"a9a89e71249ada248","tool":"Bash","tokens":775122}
+{"t":1792170927.5,"ev":"tool","agent":"reviewer","id":"a9a89e71249ada248","tool":"Bash","tokens":811742}
+{"t":1792170935.3,"ev":"tool","agent":"reviewer","id":"a8d3df9c4fcd907a6","tool":"Bash","tokens":1080967,"say":"Confirmed. Now cleanup worktrees and write the review."}
+{"t":1792170947.6,"ev":"tool","agent":"reviewer","id":"a9a89e71249ada248","tool":"Bash","tokens":886886}
+{"t":1792170949.0,"ev":"stop","agent":"orchestrator","id":"a27bbd832996a4237"}
+{"t":1792170951.7,"ev":"stop","agent":"orchestrator","id":"ac4c7ee7651ab154e"}
+{"t":1792170954.8,"ev":"tool","agent":"reviewer","id":"a9a89e71249ada248","tool":"Bash","tokens":965544}
+{"t":1792170961.9,"ev":"tool","agent":"reviewer","id":"a9a89e71249ada248","tool":"Bash","tokens":1045432}
+{"t":1792170967.1,"ev":"tool","agent":"reviewer","id":"a8d3df9c4fcd907a6","tool":"Bash","tokens":1168539,"say":"Confirmed. Now cleanup worktrees and write the review."}
+{"t":1792170970.1,"ev":"tool","agent":"reviewer","id":"a9a89e71249ada248","tool":"SubagentHandback","tokens":1085979}
+{"t":1792170970.7,"ev":"stop","agent":"reviewer","id":"a9a89e71249ada248","tokens":1085979}
+{"t":1792170972.4,"ev":"tool","agent":"reviewer","id":"a8d3df9c4fcd907a6","tool":"Bash","tokens":1262699,"say":"Confirmed. Now cleanup worktrees and write the review."}
+{"t":1792170977.2,"ev":"tool","agent":"orchestrator","tool":"Bash"}
+{"t":1792170978.0,"ev":"tool","agent":"reviewer","id":"a8d3df9c4fcd907a6","tool":"Bash","tokens":1310375,"say":"Confirmed. Now cleanup worktrees and write the review."}
+{"t":1792170980.9,"ev":"stop","agent":"orchestrator","id":"ac5254d28540d7aa8"}
+{"t":1792170983.7,"ev":"stop","agent":"orchestrator","id":"ad8975e8663cfb014"}
+{"t":1792170985.1,"ev":"tool","agent":"reviewer","id":"a8d3df9c4fcd907a6","tool":"SubagentHandback","tokens":1358256,"say":"Confirmed. Now cleanup worktrees and write the review."}
+{"t":1792170985.7,"ev":"stop","agent":"reviewer","id":"a8d3df9c4fcd907a6","tokens":1358256,"say":"Confirmed. Now cleanup worktrees and write the review."}
+{"t":1792170990.1,"ev":"tool","agent":"orchestrator","tool":"Bash"}
+{"t":1792171005.0,"ev":"tool","agent":"orchestrator","tool":"SendMessage"}
+{"t":1792171005.0,"ev":"start","agent":"builder","id":"a4e6c83aaefe0032b"}
+{"t":1792171006.7,"ev":"tool","agent":"orchestrator","tool":"Bash"}
+{"t":1792171014.2,"ev":"stop","agent":"orchestrator","id":"a87e8add96b931b42"}
+{"t":1792171036.6,"ev":"stop","agent":"orchestrator","id":"a142205310917e0fa"}
+{"t":1792171090.4,"ev":"tool","agent":"builder","id":"a4e6c83aaefe0032b","tool":"Bash","tokens":2014300,"say":"Now state.json."}
+{"t":1792171099.5,"ev":"stop","agent":"orchestrator","id":"ab81ba036867ddf01"}
+{"t":1792171651.9,"ev":"tool","agent":"builder","id":"a4e6c83aaefe0032b","tool":"Bash","tokens":2126260,"say":"Now state.json."}
+{"t":1792171671.8,"ev":"stop","agent":"orchestrator","id":"a1a5c2d479e6cdf94"}
+{"t":1792171721.2,"ev":"tool","agent":"builder","id":"a4e6c83aaefe0032b","tool":"Bash","tokens":2239842,"say":"Now state.json."}
+{"t":1792171733.3,"ev":"stop","agent":"orchestrator","id":"ac83f7e4de8a2f7d6"}
+{"t":1792171752.8,"ev":"tool","agent":"builder","id":"a4e6c83aaefe0032b","tool":"Bash","tokens":2297440,"say":"Now state.json."}
+{"t":1792171760.9,"ev":"tool","agent":"builder","id":"a4e6c83aaefe0032b","tool":"Bash","tokens":2471089,"say":"Removed. Update state."}
+{"t":1792171761.5,"ev":"tool","agent":"builder","id":"a4e6c83aaefe0032b","tool":"SubagentHandback","tokens":2471089,"say":"Removed. Update state."}
+{"t":1792171762.1,"ev":"stop","agent":"builder","id":"a4e6c83aaefe0032b","tokens":2471089,"say":"Removed. Update state."}
+{"t":1792171768.5,"ev":"tool","agent":"orchestrator","tool":"Bash"}
+{"t":1792171783.1,"ev":"start","agent":"reviewer","id":"abd1086a3bebd1f0e"}
+{"t":1792171783.2,"ev":"tool","agent":"orchestrator","tool":"Agent"}
+{"t":1792171788.0,"ev":"tool","agent":"reviewer","id":"abd1086a3bebd1f0e","tool":"Bash","tokens":13626}
+{"t":1792171788.9,"ev":"tool","agent":"orchestrator","tool":"Bash"}
+{"t":1792171793.8,"ev":"tool","agent":"reviewer","id":"abd1086a3bebd1f0e","tool":"Bash","tokens":32919}
+{"t":1792171795.3,"ev":"stop","agent":"orchestrator","id":"ad8845ebdb8d44e45"}
+{"t":1792171810.8,"ev":"tool","agent":"reviewer","id":"abd1086a3bebd1f0e","tool":"Bash","tokens":77815}
+{"t":1792171817.8,"ev":"stop","agent":"orchestrator","id":"ad4119ee805239469"}
+{"t":1792171857.4,"ev":"stop","agent":"orchestrator","id":"acd88c894c1d558be"}
+{"t":1792172133.5,"ev":"tool","agent":"reviewer","id":"abd1086a3bebd1f0e","tool":"Bash","tokens":126819}
+{"t":1792172166.8,"ev":"stop","agent":"orchestrator","id":"abb4b47310794481c"}
+{"t":1792172205.8,"ev":"tool","agent":"reviewer","id":"abd1086a3bebd1f0e","tool":"Bash","tokens":151766}
+{"t":1792172237.6,"ev":"stop","agent":"orchestrator","id":"a507aaeb2a5a71807"}
+{"t":1792172253.7,"ev":"tool","agent":"reviewer","id":"abd1086a3bebd1f0e","tool":"Bash","tokens":202720,"say":"Now the typo check (does the d.ts swallow bad imports) and expo-env.d.ts coexistence."}
+{"t":1792172271.3,"ev":"stop","agent":"orchestrator","id":"abb3d8964f66c2e59"}
+{"t":1792172459.3,"ev":"tool","agent":"reviewer","id":"abd1086a3bebd1f0e","tool":"Bash","tokens":280570,"say":"Now the typo check (does the d.ts swallow bad imports) and expo-env.d.ts coexistence."}
+{"t":1792172493.3,"ev":"stop","agent":"orchestrator","id":"a93604650e5911738"}
+{"t":1792172576.7,"ev":"tool","agent":"reviewer","id":"abd1086a3bebd1f0e","tool":"Bash","tokens":334582,"say":"Now the typo check (does the d.ts swallow bad imports) and expo-env.d.ts coexistence."}
+{"t":1792172581.6,"ev":"tool","agent":"reviewer","id":"abd1086a3bebd1f0e","tool":"Bash","tokens":418123,"say":"Now probe the clamp with scratch tests (not committed)."}
+{"t":1792172585.3,"ev":"stop","agent":"orchestrator","id":"a906a3f5fd2bdbf45"}
+{"t":1792172607.6,"ev":"tool","agent":"reviewer","id":"abd1086a3bebd1f0e","tool":"Bash","tokens":479007,"say":"Now probe the clamp with scratch tests (not committed)."}
+{"t":1792172617.2,"ev":"stop","agent":"orchestrator","id":"a0ab2f7ce239e2511"}
+{"t":1792172649.3,"ev":"stop","agent":"orchestrator","id":"a13918ca1d54d84d0"}
+{"t":1792172652.1,"ev":"tool","agent":"reviewer","id":"abd1086a3bebd1f0e","tool":"Bash","tokens":543099,"say":"Now probe the clamp with scratch tests (not committed)."}
+{"t":1792172662.1,"ev":"tool","agent":"reviewer","id":"abd1086a3bebd1f0e","tool":"Bash","tokens":611019,"say":"Now probe the clamp with scratch tests (not committed)."}
+{"t":1792172673.6,"ev":"tool","agent":"reviewer","id":"abd1086a3bebd1f0e","tool":"Bash","tokens":681493,"say":"Now probe the clamp with scratch tests (not committed)."}
+{"t":1792172681.5,"ev":"stop","agent":"orchestrator","id":"a40e32b969ace03a1"}
+{"t":1792172699.2,"ev":"tool","agent":"reviewer","id":"abd1086a3bebd1f0e","tool":"Bash","tokens":825745,"say":"Now remove the worktree and write the review."}
+{"t":1792172700.9,"ev":"tool","agent":"reviewer","id":"abd1086a3bebd1f0e","tool":"Bash","tokens":825745,"say":"Now remove the worktree and write the review."}
+{"t":1792172713.2,"ev":"stop","agent":"orchestrator","id":"abc068350929fdce5"}
+{"t":1792172731.8,"ev":"tool","agent":"reviewer","id":"abd1086a3bebd1f0e","tool":"Bash","tokens":863576,"say":"Now remove the worktree and write the review."}
+{"t":1792172745.2,"ev":"stop","agent":"orchestrator","id":"a421f31e64aa743fc"}
+{"t":1792172759.8,"ev":"tool","agent":"reviewer","id":"abd1086a3bebd1f0e","tool":"Bash","tokens":940030,"say":"Now remove the worktree and write the review."}
+{"t":1792172766.0,"ev":"tool","agent":"reviewer","id":"abd1086a3bebd1f0e","tool":"SubagentHandback","tokens":980882,"say":"Now remove the worktree and write the review."}
+{"t":1792172766.5,"ev":"stop","agent":"reviewer","id":"abd1086a3bebd1f0e","tokens":980882,"say":"Now remove the worktree and write the review."}
+{"t":1792172774.8,"ev":"tool","agent":"orchestrator","tool":"Bash"}
+{"t":1792172790.0,"ev":"tool","agent":"orchestrator","tool":"Agent"}
+{"t":1792172790.0,"ev":"start","agent":"integrator","id":"ae7dcc2fe81cf8e76"}
+{"t":1792172795.0,"ev":"tool","agent":"integrator","id":"ae7dcc2fe81cf8e76","tool":"Bash","tokens":12060}
+{"t":1792172802.6,"ev":"tool","agent":"integrator","id":"ae7dcc2fe81cf8e76","tool":"Bash","tokens":44688}
+{"t":1792172809.5,"ev":"tool","agent":"integrator","id":"ae7dcc2fe81cf8e76","tool":"Bash","tokens":61856}
+{"t":1792172816.9,"ev":"tool","agent":"integrator","id":"ae7dcc2fe81cf8e76","tool":"Bash","tokens":97472,"say":"All latest attempts PASS. Merging in order s3, s2, s1."}
+{"t":1792172822.9,"ev":"tool","agent":"integrator","id":"ae7dcc2fe81cf8e76","tool":"Bash","tokens":164642,"say":"No conflicts; authorship correct. Starting the cargo suite in the background, and running JS suites meanwhile."}
+{"t":1792172823.1,"ev":"stop","agent":"orchestrator","id":"ac5fb708698dbd56f"}
+{"t":1792172845.4,"ev":"tool","agent":"integrator","id":"ae7dcc2fe81cf8e76","tool":"Bash","tokens":164642,"say":"No conflicts; authorship correct. Starting the cargo suite in the background, and running JS suites meanwhile."}
+{"t":1792172855.5,"ev":"stop","agent":"orchestrator","id":"a73ca711e5944cff0"}
+{"t":1792182672.2,"ev":"tool","agent":"integrator","id":"ae7dcc2fe81cf8e76","tool":"Bash","tokens":188044,"say":"No conflicts; authorship correct. Starting the cargo suite in the background, and running JS suites meanwhile."}
+{"t":1792182695.9,"ev":"stop","agent":"orchestrator","id":"ac48a698b7140e36d"}
+{"t":1792182701.8,"ev":"tool","agent":"integrator","id":"ae7dcc2fe81cf8e76","tool":"Bash","tokens":236171,"say":"No conflicts; authorship correct. Starting the cargo suite in the background, and running JS suites meanwhile."}
+{"t":1792182757.7,"ev":"tool","agent":"integrator","id":"ae7dcc2fe81cf8e76","tool":"Bash","tokens":286870,"say":"No conflicts; authorship correct. Starting the cargo suite in the background, and running JS suites meanwhile."}
+{"t":1792182794.4,"ev":"stop","agent":"orchestrator","id":"a07607ce696311560"}
+{"t":1792183286.4,"ev":"tool","agent":"orchestrator","tool":"Bash"}
+{"t":1792183295.7,"ev":"tool","agent":"orchestrator","tool":"Bash"}
+{"t":1792183367.1,"ev":"tool","agent":"integrator","id":"ae7dcc2fe81cf8e76","tool":"Bash","tokens":338510,"say":"No conflicts; authorship correct. Starting the cargo suite in the background, and running JS suites meanwhile."}
+{"t":1792183379.9,"ev":"tool","agent":"integrator","id":"ae7dcc2fe81cf8e76","tool":"Bash","tokens":365110,"say":"No conflicts; authorship correct. Starting the cargo suite in the background, and running JS suites meanwhile."}
+{"t":1792183397.3,"ev":"stop","agent":"orchestrator","id":"a745dcc955e2cad8a"}
+{"t":1792183526.2,"ev":"tool","agent":"integrator","id":"ae7dcc2fe81cf8e76","tool":"Bash","tokens":420110,"say":"No conflicts; authorship correct. Starting the cargo suite in the background, and running JS suites meanwhile."}
+{"t":1792183532.7,"ev":"tool","agent":"integrator","id":"ae7dcc2fe81cf8e76","tool":"Bash","tokens":448499,"say":"No conflicts; authorship correct. Starting the cargo suite in the background, and running JS suites meanwhile."}
+{"t":1792183549.6,"ev":"stop","agent":"orchestrator","id":"a164ccad5d3a6d1f5"}
+{"t":1792183557.0,"ev":"tool","agent":"integrator","id":"ae7dcc2fe81cf8e76","tool":"Bash","tokens":506583,"say":"Everything is green. Writing the integrator key now."}
+{"t":1792183561.3,"ev":"tool","agent":"integrator","id":"ae7dcc2fe81cf8e76","tool":"SubagentHandback","tokens":537555,"say":"Everything is green. Writing the integrator key now."}
+{"t":1792183561.5,"ev":"stop","agent":"integrator","id":"ae7dcc2fe81cf8e76","tokens":537555,"say":"Everything is green. Writing the integrator key now."}
+{"t":1792183566.6,"ev":"tool","agent":"orchestrator","tool":"Bash"}
+{"t":1792183568.9,"ev":"tool","agent":"orchestrator","tool":"Skill"}
+{"t":1792183573.6,"ev":"tool","agent":"orchestrator","tool":"Bash"}

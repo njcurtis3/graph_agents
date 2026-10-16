@@ -1,0 +1,645 @@
+{
+  "$comment": "Shared state for ONE work-graph run. Lives at .graph/runs/<run-id>/state.json. Every node reads this on start and appends to its OWN key on finish - the builder writes its own builders.<slice> key, including the branch it worked on. Never rewrite another node's key. Every node key carries written_by, naming the node that wrote it: that is the ONLY record of authorship this file has, and without it 'never rewrite another node's key' is unverifiable - an orchestrator hand-writing all six keys is indistinguishable from six nodes doing their jobs. verify-state.py --audit checks it. This file is the edge: it is how context crosses between agents that cannot see each other.",
+  "run_id": "2026-10-16-orchestra-p1-a0-h0",
+  "goal": "start P1 with A0 and H0 alongside (orchestra ROADMAP: P1 design the client-to-host link, a decision run; A0 clear the Expo template and set up the mobile app shell; H0 split the Rust core out of the Tauri shell, no behaviour change)",
+  "app": "orchestra",
+  "status": "done",
+  "scout": {
+    "written_by": "scout",
+    "facts": [
+      "H0-1 Q1 Tauri confined to commands.rs, lib.rs, window.rs. grep for tauri/AppHandle/Emitter/Manager/State/app_data_dir/plugin over src/: code hits only in those three; session/, git.rs, projects.rs, notify.rs only prose (notify.rs:6, session/mod.rs:2). User guess CONFIRMED; ROADMAP.md:33-35 confirmed.",
+      "H0-2 Q1 Tauri touchpoints: commands.rs:8-9 imports, :74-212 sixteen #[tauri::command] fns, :76 AppHandle, :79 DialogExt. window.rs:7,60-84 (WebviewWindow, Monitor, set_size/set_position). lib.rs:8-9,14-18,21-22 plugins; :28-29 get_webview_window + ensure_visible; :31-34 app.handle()/app.path().app_data_dir(); :52-55 handle.emit; :62 focus check; :66-71 notification; :88-105 generate_handler; :106-107 generate_context; :110-112 RunEvent::Exit.",
+      "H0-3 Q1 Module tree desktop/src-tauri/src (lines): commands.rs 294 SHELL; window.rs 135 SHELL; lib.rs 116 SHELL; main.rs 6 (calls orchestra_lib::run, main.rs:5); notify.rs 116 CORE-candidate (imported by session/mod.rs:22); projects.rs 140 CORE; git.rs 1405 CORE; session/mod.rs 3395, process.rs 448, process/job.rs 156, protocol.rs 195, settings.rs 96, state.rs 936, store.rs 359, task.rs 421, transcript.rs 619 all CORE. Total 8837.",
+      "H0-4 Q2 SEAM ALREADY EXISTS as boxed closures, not a trait: session/mod.rs:37 Emit=Box<dyn Fn(Event)+Send+Sync>; :41 Notify=Box<dyn Fn(&str,Notice)+Send+Sync>; :44 Spawner=Box<dyn Fn(&Path,&SpawnArgs,Sink)->Result<Arc<dyn Proc>,String>+Send+Sync>. Event enum mod.rs:29-35. Constructor Sessions::with_writer(emit, spawner, notify, writer, transcripts, worktree_base: PathBuf) mod.rs:71-78.",
+      "H0-5 Q2 Tauri event names only in shell: lib.rs:51-56 maps Event variants to session-updated, inbox-updated, transcript-appended, task-updated.",
+      "H0-6 Q2 OS notification: core decides (notify.rs:32 decide, :47 body) and calls the Notify closure. The OS call and focus gate are in lib.rs:60-72 (focus lib.rs:62, show lib.rs:66-71). mod.rs:39-41 contract: reader thread, no lock held, must not call back into Sessions.",
+      "H0-7 Q2 Data dir obtained only in shell: lib.rs:34 app.path().app_data_dir().ok(), passed as paths: store::open(dir/state.json) lib.rs:36; TranscriptStore::disk(dir/transcripts) lib.rs:41 else memory() lib.rs:42; worktree_base dir/worktrees lib.rs:45-48, fallback temp_dir/orchestra-worktrees lib.rs:47. No app_data_dir call in core.",
+      "H0-8 Q2 process::spawn defined in core at session/process.rs:169, passed by shell at lib.rs:58. Sessions::shutdown() mod.rs:1505 called from lib.rs:110-112.",
+      "H0-9 Q3 Cargo.toml:2 name=orchestra; :8 edition 2024; [lib] :12-17 name=orchestra_lib, crate-type=[staticlib,cdylib,rlib] (this package only). [build-dependencies] :19-20 tauri-build 2. [dependencies] :22-28 tauri 2 (features []), serde 1 derive, serde_json 1, tauri-plugin-dialog 2, tauri-plugin-notification 2, tauri-plugin-window-state 2. [target.cfg(windows).dependencies] :30-31 windows-sys 0.60 (Win32_Foundation, Win32_Security, Win32_System_JobObjects, Win32_System_Threading), used only at session/process/job.rs:23-24. [profile.release] :35-40. No dev-dependencies, features or workspace.",
+      "H0-10 Q3 build.rs:2 is tauri_build::build() only. No Cargo.toml at repos/, orchestra/ or orchestra/desktop/ (checked): no workspace. Cargo.lock at orchestra/desktop/src-tauri/Cargo.lock (469 packages; orchestra entry line 2358).",
+      "H0-11 Q5 crate-type at Cargo.toml:16-17 is per package, not inherited. A new core package has its own [lib] (default rlib). A path dependency does not change orchestra_lib's staticlib/cdylib output; Cargo.lock gains a path entry.",
+      "H0-12 Q4 cargo test in desktop/src-tauri, exit 0: 'running 191 tests' then 'test result: ok. 191 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 28.82s'. bin target and doc-tests: 'running 0 tests', 0 passed, 0 failed.",
+      "H0-13 Q4 #[test] per file (grep, sums to 191): session/mod.rs 76; git.rs 27; session/state.rs 23; session/transcript.rs 15; session/process.rs 8; session/task.rs 8; commands.rs 7 (SHELL, :217-294); notify.rs 6; session/store.rs 6; session/protocol.rs 5; projects.rs 3; window.rs 3 (SHELL, :88-135); process/job.rs 2; settings.rs 2. Shell-side 10, core-side 181.",
+      "H0-14 Q4 npm test in desktop/, exit 0: 'Test Files 5 passed (5)', 'Tests 58 passed (58)' (vitest 5.0.3).",
+      "H0-15 Q4 No Rust test uses tauri types, tauri::test, MockRuntime or a tauri feature (grep empty; Cargo.toml:23 features=[]). Session tests drive Sessions through with_writer closures (mod.rs:1550-1558). commands.rs and window.rs tests are pure (serde_json; own Rect).",
+      "H0-16 Q4 Environment-dependent (not tauri): git.rs tests run real git and ssh-keygen (git.rs:1256), ping/sleep (git.rs:956-961), cmd (git.rs:1098-1100); session/mod.rs:2223-2225 cmd; mod.rs:1674,1853 shell out to git.",
+      "H0-17 Q5 include_str! is relative to the source file: session/mod.rs:2988 resume_unknown_id.jsonl; session/protocol.rs:134-137 four fixtures (permission_allow, permission_deny, ask_user_question, multi_turn). Paths start ../../tests/fixtures/stream_json/. Fixtures are at orchestra/desktop/src-tauri/tests/fixtures/stream_json/ (6 files). A core at desktop/src-tauri/core/src/session/ resolves them to core/tests/ and BREAKS; they need ../../../tests/ or the fixtures move.",
+      "H0-18 Q5 Prose-only path mentions (no build effect): session/process.rs:31, session/protocol.rs:3. state.rs:586 super::super::protocol is module-internal. No CARGO_MANIFEST_DIR, env!, option_env!, current_exe in src/. tauri.conf.json:10 frontendDist ../dist and capabilities/gen are relative to src-tauri, unaffected. Core files reference only crate::git/notify/projects/session (mod.rs:21-23); none reference crate::commands or crate::window.",
+      "H0-19 Q6 .github/workflows/desktop-release.yml (only workflow): triggers workflow_dispatch and tags desktop-v* (:7-10); permissions contents:write (:12-13); matrix windows-latest and macos-latest, macos args --target universal-apple-darwin (:19-24); defaults.run.working-directory desktop (:26-28); setup-node cache-dependency-path desktop/package-lock.json (:36); rust-cache workspaces desktop/src-tauri -> target (:44); npm ci (:46); tauri-action projectPath desktop (:52), tagName desktop-v__VERSION__ (:53), releaseDraft true (:55). No cargo test or npm test step in CI.",
+      "A0-1 Q7 mobile/src files (23): app/_layout.tsx, app/index.tsx, app/explore.tsx; components/animated-icon.tsx, animated-icon.web.tsx, animated-icon.module.css, app-tabs.tsx, app-tabs.web.tsx, external-link.tsx, hint-row.tsx, themed-text.tsx, themed-view.tsx, web-badge.tsx, ui/collapsible.tsx; constants/theme.ts; global.css; hooks/use-color-scheme.ts, use-color-scheme.web.ts, use-theme.ts. Root: app.json, eas.json, package.json, package-lock.json, tsconfig.json, expo-env.d.ts (gitignored), README.md, AGENTS.md, LICENSE, .gitignore, .claude/settings.json, .vscode/ (2), scripts/reset-project.js, assets/.",
+      "A0-2 Q7 STARTER (file:line): explore.tsx whole file (tab Explore :158; 'This starter app includes example code' :160; sections :178-236). index.tsx whole file (Welcome to Expo :55; get started :61; HintRow :65-73 naming src/app/index.tsx and npm run reset-project; getDevMenuHint :30-47; AnimatedIcon :54). _layout.tsx :5-6 imports, :14 AnimatedSplashOverlay, :15 AppTabs (rewire point). app-tabs.tsx whole file (brand 'Expo Starter' :90; home/explore triggers :15-29, expo-router/unstable-native-tabs). app-tabs.web.tsx whole file (triggers :56-61). animated-icon.tsx (AnimatedSplashOverlay :11, AnimatedIcon :98), animated-icon.web.tsx, animated-icon.module.css. hint-row.tsx whole file, used only index.tsx:65-69. web-badge.tsx whole file, imported index.tsx:27 and explore.tsx:126. ui/collapsible.tsx used only explore.tsx:125. external-link.tsx generic helper, imported app-tabs.tsx:44 and explore.tsx:122 (keep or drop). assets/images react-logo*, tutorial-web.png, expo-badge*.png, tabIcons/* (starter). scripts/reset-project.js: moves src/ and scripts/ into example/ (reset-project.js:14-16), wired package.json:37. README.md:1 'Welcome to your Expo app'. .gitignore:39 'example' line exists for reset-project.",
+      "A0-3 Q7 KEEP: app.json, eas.json, package.json, tsconfig.json, .gitignore, constants/theme.ts (Colors, Spacing, BottomTabInset :64, MaxContentWidth :65; imports global.css :6), global.css, themed-text.tsx, themed-view.tsx, hooks/use-color-scheme(.web).ts, hooks/use-theme.ts, AGENTS.md, icons used by app.json: assets/expo.icon (app.json:11), images/icon.png (:7), favicon.png (:26), splash-icon.png (:34), android-icon-*.png (:17-19). mobile/LICENSE NOT read.",
+      "A0-4 Q8 package.json: expo ~57.0.27 (:7); expo-router ~57.0.25 (:14); react 19.2.3 (:21); react-native 0.86.3 (:23); react-native-safe-area-context ~5.7.0 (:26) PRESENT; react-native-reanimated 4.5.1 (:25); react-native-worklets 0.10.1 (:29); expo-secure-store ~57.0.4 (:15); expo-device (:9); @types/react ~19.2.2, typescript ~6.0.3 (:32-33). Scripts :35-41 start, reset-project, android, ios, web, lint. NO test script.",
+      "A0-5 Q8 ABSENT: expo-dev-client, expo-network, jest, jest-expo (grep of package.json empty; jest only transitive in package-lock.json e.g. :1478). AGENTS.md:16 says add packages via npx expo install.",
+      "A0-6 Q8 app.json: scheme orchestra (:8); ios.bundleIdentifier and android.package com.telosrg.orchestra (:12, :22); ios.icon ./assets/expo.icon (:11); plugins expo-router, expo-splash-screen, expo-secure-store (:28-39); experiments typedRoutes, reactCompiler (:40-43); runtimeVersion policy fingerprint (:44-46). No expo-dev-client plugin.",
+      "A0-7 Q8 eas.json: cli >=16.0.0, appVersionSource remote (:2-5); development developmentClient true, internal, channel development (:7-11); preview internal, channel preview, android apk (:12-18); production channel production, autoIncrement (:19-22); submit.production {} (:24-26). development needs expo-dev-client, which is absent (CLAUDE.md:117 agrees).",
+      "A0-8 Q9 mobile/tsconfig.json extends expo/tsconfig.base (:2), strict (:4), paths @/* to ./src/* (:5-12), includes expo-env.d.ts (:18). .gitignore:10 ignores expo-env.d.ts; local copy is one line: reference types expo/types.",
+      "A0-9 Q9 npx tsc --noEmit in mobile/: exit 0, empty output, starter present, node_modules installed. Fresh clone needs npx expo start once to generate expo-env.d.ts (CLAUDE.md:43-44). Fresh-clone behaviour NOT run.",
+      "P1-1 Q10 protocol/ holds only README.md (14 lines). protocol/README.md:14 'Empty until the desktop<->phone link is designed'. Rules: version in every message (:6); a change ships in both clients together (:7-10); TypeScript is source of truth, Rust copy in desktop/src-tauri (:11-12).",
+      "P1-2 Q10 Tauri commands (registered lib.rs:88-105; arg structs commands.rs:22-71, deny_unknown_fields): pick_project() -> Option<Project> (commands.rs:74-84); list_projects() (:86-89); start_session{args: StartArgs{project_id, prompt, model?, permission_mode?}} (:92-101); list_sessions() (:103-106); list_inbox() (:108-111); answer{args: Answer} (:114-130), Answer tagged by kind: permission{item_id, decision allow|deny, message?}, question{item_id, answers map}, reply{session_id, text} (:65-71); stop_session{args:{session_id}} (:209-213); create_task{args: CreateTaskArgs} (:148-157); list_tasks() (:159-163); cancel_task{args:{task_id}} (:165-171); get_task_diff{task_id} -> TaskDiff (:174-180); land_task{task_id} -> TaskSummary (:184-190); discard_task{task_id} (:192-198); retry_cleanup{task_id} (:200-206); get_transcript{args:{session_id}} -> TranscriptPage (:133-140); storage_status() -> StorageStatus (:142-146). Names match desktop/src/ipc.ts:276-347 one-to-one.",
+      "P1-3 Q10 Events (lib.rs:52-55): session-updated (SessionSummary; types.ts:24-36); inbox-updated (InboxItem[]; types.ts:50-62); transcript-appended (TranscriptBatch{session_id, entries}; types.ts:85); task-updated (TaskSummary; types.ts:109-122). Listeners ipc.ts:351-395. Also TaskDiff types.ts:132-139; TranscriptPage types.ts:84; StorageStatus ipc.ts:259-261 (ok true | ok false, reason unknown_schema_version|unreadable, found_version). Enums: SESSION_STATUSES types.ts:5-15; MODELS :19; PERMISSION_MODES :21; INBOX_KINDS :38; TASK_STATUSES :96-106; MAX_TEXT_BYTES :92 = 32768.",
+      "P1-4 Q11 fleet/ top level: README.md, GRAPH.md, SOURCE (upstream graph_agents @ 506afe9571a1b438db99c7fd34c762c3fd882220, 2026-10-09, SOURCE:2-4; dropped_hooks; unmanaged README.md), .claude/ (agents architect, builder, integrator, ops, reviewer, scout; hooks bash_write_targets.py, flag-state-gap.py, guard-builder-scope.py, record-activity.py, show-board.py; settings.json; skills close-run, feature-graph, rlm), .graph/ (brief.py, check-return-cap.py, close-run.py, rlm.py, scout-facts.py, verify-state.py, runs/_schema.json).",
+      "DOC-1 ROADMAP.md:220-227 (H0) says move session/, git.rs, projects.rs and the store. notify.rs is not listed, yet session/mod.rs:22 imports it. Plan and code disagree.",
+      "DOC-2 ROADMAP.md:33-35 (Tauri confined to commands.rs, lib.rs, window.rs) is accurate (H0-1).",
+      "DOC-3 CLAUDE.md:117 (development profile needs expo-dev-client) is accurate: eas.json:7-11, package.json lacks it. ROADMAP.md:110 lists it under A0.",
+      "DOC-4 CLAUDE.md:124-125 requires expo-network for connectivity; expo-network is absent. Not an explicit A0 item in ROADMAP.md:104-110.",
+      "BUILD verified by scout: cargo test green (191/191); npm test green (58/58); tsc --noEmit green in mobile/. Not run: tauri build, expo-doctor, mobile lint, fresh-clone checks."
+    ],
+    "unknowns": [
+      "Does plain cargo test in desktop/src-tauri run path-dependency tests? From Cargo behaviour, not verified here: without a [workspace] the core package is not a member, so only orchestra's 10 tests would run. Plan must select the package explicitly and decide on a workspace.",
+      "Crate name core collides with the sysroot crate core. Not built here. Prefer package orchestra-core (lib orchestra_core).",
+      "H1 (Linux parity) not scouted; attach_job is Windows-only at session/process.rs:99-105.",
+      "mobile/LICENSE not read; mobile .vscode and .claude/settings.json classified by name only.",
+      "No tauri dev/build, expo-doctor or mobile lint run.",
+      "Protocol wire types not diffed against Rust serde output; types.ts:1 only asserts it mirrors Rust."
+    ],
+    "risks": [
+      "HIGH K1 test-count split: 191 = 181 core + 10 shell (H0-13). Plain cargo test in src-tauri may silently skip the 181 core tests, so same counts can pass falsely. Count per package explicitly.",
+      "HIGH K2 five include_str! sites (H0-17) break by one directory level if core sits at desktop/src-tauri/core/.",
+      "MED K3 notify.rs is an unlisted core dependency (DOC-1).",
+      "MED K4 crate name core shadows the sysroot crate name.",
+      "MED K5 A0 development EAS profile cannot produce a dev-client build until expo-dev-client is added (A0-5, A0-7).",
+      "LOW K6 no test runner in mobile (A0-4); add jest-expo via npx expo install.",
+      "LOW K7 protocol/ is empty (P1-1): H0 and P3 must not define wire types before the P1 decision."
+    ]
+  },
+  "architect": {
+    "written_by": "architect",
+    "shape": "diamond",
+    "parallel_safe": true,
+    "rationale": "Diamond, confirmed. Three slices, three milestones, disjoint file sets: s1 = orchestra/protocol/README.md only; s2 = orchestra/mobile/** only; s3 = orchestra/Cargo.toml, Cargo.lock, .gitignore, core/**, desktop/src-tauri/{Cargo.toml, Cargo.lock, src/**, tests/**}, .github/workflows/desktop-release.yml, CLAUDE.md, README.md. No path is in two sets: CLAUDE.md and README.md belong to s3 alone; the one CLAUDE.md fact s2 creates (mobile test command = npm test) is fixed by this plan and written by s3, so it is a named contract, not a shared file. Each done_when runs without the others (s1 greps one file; s2 runs inside mobile/; s3 runs cargo/npm in orchestra/ and desktop/), and none should merge unreviewed (a security design, an app.json/native-dependency change, an 8.8k-line move). orchestra is a git repo (main = 7f1d223; repo identity njcurtis3 <nathanjcurtis3@gmail.com>), so one branch per slice. s1 can build in the first wave because the gate that approves this plan also decides p1_proposal; its builder writes what the gate decided, including any redirect, not this draft. Risk, all high and none for sensitive data or a shared file: s1 because the faithfulness of a security design record to the gate decision is invisible to grep; s2 because it touches app.json and adds a native module (native rule) and deletes assets next to icons app.json needs; s3 because of the K1 test-count trap, the silent member-profile drop, and Cargo.lock/CI changes local tests cannot fully see. H0 stays one slice: the move, the manifests, the lock and the docs cannot be checked apart (a core package without the workspace root has no green test command), so splitting it would be a fake sequence. A0 stays one slice: everything is under mobile/ and verified by the same commands.",
+    "decisions": {
+      "h0_directory": "Root Cargo workspace orchestra/Cargo.toml (members core, desktop/src-tauri); core at orchestra/core (package orchestra-core, lib orchestra_core). Why: the core is the host engine, not the desktop; orchestrad (H2) must not live under or path-depend into a Tauri directory, and doing the move once now avoids a second 8.8k-line move at H2. Effects: Cargo.lock -> orchestra/Cargo.lock; target -> orchestra/target (new /target/ ignore line); rust-cache workspaces -> . -> target; tauri-action projectPath unchanged (desktop). Rejected: desktop/src-tauri/core with src-tauri as workspace root (zero CI change, but the headless core sits inside the Tauri dir); desktop/Cargo.toml as root (same CI churn as the recommendation, and orchestrad would sit under desktop/). Reverse if: the gate wants the smallest H0 diff -> src-tauri as workspace root with core at desktop/src-tauri/core, fixtures still moved to core/tests/ so include_str! strings stay identical, CI untouched.",
+      "h0_fixtures": "Fixtures move with the core to core/tests/fixtures/stream_json/; no include_str! string is edited.",
+      "h0_seam": "Keep the boxed-closure seam (Emit, Notify, Spawner, with_writer) and path arguments; no trait.",
+      "h0_profile": "[profile.release] moves to the workspace root; a member profile is ignored by Cargo, which would silently change the release build (lto, panic abort, strip).",
+      "a0_expo_network": "Deferred to A1. Nothing in A0 reads connectivity, and no build or EAS project exists yet, so adding it now saves no rebuild and would ship an unused native module.",
+      "a0_license": "mobile/LICENSE (Expo MIT) stays: theme.ts, themed-text/view and the color-scheme hooks are kept template code.",
+      "a0_navigation": "Stack, no tabs. Web variants of removed components go with them; the web target is not worked on (ui has no responsive-web)."
+    },
+    "p1_proposal": {
+      "frame": "Client to host. A host runs orchestra-core: the desktop app, or orchestrad (H2) on a headless server. Clients: the phone, and the desktop app attached to a remote host (H3). One protocol for both. The link is OFF by default on every host.",
+      "reachability": {
+        "options": [
+          "A. Direct connection to an address the host binds: loopback, a LAN interface, or a private overlay the user already runs (Tailscale / WireGuard). Away from home = the overlay.",
+          "B. Public TLS endpoint with pinned keys (an open port on the server).",
+          "C. SSH tunnel (client runs ssh -L to the host)."
+        ],
+        "recommend": "A. The host binds only the interfaces named in its config or UI (never 0.0.0.0 by default); a rented bare-metal box is reached over the user's tailnet. No open public port, no server of ours. C is rejected for v1 because the phone has no maintained SSH client on Expo; B needs an open port.",
+        "reverse_if": "The owner will not require an overlay for away-from-home use: then a relay (ops item, a server of ours) or B behind an explicit opt-in."
+      },
+      "transport": {
+        "options": [
+          "A. WebSocket (ws://) served by orchestra-core, carrying a Noise-protocol channel (static X25519 keys, ChaChaPoly AEAD per frame). Rust: the snow crate. Phone: a JS Noise implementation on @noble primitives, checked against the Noise test vectors.",
+          "B. WSS with a self-signed host cert pinned at pairing plus client certs (mutual TLS).",
+          "C. LAN WebSocket plus a relay we run for away-from-home."
+        ],
+        "recommend": "A. Every frame is authenticated and encrypted by construction, both ends know each other's static key, nonces give replay and reorder protection, and it needs no CA, no cert pinning inside React Native's OkHttp (B's weak point) and no server of ours (C). On the desktop-as-client side (H3) the Rust process owns the socket and the keys, so the webview never holds a key and CSP connect-src needs no new origin for the client role.",
+        "reverse_if": "No maintained JS Noise implementation passes the test vectors on Hermes in P2: then libsodium crypto_kx + secretstream (react-native-libsodium) under the same message layer. Or a maintained Expo module makes pinned mutual TLS straightforward: then B."
+      },
+      "pairing": {
+        "options": [
+          "A. QR shown by the host (desktop window, or the orchestrad terminal for H2) carrying {v, host_id, host name, addresses+port, host static public key, 128-bit one-time secret, expiry}. Handshake Noise IKpsk2 with the secret as psk; the client sends its own static key inside it. The host then shows the client name and key fingerprint and the user confirms on the host before the client is stored.",
+          "B. Short typed code with a PAKE (SPAKE2) instead of a QR.",
+          "C. Trust on first use with no secret (accept any client the user clicks)."
+        ],
+        "recommend": "A. The pairing window opens only on user action, lasts 5 minutes, one use. Later connections use Noise KK (both statics known); an unknown client key is closed with no information. Phone: keypair generated on device, private key only in expo-secure-store. Desktop as client: OS keyring. Host private key: OS keyring (desktop) or a 0600 file in the orchestrad state dir (H2). The host key is pinned at pairing; a changed key is refused loudly (was an H3 item, now protocol-wide).",
+        "reverse_if": "A host that cannot show a QR (no terminal QR, no screen): add B as a second pairing mode."
+      },
+      "authorisation": {
+        "recommend": "Per-client scopes stored on the host with the client key: read (snapshot, events, get_transcript, list_*, get_task_diff, storage_status), answer (answer: permission/question/reply), control (start_session, stop_session, create_task, cancel_task, retry_cleanup), land (land_task, discard_task). Phone default = read + answer; control and land are granted per client on the host. pick_project is host-local only (native dialog), never remote. A call outside scope returns error{code: forbidden} and is logged on the host (method and client, never payload).",
+        "reverse_if": "The owner wants one trust level per client (simpler UI): two levels, viewer (read+answer) and operator (all)."
+      },
+      "revocation": {
+        "recommend": "Revoke deletes the client key on the host. An open connection receives error{code: revoked} and is closed; its queued calls are dropped. Any later handshake with that key fails at the Noise layer and the socket closes with no message (indistinguishable from an unknown client). The client shows \"Removed from <host>. Pair again.\" on revoked, and \"Not paired with this host\" after a failed handshake; on either it deletes its cached snapshot and its keys for that host."
+      },
+      "push": {
+        "options": [
+          "A. No real push in v1: notifications only while the phone is connected (app open or recently backgrounded).",
+          "B. FCM through a relay we run (a server of ours; ops item).",
+          "C. FCM sent directly by the host with the user's own Firebase credentials (a content-free wake-up, then the phone connects)."
+        ],
+        "recommend": "A for v1. Reserve a register_push{token, platform} call and a push feature flag in welcome so A3 can add C (owner-only) or B (product) without a v2. C does not scale past the owner because the FCM sender key of the app would have to sit on every host.",
+        "reverse_if": "The owner wants asleep-phone alerts before A3: C for the owner's own host; B only with an ops plan for the relay."
+      },
+      "message_set": {
+        "envelope": "Every message is JSON {v: 1, type, ...}. Before the handshake the client sends a plaintext {proto: \"orchestra\", v} and the host answers {proto, v, supported: [1]} or error{code: unsupported_version, supported} and closes; both plaintext frames are bound into the Noise prologue so they cannot be downgraded. Inside the channel every message still carries v; an unknown v is a loud failure (error + close), never a guess. An unknown type at a known v gives error{code: unknown_type}, not a crash.",
+        "client_to_host": "hello{v, client_name, app_version} after the handshake; call{v, id, method, args} where method is a Tauri command name verbatim (list_projects, list_sessions, list_inbox, get_transcript, list_tasks, get_task_diff, storage_status, start_session, stop_session, answer, create_task, cancel_task, land_task, discard_task, retry_cleanup) and args are the same serde structs with deny_unknown_fields; ping.",
+        "host_to_client": "welcome{v, host_id, host_name, scopes, features}; snapshot{v, seq, projects, sessions, inbox, tasks, storage} on every connect (v1 does no replay); event{v, seq, name, payload} where name is a Tauri event name verbatim (session-updated, inbox-updated, transcript-appended, task-updated) plus notice (the Notify decision of the core, so orchestrad can forward notifications, H2/A3); result{v, id, ok | error}; error{v, code, message}; pong.",
+        "mirror_rule": "The remote surface is the local one: same method names, same event names, same payload types as desktop/src/ipc.ts and types.ts. A new Tauri command is not remote until protocol/ lists it with a scope.",
+        "idempotency": "call.id is client-generated; the host remembers recent ids per client, so an answer resent after a dropped link (the A2 offline queue) applies once; an already-resolved inbox item returns error{code: already_answered}.",
+        "limits": "Max frame size fixed in P2 (text fields keep MAX_TEXT_BYTES = 32768); handshake attempts rate-limited per source; frames are never logged; absolute paths never cross the link (the existing IPC rule)."
+      },
+      "room_for_later": {
+        "recommend": "Sessions and tasks carry agent (string, claude today; D7). welcome carries host_id and every snapshot/event is scoped to the host of that connection; items gain an optional host only if D8 (SSH sub-hosts) survives. Tasks carry pr: null | {state, url, checks} (D6). The notice event and a read path with no desktop-only call cover H2; host key pinning, Unreachable-not-Failed and one connection per host cover H3. Compatibility: an optional field in host output or a new event/feature flag does not bump v; clients ignore unknown fields and render unknown enum values (agent kind, host, status, pr state) as plain text. Host input stays strict (deny_unknown_fields), so a new call argument is gated on a welcome.features flag. Removing or changing the meaning of anything bumps v."
+      },
+      "not_decided_here": "Wire types in code, the pick between the two JS crypto options, the frame-size number, the scope UI: P2/P3."
+    },
+    "plan": [
+      {
+        "slice": "s1",
+        "milestone": "P1",
+        "intent": "Write the decision the owner takes at the gate (p1_proposal as approved, or as redirected) into orchestra/protocol/README.md, replacing the line Empty until the desktop<->phone link is designed. Retitle it as the client <-> host contract. Sections: Scope (host = desktop app or orchestrad; clients = phone, and the desktop app attached to a remote host), Reachability, Transport, Pairing, Authorisation, Revocation, Push, Messages (envelope, version handshake, client->host, host->client, mirror rule, idempotency, limits), Versioning (compatibility rules), Room for later (D6/D7/D8/H2/H3), and What P2/P3 decide. Keep the existing rules (version in every message, both clients ship together, TypeScript is the source of truth) and correct the Rust-copy location to orchestra-core in core/ (created by s3). Every decision states what would reverse it. Prose only: no .ts, no .rs, no JSON schema files.",
+        "files": [
+          "orchestra/protocol/README.md"
+        ],
+        "done_when": "cd orchestra && git diff --name-only main -> exactly protocol/README.md; git ls-files protocol -> only protocol/README.md; grep -c \"Empty until\" protocol/README.md -> 0; grep -cE \"^## (Scope|Reachability|Transport|Pairing|Authorisation|Revocation|Push|Messages|Versioning|Room for later)\" protocol/README.md -> 10; grep -c unsupported_version protocol/README.md -> >=1; grep -cE \"session-updated|inbox-updated|transcript-appended|task-updated\" protocol/README.md -> >=1 and all four names present (grep -o, sort -u -> 4); human-read: the owner reads protocol/README.md and confirms each section matches the decision taken at the gate (no command can tell a faithful record from a plausible one).",
+        "risk": "high",
+        "risk_reason": "The security design of a network service that can make agents edit code; whether the doc faithfully records the gate decision is invisible to grep. No sensitive data, no shared file.",
+        "depends_on": [],
+        "parallel_safe": true
+      },
+      {
+        "slice": "s2",
+        "milestone": "A0",
+        "intent": "Clear the create-expo-app starter and build the real shell; Android and iOS from the same code (ui native-mobile; nothing iOS-specific is written or broken, iOS builds stay out of scope). REMOVE: src/app/explore.tsx; src/components animated-icon.tsx, animated-icon.web.tsx, animated-icon.module.css, app-tabs.tsx, app-tabs.web.tsx, hint-row.tsx, web-badge.tsx, ui/collapsible.tsx, external-link.tsx (no consumer left); assets/images react-logo*.png, tutorial-web.png, expo-badge*.png, tabIcons/, and any other image no longer referenced by app.json or src/ (expo-logo.png, logo-glow.png if unreferenced); scripts/reset-project.js and the scripts/ dir; the reset-project script in package.json; the example line in .gitignore. KEEP (scout A0-3): app.json, eas.json, tsconfig.json, src/constants/theme.ts (drop BottomTabInset if unused; add MinTouchTarget = 48 and MinTouchSpacing = 8), src/global.css, themed-text.tsx, themed-view.tsx, hooks use-color-scheme(.web).ts and use-theme.ts, AGENTS.md, .vscode/, .claude/settings.json, every icon app.json references. BUILD: src/app/_layout.tsx = SafeAreaProvider + light/dark theme from use-color-scheme + an expo-router Stack (no tabs, no AnimatedSplashOverlay). src/app/index.tsx = a home screen inside a safe-area view that says plainly the phone does nothing on its own and needs a paired Orchestra host (the desktop app, or a server running orchestrad), and that pairing arrives in a later version; no fake sessions, no fake buttons, no networking. A small touch primitive (e.g. src/components/touchable.tsx) enforcing minHeight and minWidth >= 48 plus hitSlop, accessibilityRole and a required accessibilityLabel, for later screens. TESTS: npx expo install jest-expo jest @types/jest @testing-library/react-native -- --save-dev; package.json script test = jest; jest preset jest-expo with a moduleNameMapper for @/*; tests live outside src/app (expo-router treats src/app as routes), e.g. src/__tests__/: (a) the home screen renders the needs-a-host message inside a safe-area provider and shows no session or list content; (b) the touch primitive resolves to at least 48x48 and carries its accessibility label and role. DEV CLIENT: npx expo install expo-dev-client; keep whatever app.json plugin entry the install writes. Consequence: runtimeVersion is fingerprint, so the native fingerprint changes; no build and no EAS project exist yet (R2, ops), so no OTA channel is affected and the first development build includes it. expo-network is NOT added (A1, with the first screen that reads connectivity). mobile/LICENSE stays, because Expo template-derived code remains (themed-text/view, the hooks, theme.ts); say so in mobile/README.md. Replace mobile/README.md with a short real one (what the app is, npm test, npx expo start, it needs a host). The mobile test command is fixed as npm test (s3 writes that line into orchestra/CLAUDE.md).",
+        "files": [
+          "orchestra/mobile/**"
+        ],
+        "done_when": "All in orchestra/mobile on Windows: npx tsc --noEmit -> exit 0; npm test -> exit 0, jest reports >= 2 tests passed and 0 failed; npm run lint -> exit 0; npx expo-doctor -> exit 0; npx expo export --platform android -> exit 0; git grep -nE \"Welcome to Expo|Expo Starter|reset-project|explore|HintRow|WebBadge|AnimatedIcon|AnimatedSplashOverlay|react-logo|tutorial-web|expo-badge\" -- . -> no matches; test ! -e src/app/explore.tsx && test ! -e scripts && test ! -e src/components/app-tabs.tsx -> exit 0; grep -c ^example .gitignore -> 0; node -e (package.json has dependencies.expo-dev-client, devDependencies.jest-expo, scripts.test; lacks dependencies.expo-network and scripts.reset-project) -> exit 0; git grep -nE \"fetch[(]|WebSocket|expo-network|AsyncStorage\" -- src -> no matches; every file in assets/images has its basename (minus @Nx) referenced in app.json or src/ -> no unreferenced file; cd .. && git diff --name-only main | grep -v ^mobile/ -> empty. human-read (optional at this gate): the owner opens it on the Android phone with npx expo start (Expo Go) and checks safe areas, dark mode and the honest home text.",
+        "risk": "high",
+        "risk_reason": "Touches app.json and adds a native module (expo-dev-client) that changes the fingerprint (native rule: high); the deletion list sits next to icons app.json needs. No sensitive data, no shared file.",
+        "depends_on": [],
+        "parallel_safe": true
+      },
+      {
+        "slice": "s3",
+        "milestone": "H0",
+        "intent": "Split the Rust core out of the Tauri shell with no behaviour change. DIRECTORY: a Cargo workspace rooted at orchestra/Cargo.toml (virtual manifest; resolver = 3 to match edition 2024; members = core and desktop/src-tauri; H2 later adds orchestrad/ as a third member with no further move). The core lives at orchestra/core/ (package orchestra-core, [lib] name orchestra_core, edition 2024, publish false, license-file ../LICENSE; never named core, K4). MOVE with git mv so history follows: src/session/** (mod, process, process/job, protocol, settings, state, store, task, transcript), git.rs, projects.rs, notify.rs (K3) -> core/src/; desktop/src-tauri/tests/fixtures/stream_json/* (5 jsonl + README) -> core/tests/fixtures/stream_json/, which keeps all five include_str!(../../tests/fixtures/...) strings byte-identical (K2) and keeps the prose refs at process.rs:31 and protocol.rs:3 true. New core/src/lib.rs declares pub mod git, notify, projects, session. Inside the core, crate:: paths stay as they are; widen visibility (mod -> pub mod, pub(crate) -> pub) only where the shell needs it; no signature, type, serde attribute, command name or event name changes. Deps: the core gets serde (derive), serde_json and the cfg(windows) windows-sys 0.60 block with the same four features (job.rs is core); the shell keeps tauri, the three plugins, serde, serde_json and tauri-build, adds orchestra-core = { path = ../../core }, and drops windows-sys. Shell lib.rs replaces the four mod lines with use orchestra_core::{...} so the crate::session paths in commands.rs still resolve; commands.rs, window.rs and main.rs are otherwise untouched. The seam stays the existing boxed closures (Emit, Notify, Spawner, Sessions::with_writer) and the data dir stays a path supplied by the shell; no new trait. MUST MOVE [profile.release] (codegen-units 1, lto true, opt-level 3, panic abort, strip true) to the root Cargo.toml: Cargo ignores profiles in non-root members, which would silently change the release binary. Cargo.lock: git mv desktop/src-tauri/Cargo.lock -> orchestra/Cargo.lock, then let cargo add the orchestra-core path entry; no dependency version may change. target/ moves to orchestra/target: add /target/ to orchestra/.gitignore (the stale desktop/src-tauri/target stays on disk, gitignored). CI desktop-release.yml: rust-cache workspaces changes from desktop/src-tauri -> target to . -> target; tauri-action projectPath stays desktop (Tauri 2 resolves the workspace target dir through cargo metadata). DOCS: orchestra/CLAUDE.md layout table gains a core/ row (orchestra-core, the host engine, no tauri dependency) and the desktop/ row says Tauri shell over core/; the protocol/ row says client <-> host; Commands: Rust tests become cargo test --workspace from orchestra/ (181 core + 10 shell), and the mobile block gains npm test (jest-expo unit tests; contract from s2); Architecture: Desktop is the host becomes A host is the desktop app or orchestrad (headless, H2), and clients are the phone and the desktop app attached to a remote host. orchestra/README.md: the desktop/ row and the cargo test line updated the same way. Do not start H1.",
+        "files": [
+          "orchestra/Cargo.toml",
+          "orchestra/Cargo.lock",
+          "orchestra/.gitignore",
+          "orchestra/core/**",
+          "orchestra/desktop/src-tauri/Cargo.toml",
+          "orchestra/desktop/src-tauri/Cargo.lock",
+          "orchestra/desktop/src-tauri/src/**",
+          "orchestra/desktop/src-tauri/tests/**",
+          "orchestra/.github/workflows/desktop-release.yml",
+          "orchestra/CLAUDE.md",
+          "orchestra/README.md"
+        ],
+        "done_when": "From orchestra/ on Windows, cargo = C:/Users/natha/.cargo/bin/cargo. (1) cargo test -p orchestra-core --lib -> test result: ok. 181 passed; 0 failed. (2) cargo test -p orchestra --lib -> test result: ok. 10 passed; 0 failed. (3) cargo test --workspace --locked 2>&1 | awk on lines starting test result: summing field 4 -> 191, exit 0, no FAILED line (K1: counts proven per package and together). (4) cargo tree -p orchestra-core -e normal,build | grep -ci tauri -> 0. (5) cargo build --workspace 2>&1 | grep -c \"will be ignored\" -> 0; grep -F -A6 \"[profile.release]\" Cargo.toml shows lto = true and panic = abort; grep -c profile desktop/src-tauri/Cargo.toml -> 0. (6) test -f Cargo.lock && test ! -e desktop/src-tauri/Cargo.lock -> exit 0; git diff -M main -- desktop/src-tauri/Cargo.lock Cargo.lock | grep -E \"^[-+]version\" -> only the new orchestra-core +version = 0.1.0 line (no dependency upgrades). (7) git diff -M main --name-status | grep -c ^R with an old path under desktop/src-tauri/src or desktop/src-tauri/tests/fixtures and a new path under core/ -> 18 (12 source files + 6 fixtures); grep -c include_str core/src/session/mod.rs core/src/session/protocol.rs -> 1 and 4, strings unchanged from main. (8) git diff --stat main -- desktop/src desktop/src-tauri/tauri.conf.json desktop/src-tauri/capabilities desktop/src-tauri/build.rs desktop/src-tauri/src/commands.rs desktop/src-tauri/src/window.rs desktop/src-tauri/src/main.rs protocol mobile fleet -> empty; the event-name strings (session-updated, inbox-updated, transcript-appended, task-updated) and the 16 commands:: entries in generate_handler, extracted with grep -oE from git show main:desktop/src-tauri/src/lib.rs and from the new lib.rs, diff -> no output. (9) cd desktop && npm test -> Tests 58 passed (58); npm run build -> exit 0; npx tauri build --no-bundle -> exit 0 and orchestra/target/release/orchestra.exe exists. (10) grep -cF \"workspaces: . -> target\" .github/workflows/desktop-release.yml -> 1; grep -c \"projectPath: desktop\" .github/workflows/desktop-release.yml -> 1. (11) grep -c \"Desktop is the host\" CLAUDE.md -> 0; grep -c orchestrad CLAUDE.md -> >=1; grep -c \"cargo test --workspace\" CLAUDE.md README.md -> >=1 each; grep -cF \"| `core/`\" CLAUDE.md -> 1. (12) git check-ignore -q target -> exit 0. (13) git diff --name-only main, minus Cargo.toml, Cargo.lock, .gitignore, core/*, desktop/src-tauri/Cargo.toml, desktop/src-tauri/Cargo.lock, desktop/src-tauri/src/*, desktop/src-tauri/tests/*, .github/workflows/desktop-release.yml, CLAUDE.md, README.md -> empty. ci: desktop-release.yml on windows-latest and macos-latest (--target universal-apple-darwin) still builds after the target-dir move; the owner triggers workflow_dispatch after merge (unsigned drafts only), not the builder. human-read: during npm run tauri dev, an edit under core/src triggers a rebuild (Tauri watcher over workspace members; not verified here).",
+        "risk": "high",
+        "risk_reason": "8.8k lines moved; the K1 test-count trap (plain cargo test in src-tauri now runs 10 of 191); Cargo silently ignores a member [profile.release]; Cargo.lock and the release workflow change in ways a local green test cannot see. No sensitive data, no shared file.",
+        "depends_on": [],
+        "parallel_safe": true
+      }
+    ],
+    "edges": "s1, s2, s3 parallel; no artifact flows between them. s1 waits only on the P1 decision taken at this same gate. Named contracts, not edges: s2 provides the mobile npm test command and s3 documents it in CLAUDE.md; s1 names core/ (orchestra-core) as the home of the Rust protocol copy, which s3 creates. Merge order is free; suggested s3, s2, s1 so the docs land on a tree where core/ exists.",
+    "not_doing": [
+      "H1: Linux process-group kill, PR_SET_PDEATHSIG, XDG data dir, Linux CI. attach_job stays Windows-only.",
+      "H2/H3: no orchestrad binary, no host switcher, no third workspace member yet.",
+      "P2/P3: no wire types in TypeScript or Rust, no code or schema files in protocol/, no link server, no pairing UI, no CSP change, no crypto dependency.",
+      "A1 and later: no expo-network, no camera or QR, no secure-store code, no networking, no notifications, no custom BackHandler.",
+      "Any change to Tauri command names, event names, IPC/serde types, capabilities, tauri.conf.json or the desktop frontend.",
+      "Adding cargo test or npm test steps to CI; signing; any release or ops item (R1/R2/R3); pushing a tag.",
+      "fleet/ (vendored, never hand-edited) and ROADMAP.md (gitignored; ticked at close-run, not by builders; its P2 line naming desktop/src-tauri for the Rust copy is updated then).",
+      "iOS builds or iOS-specific code; the mobile web target.",
+      "Deleting the stale desktop/src-tauri/target build dir (gitignored, harmless)."
+    ],
+    "human_gate": [
+      "P1: decide each p1_proposal item or redirect it: reachability A (bind chosen interfaces, overlay for away-from-home), transport A (Noise over WebSocket), pairing A (QR with one-time secret + confirm on the host), scopes read/answer/control/land with phone default read+answer, revocation behaviour, push A (none in v1, slot reserved), the message set and version handshake, and the room-for-later rules. s1 writes exactly what is decided.",
+      "H0: approve the root Cargo workspace (orchestra/Cargo.toml, core at orchestra/core) over desktop/src-tauri/core, including Cargo.lock and target moving to orchestra/ and the one-line rust-cache change in desktop-release.yml. The CI proof is a workflow_dispatch the owner runs after merge.",
+      "A0: approve expo-network deferred to A1, mobile/LICENSE kept, a Stack without tabs, and expo-dev-client added now (fingerprint change, no build exists yet)."
+    ]
+  },
+  "approved_by_human": true,
+  "scope_exceptions": [
+    "ORCHESTRATOR-OWNED, normally empty. Paths a builder may write that the approved plan does not list. guard-builder-scope.py DENIES a builder's Write/Edit outside architect.plan[].files, and this is the only way through it. Adding one is a deliberate, recorded act: pair it with deviation_from_approved_plan on the slice that needed it, and say why the gate's file set was wrong. Never add a path to silence the guard on work the human did not approve."
+  ],
+  "builders": {
+    "s1": {
+      "written_by": "builder",
+      "status": "done",
+      "branch": "p1a0h0-s1",
+      "worktree": "C:/Users/natha/wt/oa-s1",
+      "commit": "75b511abec2d2cb81b8e98d974be4dede20cba46",
+      "files_changed": [
+        "protocol/README.md"
+      ],
+      "changed": [
+        "protocol/README.md"
+      ],
+      "notes": "orchestra repo-local git config has user.name=\"user.email\" (wrong); I committed with -c user.name=njcurtis3 and did not edit config.",
+      "gate_results": "git diff --name-only main HEAD -> protocol/README.md\ngit ls-files protocol -> protocol/README.md\ngrep -c 'Empty until' -> 0\nsection-heading grep -c -> 10\ngrep -c unsupported_version -> 1\ngrep -o four event names | sort -u | wc -l -> 4\ncommit author: njcurtis3 <nathanjcurtis3@gmail.com>, message has no attribution",
+      "done_when_results": {
+        "diff_name_only_is_protocol_README": {
+          "result": "pass",
+          "evidence": "protocol/README.md"
+        },
+        "ls_files_protocol_only_README": {
+          "result": "pass",
+          "evidence": "protocol/README.md"
+        },
+        "no_Empty_until": {
+          "result": "pass",
+          "evidence": "0"
+        },
+        "ten_section_headings": {
+          "result": "pass",
+          "evidence": "10"
+        },
+        "unsupported_version_present": {
+          "result": "pass",
+          "evidence": "1"
+        },
+        "four_event_names_present": {
+          "result": "pass",
+          "evidence": "4 unique"
+        },
+        "human_read": {
+          "result": "pending",
+          "evidence": "owner check, see human_read_pending"
+        }
+      },
+      "human_read_pending": "Owner reads protocol/README.md and confirms each section matches the decision taken at the gate. Note: the gate recorded reverse_if only for reachability, transport, pairing, authorisation, push; Revocation, Messages, Versioning and Room for later say 'no reversal condition was recorded at the gate' rather than an invented one. Also the file adds no decision beyond the proposal.",
+      "deviation_from_approved_plan": ""
+    },
+    "s2": {
+      "written_by": "builder",
+      "status": "done",
+      "branch": "p1a0h0-s2",
+      "worktree": "C:/Users/natha/wt/oa-s2",
+      "commit": "9befece",
+      "files_changed": "43 files, all under mobile/. Removed starter: explore.tsx, animated-icon (3), app-tabs (2), hint-row, web-badge, external-link, ui/collapsible, scripts/, react-logo*, tutorial-web, expo-badge*, tabIcons/, expo-logo, logo-glow, assets/expo.icon, reset-project script, .gitignore example line. Added/changed: _layout.tsx (SafeAreaProvider+theme+Stack), index.tsx (needs-a-host), components/touchable.tsx, theme.ts (MinTouchTarget 48, MinTouchSpacing 8; BottomTabInset dropped), src/__tests__ (home, touchable, css mock), README.md, package.json (jest-expo, jest, @types/jest, @testing-library/react-native, expo-dev-client, test script, jest config, expo install --fix patch bumps), package-lock.json, tsconfig.json (types: [jest]), use-color-scheme.web.ts (useSyncExternalStore, same behavior, to pass lint), eslint.config.js (generated by expo lint), app.json (ios.icon removed).",
+      "done_when": {
+        "tsc --noEmit": {
+          "result": "pass",
+          "evidence": "exit 0"
+        },
+        "npm test": {
+          "result": "pass",
+          "evidence": "Test Suites: 2 passed, Tests: 4 passed, 0 failed; exit 0"
+        },
+        "npm run lint": {
+          "result": "pass",
+          "evidence": "exit 0"
+        },
+        "npx expo-doctor": {
+          "result": "pass",
+          "evidence": "21/21 checks passed; exit 0"
+        },
+        "npx expo export --platform android": {
+          "result": "pass",
+          "evidence": "exit 0; dist removed, gitignored"
+        },
+        "git grep starter strings": {
+          "result": "pass",
+          "evidence": "no matches (rc=1)"
+        },
+        "explore/scripts/app-tabs absent": {
+          "result": "pass",
+          "evidence": "exit 0"
+        },
+        "grep -c ^example .gitignore": {
+          "result": "pass",
+          "evidence": "0"
+        },
+        "package.json node check": {
+          "result": "pass",
+          "evidence": "exit 0"
+        },
+        "git grep fetch/WebSocket/expo-network/AsyncStorage in src": {
+          "result": "pass",
+          "evidence": "no matches"
+        },
+        "assets/images all referenced": {
+          "result": "pass",
+          "evidence": "no UNREF output"
+        },
+        "git diff --name-only main outside mobile/": {
+          "result": "pass",
+          "evidence": "empty"
+        }
+      },
+      "gate_results": "tsc=0; jest 2 suites/4 tests passed; lint=0; expo-doctor 21/21; export android=0; all greps clean; commit author njcurtis3 <nathanjcurtis3@gmail.com>, no attribution",
+      "human_read_pending": "Optional: on the Android phone run npx expo start (Expo Go) in mobile/ and check safe areas, dark mode, and the home text. Not run on a device.",
+      "deviation_from_approved_plan": "(1) app.json: removed ios.icon and deleted assets/expo.icon (starter Expo logo): expo-doctor's schema check rejects the ./assets/expo.icon directory ('cannot access file'), a failure already present on main; iOS now falls back to images/icon.png. Plan said keep it. (2) use-color-scheme.web.ts rewritten with useSyncExternalStore because the starter version failed expo lint (set-state-in-effect); same behavior. (3) npx expo install --fix bumped six Expo patch versions (expo-doctor failed on them on main). (4) tsconfig.json gained types:[jest] (TS 6 needs it). (5) eslint.config.js added (generated by expo lint).",
+      "notes": "",
+      "attempt_2": {
+        "written_by": "builder",
+        "commit": "9befece",
+        "on_top_of": "be2b6aa",
+        "fixes": [
+          "jest, jest-expo, @types/jest moved to devDependencies; lock refreshed; npm ci verified in fresh worktree",
+          "Touchable floor non-overridable: min/width/height clamped with Math.max applied after caller style; hitSlop clamped per edge to >= MinTouchSpacing (8); new jest test with width/height/min 20 and hitSlop={0}",
+          "committed expo-env-types.d.ts (reference expo/types) included in tsconfig; tsc passes with no expo-env.d.ts"
+        ],
+        "done_when_evidence": "In a fresh worktree C:/Users/natha/wt/oa-c2 (git worktree add, npm ci, no expo-env.d.ts): tsc=0; jest 5 passed 0 failed; expo-doctor 21/21; lint=0; expo export android=0; starter-string git grep none; fetch/WebSocket/expo-network/AsyncStorage grep none; package.json node check exit 0 (jest-expo in devDependencies, not dependencies); no files outside mobile/ vs main. Worktree removed (rmdir, path too long for git), pruned.",
+        "author": "njcurtis3 <nathanjcurtis3@gmail.com>, no attribution"
+      }
+    },
+    "s3": {
+      "written_by": "builder",
+      "status": "done",
+      "branch": "p1a0h0-s3",
+      "worktree": "C:/Users/natha/wt/oa-s3",
+      "commits": [
+        "f833c54 pure rename (git mv, 19 R, 0 edits)",
+        "8b23b8d workspace split, manifests, lib.rs, CI, docs"
+      ],
+      "identity_fix": "Both commits re-authored to njcurtis3 <nathanjcurtis3@gmail.com> (author and committer) after the coordinator removed the corrupt repo-local user.name; confirmed with git log --format. No deviation from plan.",
+      "files_changed": "Cargo.toml (new workspace root, resolver 3, [profile.release] moved), Cargo.lock (moved from src-tauri; only orchestra-core entry + dep line added), .gitignore (/target/), core/Cargo.toml + core/src/lib.rs (new), 12 src files and 6 fixtures git-mv'd into core/, desktop/src-tauri/Cargo.toml (orchestra-core dep, windows-sys and profile dropped), desktop/src-tauri/src/lib.rs (use orchestra_core::{notify, projects, session}; the four mod lines removed; git not imported since the shell does not use it), desktop-release.yml (rust-cache workspaces . -> target), CLAUDE.md, README.md. No visibility widening was needed; no core source edited.",
+      "done_when": {
+        "1": "pass: cargo test -p orchestra-core --lib -> test result: ok. 181 passed; 0 failed",
+        "2": "pass: cargo test -p orchestra --lib -> test result: ok. 10 passed; 0 failed",
+        "3": "pass: cargo test --workspace --locked exit 0; results 10+0+181+0+0, sum 191, 0 FAILED",
+        "4": "pass: cargo tree -p orchestra-core -e normal,build | grep -ci tauri -> 0",
+        "5": "pass: 'will be ignored' count 0; root [profile.release] shows lto = true, panic = abort; grep -c profile desktop/src-tauri/Cargo.toml -> 0",
+        "6": "pass: Cargo.lock exists, src-tauri one gone; diff vs main lock = only +\"orchestra-core\" dep line and the new orchestra-core package (0.1.0, serde, serde_json, windows-sys); no version changes",
+        "7": "pass: git diff -M main shows 19 R (12 src + 6 fixtures + Cargo.lock) ; include_str counts mod.rs 1, protocol.rs 4, strings untouched (files only renamed)",
+        "8": "pass: git diff --stat main on desktop/src, tauri.conf.json, capabilities, build.rs, commands.rs, window.rs, main.rs, protocol, mobile, fleet -> empty; event-name strings and commands:: entries diff main vs new lib.rs -> no output",
+        "9": "pass: npm ci ok; npm test Tests 58 passed (58); npm run build exit 0; npx tauri build --no-bundle exit 0 (20m33s release), target/release/orchestra.exe exists 5526528 bytes at orchestra/target",
+        "10": "pass: workspaces . -> target count 1; projectPath: desktop count 1",
+        "11": "pass: 'Desktop is the host' 0; orchestrad 1; cargo test --workspace CLAUDE.md 1, README.md 1; '| `core/`' row 1",
+        "12": "pass: git check-ignore -q target exit 0",
+        "13": "pass: git diff --name-only main outside approved set -> empty"
+      },
+      "human_read_pending": [
+        "During npm run tauri dev, an edit under core/src should trigger a rebuild (Tauri watcher over workspace members); not verified.",
+        "Read the CLAUDE.md/README.md wording of the host/client framing."
+      ],
+      "ci": [
+        "desktop-release.yml on windows-latest and macos-latest (universal-apple-darwin) after the target-dir move; owner triggers workflow_dispatch after merge (unsigned drafts). Not run by builder."
+      ],
+      "deviation_from_approved_plan": "",
+      "notes": "Stale desktop/src-tauri/target remains on disk (gitignored by prior rule? unchecked); release build took 20 min on cold target."
+    }
+  },
+  "reviews": {
+    "s1": {
+      "$comment": "RE-REVIEWS NEST, and this is the rule every reader follows. The TOP LEVEL of reviews.<slice> IS attempt 1. A re-review writes attempt_2, then attempt_3, and so on, each with the same fields as the top level. Every attempt SURVIVES PERMANENTLY - history is never overwritten, flattened, or migrated up. The LATEST attempt supplies the verdict: that is what close-run.py, brief.py and verify-state.py resolve through, and what fleetview's finalVerdict() has always shown. `ever_rejected` - did ANY attempt REJECT - is DISPLAY ONLY, forever, so a rejection stays visible after it is fixed; it must never gate anything, or the fleet stops being able to loop. NO NODE MAY REWRITE AN EARLIER ATTEMPT: a second reviewer writes its own attempt_N and leaves the ones before it alone, top-level verdict included - relocating that verdict would destroy the history the board keeps and leave a key stamped written_by:reviewer with someone else as its real author. The KEY INDEX numbers an attempt, not the `attempt` field inside it; the field is display. An EMPTY attempt_N is not a re-review, it is a key nobody wrote - write the whole attempt or none of it. The walk STOPS AT THE FIRST GAP, so an attempt_3 with no attempt_2 is ignored and the earlier verdict stands: A GAP IS MALFORMED AND NO NODE MAY LEAVE ONE. Write the next UNUSED N and never skip - a mis-numbered re-review is not reported anywhere, it is simply unread, and a REJECT nobody reads is a REJECT nobody acts on. The cap is attempt_9, matching fleetview's `for (i = 2; i < 10; i++)` exactly so the two readers cannot disagree; attempt_10 and beyond is reported loudly and resolved by nobody.",
+      "written_by": "reviewer",
+      "verdict": "PASS",
+      "attempt": 1,
+      "summary": "PASS with three low notes. Re-ran every mechanical done_when from scratch against branch p1a0h0-s1 (75b511a, worktree HEAD matches, clean): diff vs main is only protocol/README.md, protocol/ holds only it, 'Empty until' 0, 10 section headings, unsupported_version 1, all four event names (sort -u = 4). Walked p1_proposal field by field: frame, reachability, transport, pairing, authorisation, revocation, push (register_push and push flag reserved), envelope, client_to_host, host_to_client, mirror rule, idempotency, limits, compatibility rules and not_decided_here are all present as approved, recommended option recorded as Decided and reverse_if as Reopened if. Cross-checked lib.rs generate_handler (16 commands), commands.rs, ipc.ts and the emit sites: the 15 remote method names are all real, the four scopes cover exactly those 15, pick_project is the one excluded and is stated never remote; event names match. No security default is contradicted. Old rules kept; Rust copy now in orchestra-core core/. Commit author and committer njcurtis3 <nathanjcurtis3@gmail.com>, no attribution. Notes: generic reopen sentences where none was recorded, a dropped 'for v1', host_id filed under D8.",
+      "findings": [
+        {
+          "file": "orchestra/protocol/README.md",
+          "line": 199,
+          "severity": "low",
+          "origin": "builder",
+          "issue": "Where the gate recorded no reverse_if (Revocation l.113, Messages l.173, Versioning l.185, Room for later l.199) the doc correctly says so, then adds a trigger of its own: 'Any change to ... reopens this section' (empty, harmless) and 'D6, D7 or D8 changing shape reopens the matching item' (l.199-200), which is a reopen condition nobody decided. It does not change a protocol decision, so it is a note, not an invented decision. The owner's human-read should accept or strike these sentences."
+        },
+        {
+          "file": "orchestra/protocol/README.md",
+          "line": 30,
+          "severity": "low",
+          "origin": "builder",
+          "issue": "Reachability: the proposal rejects C (SSH tunnel) 'for v1'; the doc says 'Rejected: ... C, an SSH tunnel' with no 'for v1', which reads as a permanent rejection. Restoring 'for v1' would match what was approved."
+        },
+        {
+          "file": "orchestra/protocol/README.md",
+          "line": 193,
+          "severity": "low",
+          "origin": "builder",
+          "issue": "Room for later files 'welcome carries host_id, and every snapshot and event is scoped to the host of that connection' under the D8 label. In the proposal that is unconditional (and serves H3 multi-host too); only the optional per-item host is D8-conditional. Text is still accurate, but the label suggests host_id goes if D8 dies."
+        },
+        {
+          "file": "orchestra/.git/config",
+          "line": 0,
+          "severity": "note",
+          "origin": "",
+          "issue": "Out of scope for s1, carried from the builder: the orchestra repo-local git config has user.name='user.email'. This commit is correctly attributed because the builder used -c user.name=njcurtis3; the next commit made without that override will not be. Worth an ops fix."
+        }
+      ]
+    },
+    "s3": {
+      "written_by": "reviewer",
+      "verdict": "PASS",
+      "attempt": 1,
+      "summary": "PASS, two low notes. Re-ran in C:/Users/natha/wt/oa-s3: cargo test -p orchestra-core --lib 181 passed, -p orchestra --lib 10 passed, --workspace --locked exit 0 summing to 191 with no FAILED; plain cargo test gives 191 at the root and 10 in desktop/src-tauri, and the only documented commands (CLAUDE.md:40, README.md:170) are cargo test --workspace from the root. Test fn names on main and branch are identical (191 = 191, diff empty). f833c54 is 19 renames at 100%; 8b23b8d leaves all 12 core sources and 6 fixtures byte-identical (include_str paths unchanged, no pub widening needed). The shell diff is the four mod lines swapped for use orchestra_core::{notify,projects,session}, so commands and events are untouched. Lock diff only adds orchestra-core, no version lines. cargo tree for core has 0 tauri. Profile is at root, 0 warnings. npm test 58, npm run build ok, tauri build --no-bundle wrote target/release/orchestra.exe. Untouched paths and out-of-list diff both empty. Commits by njcurtis3 with no attribution. CI reasoned, not run.",
+      "findings": [
+        {
+          "file": "orchestra/.github/workflows/desktop-release.yml",
+          "line": 44,
+          "severity": "low",
+          "origin": "",
+          "issue": "Not run in CI. rust-cache 'workspaces: . -> target' is relative to repo root (rust-cache ignores defaults.run.working-directory), matching root Cargo.lock/target. tauri-action projectPath desktop runs the tauri CLI, which locally resolved the workspace target dir (tauri build --no-bundle printed 'Built application at: C:/Users/natha/wt/oa-s3/target/release/orchestra.exe'); tauri-action locates artifacts via cargo metadata target_directory. Confidence medium-high; the macOS universal-apple-darwin path (target/universal-apple-darwin/release under the root) is the least certain and is the owner's post-merge workflow_dispatch check."
+        },
+        {
+          "file": "orchestra/CLAUDE.md",
+          "line": 21,
+          "severity": "low",
+          "origin": "architect",
+          "issue": "protocol/ row still says 'Rust copy in desktop'; with the engine now in core/ that copy would live in orchestra-core. Plan only specified the client <-> host wording, and s1 already updates protocol/README to name core/. Cosmetic; fix at merge or in H1."
+        }
+      ],
+      "evidence": {
+        "core_lib": "test result: ok. 181 passed; 0 failed",
+        "shell_lib": "test result: ok. 10 passed; 0 failed",
+        "workspace_locked": "exit 0; sum 191 (10 + 0 main.rs + 181 + 0 + 0 doctests)",
+        "plain_cargo_test": "root 191; desktop/src-tauri 10",
+        "test_names": "191 main, 191 branch, diff empty",
+        "release_build": "Finished release [optimized] in 6m54s; target/release/orchestra.exe 5526528 bytes",
+        "git_status_ignored": "!! target/ (root); desktop/src-tauri/.gitignore keeps /target/ so a stale desktop/src-tauri/target stays ignored"
+      }
+    },
+    "s2": {
+      "written_by": "reviewer",
+      "verdict": "REJECT",
+      "attempt": 1,
+      "summary": "REJECT, two blockers, both small fixes. Re-ran every gate on a fresh worktree with its own npm ci: jest 2 suites/4 real tests pass, lint 0, expo-doctor 21/21, android export 0 (to scratch), all greps empty, every image referenced, nothing outside mobile/ changed. Commit by njcurtis3, no attribution. Blocker 1: jest, jest-expo and @types/jest went into dependencies, not devDependencies, so the done_when check devDependencies.jest-expo exits 1. The builder's 'all greps clean' left this out. Blocker 2: Touchable puts the caller's style and props after its own, so style={{minHeight:20,minWidth:20}} with hitSlop={0} renders a 20x20 target with no slop. I confirmed this with a scratch test. The plan asked for a primitive that enforces 48. tsc passes only when the gitignored expo-env.d.ts exists; a clean checkout fails TS2882 (main does too, README documents it). That is a note. On main, expo-doctor gives the exact ios.icon 'cannot access file' error and the six patch mismatches. Removing the starter Expo-logo icon was needed and is acceptable. The lock bumps are transitive SDK-57 patches. types:[jest], eslint.config.js and the web hook rewrite are fine.",
+      "findings": [
+        {
+          "file": "orchestra/mobile/package.json",
+          "line": 129,
+          "severity": "blocker",
+          "origin": "builder",
+          "issue": "jest ~29.7.0, jest-expo ~57.0.6 and @types/jest 29.5.14 are in dependencies, not devDependencies. The plan said --save-dev, and done_when requires devDependencies.jest-expo. node -e on the committed package.json prints dev jest-expo false, dep jest-expo true, so that done_when item exits 1. This also ships test tooling as runtime dependencies. Fix: move all three to devDependencies (npm i -D, or edit and refresh the lock) and re-run npm ci, test and expo-doctor."
+        },
+        {
+          "file": "orchestra/mobile/src/components/touchable.tsx",
+          "line": 17,
+          "severity": "blocker",
+          "origin": "builder",
+          "issue": "The 48dp floor is not enforced. The caller's style comes after the min style in the array, and {...rest} comes after hitSlop. <Touchable accessibilityLabel='X' hitSlop={0} style={{minHeight:20,minWidth:20,height:20,width:20}}/> flattens to minHeight 20, minWidth 20, hitSlop 0. I verified this with a throwaway jest test on a clean worktree. The intent says the primitive enforces minHeight/minWidth >= 48 plus hitSlop for later screens. Fix: apply the min style after the caller's style (or clamp with Math.max), make hitSlop at least MinTouchSpacing, and test that an explicit minHeight/minWidth below 48 is overridden."
+        },
+        {
+          "file": "orchestra/mobile/tsconfig.json",
+          "line": 0,
+          "severity": "medium",
+          "origin": "architect",
+          "issue": "npx tsc --noEmit exits 0 only after npx expo start has generated the gitignored expo-env.d.ts (/// <reference types=\"expo/types\" />). On a fresh checkout after npm ci it exits 2 with TS2882 on the '@/global.css' import in theme.ts, and expo export does not generate the file. main fails the same way, plus animated-icon.module.css, so this is not a regression. The README notes it. But the done_when as written passes only in a dirty worktree, and s3 or CI will hit it. Not a blocker for this slice; a later slice could add a committed declaration or a typecheck script that runs after expo customize/start."
+        },
+        {
+          "file": "orchestra/mobile/app.json",
+          "line": 10,
+          "severity": "low",
+          "origin": "scout",
+          "issue": "Deviation (a), ruling ACCEPT. Running npx expo-doctor on a clean main worktree gives exactly 'Field: ios.icon - cannot access file at ./assets/expo.icon' plus the six patch mismatches, 2 checks failed, exit 1. The directory was the starter Expo symbol (expo-symbol 2.svg, grid.png), not an Orchestra icon. expo-doctor has no per-check opt-out for schema validation, so no narrower fix keeps the field and passes the gate. iOS falls back to images/icon.png. The scout keep-list was wrong to call it a referenced icon worth keeping."
+        },
+        {
+          "file": "orchestra/mobile/package-lock.json",
+          "line": 0,
+          "severity": "low",
+          "origin": "",
+          "issue": "Deviation (b), ruling ACCEPT. In package.json only the six SDK-57 patch bumps changed (@expo/ui .22->.25, expo .27->.30, expo-linking, expo-router, expo-splash-screen; expo-constants resolves .21->.22 within range). I diffed the top-level packages in the lock: 20 version changes, all SDK-57 patches, plus two transitive minors (@expo/osascript 2.7.1->2.8.1, @expo/package-manager 1.13.1->1.14.2) pulled in by expo 57.0.30. 412 packages were added (jest, testing-library, eslint) and none removed. Nothing unrelated."
+        },
+        {
+          "file": "orchestra/mobile/tsconfig.json",
+          "line": 5,
+          "severity": "low",
+          "origin": "",
+          "issue": "Deviation (c), ruling ACCEPT. types:['jest'] only limits automatic @types inclusion. expo/types comes in through the expo-env.d.ts triple-slash reference and react via imports, so app code still type-checks (tsc 0 with expo-env present). The one cost is that jest globals are visible to app code. Harmless at this size; a tests-only tsconfig would be the tidier way later."
+        },
+        {
+          "file": "orchestra/mobile/eslint.config.js",
+          "line": 1,
+          "severity": "low",
+          "origin": "",
+          "issue": "Deviation (d), ruling ACCEPT. This is the stock expo lint flat config (eslint-config-expo/flat, ignores dist/*). lint exits 0. eslint and eslint-config-expo are correctly in devDependencies."
+        },
+        {
+          "file": "orchestra/mobile/src/hooks/use-color-scheme.web.ts",
+          "line": 11,
+          "severity": "low",
+          "origin": "",
+          "issue": "Deviation (e), ruling ACCEPT. useSyncExternalStore with a server snapshot of false and a client snapshot of true is the standard hydration-safe replacement for useState+useEffect: 'light' during static render and hydration, the real scheme after. Same behaviour. Web only, outside the Android path."
+        },
+        {
+          "file": "orchestra/mobile/src/app/_layout.tsx",
+          "line": 2,
+          "severity": "low",
+          "origin": "",
+          "issue": "Note. The layout reads useColorScheme from react-native, not '@/hooks/use-color-scheme' (main did the same), so the web hydration wrapper is bypassed for the navigation theme. On Android it makes no difference. Removing SplashScreen.preventAutoHideAsync along with AnimatedSplashOverlay was correct; keeping it would leave the splash up forever. No expo-dev-client plugin entry was written, which matches the plan's 'keep whatever the install writes'. runtimeVersion fingerprint, the android package and eas.json are unchanged."
+        },
+        {
+          "file": "orchestra/mobile/src/app/index.tsx",
+          "line": 8,
+          "severity": "low",
+          "origin": "",
+          "issue": "Note: mobile rules check out. Insets come from react-native-safe-area-context SafeAreaView (no hard-coded offsets). There are no controls on the home screen, the header has accessibilityRole header, and font scaling is not disabled anywhere. The text is honest (needs a host, desktop app or orchestrad, pairing later). No fetch, WebSocket, AsyncStorage or secrets. A single-screen Stack leaves Android back as the default exit. LICENSE is kept, and the template-derived themed-text/view, hooks and theme.ts are still present, as the README says."
+        }
+      ],
+      "attempt_2": {
+        "written_by": "reviewer",
+        "verdict": "PASS",
+        "attempt": 2,
+        "summary": "PASS with notes. Both attempt-1 blockers are fixed. I checked this on my own fresh worktree after npm ci; the lock was not rewritten. jest, jest-expo and @types/jest are now only in devDependencies, in package.json and in the lock root. The Touchable clamp holds: a 20px size, minHeight/minWidth 20, hitSlop 0, {top:2} or null all come out as 48 minimum and 8 slop. Larger sizes are kept. A scratch edit that put the caller's style back last made the new test fail. tsc exits 0 on the clean tree with no expo-env.d.ts. The new d.ts is the same one-line expo/types reference, so there is no catch-all module: typo imports still fail with TS2307. Adding expo-env.d.ts the way expo start writes it still gives 0. I re-ran every done_when item: jest 2 suites/5 tests pass, lint 0, expo-doctor 21/21, android export 0 to scratch (hbc bundle written), greps empty, every image referenced, nothing outside mobile/ changed, both commits by njcurtis3 with no attribution. Notes: the hitSlop assertion is vacuous (removing withMinSlop keeps tests green), and the clamp now forces justifyContent/alignItems to center, overriding the caller.",
+        "findings": [
+          {
+            "file": "orchestra/mobile/src/components/touchable.tsx",
+            "line": 31,
+            "severity": "medium",
+            "origin": "builder",
+            "issue": "The clamp object is spread last and includes justifyContent:'center' and alignItems:'center'. A caller's alignment can no longer override them; in attempt 1 it could. Scratch render: style={{flex:1,flexDirection:'row',justifyContent:'space-between',alignItems:'flex-start'}} flattens to justifyContent 'center', alignItems 'center'. So a future row control (label left, chevron right) renders centered. There are no callers yet, so this is not a blocker. Fix: put the two alignment defaults before `flat` and keep only the min/size clamps after it."
+          },
+          {
+            "file": "orchestra/mobile/src/__tests__/touchable.test.tsx",
+            "line": 35,
+            "severity": "medium",
+            "origin": "builder",
+            "issue": "The hitSlop part of the new test is vacuous. expect(MinTouchSpacing).toBeGreaterThanOrEqual(8) checks the constant, not the rendered prop. Scratch mutation: with hitSlop={withMinSlop(hitSlop)} replaced by hitSlop={hitSlop}, the touchable suite still passes 3/3. The code itself is correct: a scratch render of hitSlop 0, {top:2} and null all give {top:8,bottom:8,left:8,right:8}, and 20 gives 20. Fix: assert that screen.getByLabelText('Tiny').props.hitSlop has every edge >= MinTouchSpacing. The size clamp is covered: with the caller's style moved back last, 'overrides an explicit sub-48 size' fails."
+          },
+          {
+            "file": "orchestra/mobile/src/components/touchable.tsx",
+            "line": 33,
+            "severity": "low",
+            "origin": "builder",
+            "issue": "Number(flat?.minHeight) || 0 turns a percentage string into 0. A caller's minHeight:'100%' is replaced with 48, not kept. Percentage heights/widths go through unclamped, but minHeight/minWidth 48 still holds the floor, so this can only make the target larger, never smaller. Rare; note only."
+          },
+          {
+            "file": "orchestra/mobile/expo-env-types.d.ts",
+            "line": 1,
+            "severity": "low",
+            "origin": "",
+            "issue": "Medium from attempt 1 resolved. The file is exactly /// <reference types=\"expo/types\" /> and tsconfig.json includes it. Clean tree, no expo-env.d.ts: tsc 0. With a scratch src file importing '@/components/touchabel' and a missing png: TS2307 on both, exit 2, so typing is not weakened. './missing.css' resolves through expo/types' own *.css declaration, the same as with expo-env.d.ts. Writing expo-env.d.ts the way expo start does and re-running tsc: 0, no duplicate errors (a repeated triple-slash reference is idempotent)."
+          },
+          {
+            "file": "orchestra/mobile/package.json",
+            "line": 34,
+            "severity": "low",
+            "origin": "",
+            "issue": "Blocker 1 from attempt 1 is fixed. The node -e done_when check exits 0: devDependencies jest/jest-expo/@types/jest are present, dependencies has none of them, expo-dev-client is a dependency, test=jest, no expo-network, no reset-project. In the lock root, devDependencies lists all three and dependencies none. node_modules/jest-expo is dev:true. node_modules/jest is devOptional, which is npm's flag for an optional peer of a runtime package, so that is fine. npm ci succeeded and git status was clean afterwards."
+          },
+          {
+            "file": "orchestra/mobile/src/app/index.tsx",
+            "line": 1,
+            "severity": "low",
+            "origin": "",
+            "issue": "No regression. 9befece touches only touchable.tsx, its test, package.json/lock, tsconfig.json and the new d.ts. The layout, home screen, safe areas, header role, font scaling and honest home text are unchanged from be2b6aa, which attempt 1 checked against the mobile rules. git diff main..p1a0h0-s2 shows nothing outside mobile/. Both commits have author and committer njcurtis3 <nathanjcurtis3@gmail.com>; a grep for claude/co-authored/anthropic/generated with finds nothing."
+          }
+        ]
+      }
+    }
+  },
+  "integrator": {
+    "written_by": "integrator",
+    "status": "merged",
+    "base": "main 7f1d223 (tree clean; user.name njcurtis3, user.email nathanjcurtis3@gmail.com verified before merging)",
+    "merged": [
+      {
+        "slice": "s3",
+        "branch": "p1a0h0-s3",
+        "sha": "1a1d76a",
+        "message": "Merge p1a0h0-s3: H0 split the Rust core into orchestra-core under a root workspace"
+      },
+      {
+        "slice": "s2",
+        "branch": "p1a0h0-s2",
+        "sha": "9b63f4b",
+        "message": "Merge p1a0h0-s2: A0 replace the Expo starter with the real mobile shell",
+        "note": "latest review reviews.s2.attempt_2 = PASS"
+      },
+      {
+        "slice": "s1",
+        "branch": "p1a0h0-s1",
+        "sha": "3422e61",
+        "message": "Merge p1a0h0-s1: P1 record the client <-> host link contract in protocol/README.md"
+      }
+    ],
+    "final_main_sha": "3422e61308d1fef9b9d6d40617daf0413d18cee4",
+    "authorship": "all three merge commits: author and committer njcurtis3 <nathanjcurtis3@gmail.com>; no attribution trailers; not pushed",
+    "conflicts": [],
+    "resolutions": "none needed; all three merges were clean (ort, no conflicts)",
+    "verification": {
+      "cargo test --workspace --locked (repo root, cold target/)": [
+        "orchestra_lib (shell lib): test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "orchestra (shell main): test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "orchestra_core: test result: ok. 181 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 39.09s",
+        "doc-tests x2: test result: ok. 0 passed; 0 failed",
+        "exit 0; total 191 passed, 0 failed"
+      ],
+      "desktop npm test": "Test Files  5 passed (5) / Tests  58 passed (58); exit 0",
+      "desktop npm run build": "dist/index.html 0.40 kB, dist/assets/index-BC9xPikU.css 4.66 kB, dist/assets/index-Dd6ZQ7Ra.js 252.22 kB; built in 1.40s; exit 0",
+      "mobile npm ci": "exit 0 (lockfile changed by s2; npm audit advisory printed, not a failure)",
+      "mobile npx tsc --noEmit": "exit 0, no output",
+      "mobile npm test": "PASS src/__tests__/touchable.test.tsx, PASS src/__tests__/home.test.tsx; Test Suites: 2 passed, 2 total; Tests: 5 passed, 5 total; exit 0",
+      "mobile npm run lint": "expo lint; exit 0, no findings",
+      "mobile npx expo-doctor": "expo-doctor@1.21.5: 21/21 checks passed. No issues detected!; exit 0",
+      "git status --short after all suites": "empty; no target/, dist/ or expo-env.d.ts tracked (git ls-files check empty)"
+    },
+    "cross_slice_coherence": {
+      "mobile test command": "agrees: CLAUDE.md:47 'npm test # unit tests (jest-expo)' matches s2's package.json test script and mobile/README.md:10",
+      "workspace test command": "agrees: CLAUDE.md:40 'cd .. && cargo test --workspace # Rust tests from the repo root (181 core + 10 shell)' matches the measured 181 + 10",
+      "Rust protocol copy location": "DISAGREES: protocol/README.md:13-14 (s1) says the Rust copy lives in orchestra-core (core/); CLAUDE.md:21 (s3) protocol row still says 'Rust copy in desktop'"
+    },
+    "follow_ups": [
+      "orchestra/CLAUDE.md:21 protocol row: change 'Rust copy in desktop' to 'Rust copy in orchestra-core (core/)' to match protocol/README.md (noted by reviewer s3; not edited, no merge required it).",
+      "orchestra/README.md:159 protocol row still reads 'The message format between desktop and phone. Empty until the link is designed.' - stale now that s1 filled protocol/README.md as the client <-> host contract.",
+      "mobile npm ci reports npm audit advisories; triage separately."
+    ]
+  },
+  "ops": {
+    "written_by": "the node that wrote this key - here, always the string ops",
+    "gated": true,
+    "actions": []
+  },
+  "log": [
+    "orchestrator: run opened 2026-10-16. One run for three roadmap milestones (P1, A0, H0) because .graph/CURRENT names one run and guard-builder-scope reads only that run; their file sets are disjoint (protocol/, mobile/, desktop/src-tauri/), so one diamond under one guard is safer than three runs whose builders the guard could not all see. Pre-flight: orchestra is a git repo, main @ 7f1d223 clean, identity njcurtis3; not a fleet-definition target.",
+    "orchestrator: scout verified (37 facts, 7 risks; baseline cargo 191, npm 58, mobile tsc clean). Spawning architect.",
+    "orchestrator: architect verified (diamond, s1 P1 doc, s2 A0, s3 H0, all risk high). Plan and p1_proposal shown to owner at the human gate.",
+    "orchestrator: owner approved 2026-10-16 ('Approve'): plan as written, P1 items 1-8 as recommended, H0 root workspace with core at orchestra/core, A0 decisions (expo-network deferred to A1, mobile/LICENSE kept, Stack without tabs, expo-dev-client now). Spawning builders s1, s2, s3 in parallel with worktree isolation.",
+    "orchestrator: builders.s1 verified (75b511a on p1a0h0-s1). Found orchestra/.git/config [user] name = 'user.email' (set 2026-10-16 11:22, source not traced; it overrode the correct global njcurtis3). Removed the local key (git config --local --unset user.name); global identity njcurtis3 <nathanjcurtis3@gmail.com> now resolves. s3 commit 1d8c6da was authored 'user.email'; told builders s3 and s2 to re-author their branch commits before finishing. Spawned reviewer s1.",
+    "orchestrator: reviews.s1 verified PASS attempt 1, 0 blockers, 3 low notes (self-added reopen triggers; SSH 'Rejected' lacks 'for v1'; host_id filed under D8) left for the owner's human-read. The git-config issue the reviewer flagged was already fixed before its review finished.",
+    "orchestrator: builders.s2 verified (be2b6aa on p1a0h0-s2, author njcurtis3). Builder-declared deviation: removed ios.icon + assets/expo.icon (expo-doctor rejects it, claimed failing on main too) against the architect keep-list; plus expo install --fix patch bumps, tsconfig types:[jest], generated eslint.config.js, rewritten use-color-scheme.web.ts. All inside mobile/**. Reviewer s2 asked to rule on each; owner to be told at close. Spawned reviewer s2.",
+    "orchestrator: builders.s3 verified (f833c54 rename + 8b23b8d edits on p1a0h0-s3; both njcurtis3 author+committer; the 'user.email' commit 1d8c6da is no longer on any branch). Builder reports core 181 + shell 10 = workspace 191, no tauri in core, lock adds only orchestra-core, release exe built. Spawned reviewer s3.",
+    "orchestrator: reviews.s3 verified PASS attempt 1, 0 blockers, 2 low notes (CI reasoned not run, owner runs desktop-release after merge; CLAUDE.md protocol row still says 'Rust copy in desktop' -> follow-up). Waiting on reviewer s2.",
+    "orchestrator: reviews.s2 verified REJECT attempt 1: blockers (1) jest/jest-expo/@types/jest in dependencies not devDependencies (done_when fails), (2) Touchable's 48dp floor overridable by caller style/hitSlop. All 5 deviations ACCEPTED by reviewer (expo.icon failure reproduced on main). Sent both blockers plus the medium clean-checkout tsc issue (in mobile/** scope) back to builder s2 for attempt 2; a fresh reviewer will follow. Attempt 2 of max 2.",
+    "orchestrator: builders.s2 attempt 2 verified (9befece on top of be2b6aa, njcurtis3). Builder removed its scratch worktree with rmdir after git hit path length; checked main checkout: mobile/node_modules (354 entries) and desktop/node_modules (36) intact, worktree list clean. Spawned fresh reviewer s2 (attempt 2, final).",
+    "orchestrator: reviews.s2 attempt 2 verified PASS, 0 blockers, 2 medium notes (hitSlop test only asserts a constant; clamp forces center alignment over caller style) -> follow-ups. All three slices PASS. Spawning integrator (merge order s3, s2, s1).",
+    "orchestrator: CLOSED 2026-10-16. close-run.py exit 0. Merged into orchestra main (not pushed): 1a1d76a (s3 H0 core split, orchestra-core under a root workspace), 9b63f4b (s2 A0 mobile shell, PASS on attempt 2), 3422e61 (s1 P1 client<->host link contract in protocol/README.md). Integrator full suite green: cargo test --workspace --locked 191 (core 181 + shell 10), desktop npm test 58 + build, mobile npm ci + tsc + 5 tests + lint + expo-doctor 21/21. Nothing dropped. Follow-ups: CLAUDE.md:21 protocol row says 'Rust copy in desktop' (should be core/); README.md:159 still says protocol 'Empty until the link is designed'; s1 notes (self-added reopen triggers, SSH 'Rejected' lacks 'for v1', host_id filed under D8); s2 notes (hitSlop test asserts a constant; clamp forces center alignment); clean-checkout expo-env handled by committed .d.ts. Owner checks: read protocol/README.md against the gate decision; run desktop-release.yml (windows+macos) after push; tauri dev rebuilds on a core/src edit; optional npx expo start on the phone. Git: orchestra/.git/config had user.name='user.email' (set 11:22, source untraced) - removed; all run commits authored njcurtis3."
+  ]
+}
