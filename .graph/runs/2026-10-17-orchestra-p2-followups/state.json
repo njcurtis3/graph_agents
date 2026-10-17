@@ -1,0 +1,305 @@
+{
+ "$comment": "Shared state for ONE work-graph run. Lives at .graph/runs/<run-id>/state.json. Every node reads this on start and appends to its OWN key on finish - the builder writes its own builders.<slice> key, including the branch it worked on. Never rewrite another node's key. Every node key carries written_by, naming the node that wrote it: that is the ONLY record of authorship this file has, and without it 'never rewrite another node's key' is unverifiable - an orchestrator hand-writing all six keys is indistinguishable from six nodes doing their jobs. verify-state.py --audit checks it. This file is the edge: it is how context crosses between agents that cannot see each other.",
+ "run_id": "2026-10-17-orchestra-p2-followups",
+ "goal": "P2 follow-ups before H1, as recommended and approved by the user (\"Yes\"): (1) unknown transcript entry kind decodes to a plain-text fallback on the client instead of failing the event; (2) lock the contract with fixtures/tests: v-first check order, non-ASCII call.id 128-byte cap, and a non-tautological wire_fixtures count assert; (3) TS fixes: utf8Length lone-surrogate undercount, __proto__ answer key dropped. CI is folded into H1; v:1.0 divergence, null-vs-absent unknown-event payload and the Babel-helper rule are left.",
+ "app": "orchestra",
+ "status": "done",
+ "scout": {
+  "written_by": "scout",
+  "facts": [
+   "Q1 codec.ts:383-432 record() switches on kind: user_prompt and assistant_text (:387-389), tool_use (:390-398), tool_result (:399-407), turn_result (:408-426), truncated (:427-428). default at :429-430 is bad(bad entry kind), a bad_request. batch() at :434-437 maps record over entries via arr(), so one bad entry fails the whole transcript-appended event (decodeHostMessage :481-482, no unknown fallback).",
+   "Q1 types.ts:97-111 TranscriptEntry is a closed 6-arm union with no unknown arm; :112 TranscriptRecord = entry plus seq and at; :113 TranscriptBatch. types.ts:8 Open<T> = T or (string and {}) is used for SessionStatus, Model, InboxKind, TaskStatus (:14-76) but not for the entry kind.",
+   "Q1 existing unknown fallbacks to copy: codec.ts:485-486 event default returns unknown_event with seq, name, payload; codec.ts:508 encodeHostMessage maps unknown_event back to type event; types.ts:188-190 UnknownEvent. Rust analogue: core/src/wire/codec.rs:209-215 HostEvent::Unknown.",
+   "Q1 Rust core/src/session/transcript.rs:39-59 Entry is serde tag kind, snake_case, with 6 variants and no catch-all; Record at :62-68 flattens it. core/src/wire/codec.rs:212 decodes transcript-appended via from(payload) at :83, so an unknown kind becomes bad_request bad payload. decode_host is used by core/tests/wire_fixtures.rs; no runtime Rust client was found in core/src/wire (not exhaustively verified).",
+   "Q1 fixtures covering transcript entries: c2h.call_get_transcript.json (call args session_id) and h2c.event_transcript_appended.json (all six kinds, expect ok, run in TS and Rust). No fixture covers an unknown or bad entry kind.",
+   "Q2 TS order: envelope codec.ts:83-98 is size (:84), JSON (:87), object (:91), v present (:92), v integer (:93), v supported (:94); then type (typeOf :109, switch :259 client and :452 host), then fields. decodeHandshakeRequest :514-519 does v before proto (:516) and exact (:517). decodeHandshakeReply :528-533 does v before type error (:530) and proto (:531). All four decoders are v-first.",
+   "Q2 Rust order: envelope core/src/wire/codec.rs:35-55 is size (:36), parse (:39), object (:42), v missing (:45), v integer (:48), v supported (:51). decode_client :145 calls type_of at :147 after envelope. decode_host :198-199. decode_handshake_request :269-274 (proto :272 before exact :274). decode_handshake_reply :281-287. v-first in all four.",
+   "Q2 No fixture locks v-first. c2h.err_unsupported_version.json is v 2 with type ping, and c2h.err_unknown_type.json is v 1 with type subscribe; each has one defect. A two-defect sibling such as v 2 with type subscribe expecting unsupported_version would lock it for c2h. No h2c or hs analogue exists.",
+   "Q3 call.id cap: codec.ts:270-271 reads str() then checks id length 0 or utf8Length(id) > MAX_ID_BYTES, giving bad call id. constants.ts:13 MAX_ID_BYTES = 128. Rust codec.rs:158-160 uses id.len() in bytes against MAX_ID_BYTES. Fixtures: c2h.err_id_too_long.json is 129 ASCII chars with bad_request; c2h.ok_id_max.json is 128 ASCII chars with ok. Neither is non-ASCII, so the byte cap is not locked against a char cap.",
+   "Q4 core/tests/wire_fixtures.rs:54-86: case_files() at :24-33 gives 87 files today (json minus constants.json). ran is incremented once per file at :82, so the assert ran == files.len() at :84 is tautological. The only real floor is ran >= 80 at :85. ok cases with client_only are skipped at :70 but still counted in ran. Nothing checks that a file name prefix matches its dir field.",
+   "Q5 utf8Length codec.ts:67-79. Lines :73-75 take the branch when c is in 0xd800 to 0xdbff and i+1 < length: n += 4 and i++, commented as one 4-byte code point. :76 adds 3 otherwise. A lone high surrogate followed by any char is counted as a 4-byte pair and consumes that char. Verified with node: lone high surrogate then e-acute gives 4 vs TextEncoder 5; two lone high surrogates give 4 vs 6; lone high then a gives 4 vs 4 by coincidence. desktop/src/protocol.test.ts:160-164 uses only well-formed pairs.",
+   "Q5 __proto__ path codec.ts:214-217: answers = obj(a.answers, answers); out is a plain object typed Record<string,string>; for each k of Object.keys(answers): out[k] = str(answers, k); return kind question with answers out. Assigning out[__proto__] on a plain object is a silent no-op, so the key is dropped. Rust core/src/wire/args.rs:68 holds question answers as BTreeMap<String,String>, which keeps the key. TS and Rust diverge.",
+   "Q6 protocol/fixtures/index.ts: hand-written imports c0 to c86 (lines 4-86; c76 to c86 are hs cases), FixtureCase with decoded_wire near :88-96, and the FIXTURES array of 87 cases. A new case file needs an import plus a FIXTURES entry. Desktop enforces it: desktop/src/protocol.test.ts:85-91 via import.meta.glob at :86. Rust reads the directory at runtime (core/tests/wire_fixtures.rs:24-33, no list). Mobile reads with fs.readdirSync (mobile/src/__tests__/protocol.test.ts:37-44), so it auto-picks new files; it imports index.ts only for a type at :29.",
+   "Q7 counts from the last run gate_results (run 2026-10-17-orchestra-p2-protocol-v1, not re-run; commits 654552d, 5dfff23, 836115b): desktop vitest protocol.test.ts 95 passed; cargo wire_fixtures 4 passed; mobile jest 94 passed in total, 89 of them protocol. Main is now 9d8f98f, so these are stale until re-run.",
+   "Desktop type copy: desktop/src/types.ts:67-85 is a local closed TranscriptEntry, not imported from protocol. desktop/src/protocol.test.ts:43-50 asserts desktop assignable to wire, so widening the wire union does NOT break it. desktop/src/components/SessionDetail.tsx:96 switch on r.kind has no default branch (cases run to about :143), so a new arm added to the desktop-side type with no case is a compile problem there."
+  ],
+  "unknowns": [
+   "Fallback shape for an unknown transcript kind is undecided. It must re-encode to decoded_wire, and the fixture needs client_only true so Rust skips it (core/tests/wire_fixtures.rs:70).",
+   "Whether runtime Rust code outside core/src/wire and the tests decodes transcript entries was not fully verified (a broad grep timed out).",
+   "The __proto__ answer key: BTreeMap keeps it on Rust and TS drops it; no fixture covers it on either side.",
+   "Test counts are from the prior run and were not re-run on main 9d8f98f. Build status not run."
+  ],
+  "risks": [
+   "The suspected break is inverted. Widening the wire TranscriptEntry does not break the desktop Assignable check. The real break is a desktop-side switch with no default (SessionDetail.tsx:96) if desktop/src/types.ts is widened by hand.",
+   "For v-first, the fixture sibling needs two defects, for example v 2 with type subscribe expecting unsupported_version, mirrored in hs_c2h and h2c to be non-tautological.",
+   "For the count assert, compare per-dir counts from filename prefixes against the dir field, and count checked versus client_only-skipped cases separately."
+  ]
+ },
+ "architect": {
+  "written_by": "architect",
+  "shape": "single-loop",
+  "parallel_safe": false,
+  "rationale": "Single-loop. Goal items 1-3 all edit orchestra/protocol/codec.ts and protocol/fixtures/index.ts, so they cannot be separate slices without overlap; they are one slice, s1. The only disjoint file is core/tests/wire_fixtures.rs, s2: two slices, under the diamond bar. Run s1 then s2 in one worktree, one branch off main 9d8f98f; orchestra is a git repo. Risk s1 HIGH: it changes a compatibility rule, the G6 tolerance extended to transcript entry kinds, in the file three consumers share (desktop vitest, mobile jest, Rust fixtures), and one of its checks can pass vacuously: the Vite JSON import may turn a __proto__ key into an object-literal prototype and drop it from both the wire text and the expected value in desktop, so a green fixture proves nothing there. The reviewer must run the named mutations. No sensitive data. Risk s2 LOW: one test-only Rust file, no sensitive data, no file shared with s1; a green run plus its four mutations failing is sufficient evidence. Item 3, utf8Length: count a lone surrogate, a high not followed by a low or a stray low, as 3 bytes. That equals TextEncoder, which writes U+FFFD at 3 bytes, and WTF-8 at 3 bytes per surrogate, so TextEncoder stays the test oracle. Exact host parity is not a count at all: serde_json rejects a lone surrogate escape at parse, so the host gives bad_request at any length (prior run reviews.s2, codec.rs:222). Rejecting lone surrogates in every TS string is a wider change than the approved undercount fix, and TS-accepts/Rust-rejects is the safe direction on host input, so it is the gate alternative, not the plan. Item 3, __proto__: the key SURVIVES, matching core/src/wire/args.rs:68 BTreeMap<String,String>. Use Object.defineProperty with enumerable, writable and configurable on the plain out object, not Object.create(null), so the decoded value keeps a normal prototype; no class and nothing Babel compiles to a helper. Item 1 is decode-only in TS. desktop/src/types.ts and SessionDetail.tsx are not touched: desktop reads transcripts over Tauri IPC through its own decodeTranscriptRecord in desktop/src/ipc.ts from a host built from the same commit, so it never sees a kind it does not know. Widening only the wire union keeps the Assignable<desktop, wire> lock in protocol.test.ts:43-50 valid, since desktop stays a subset. The Rust Entry enum, Record and host output are unchanged, and Rust decode_host stays strict, hence client_only on the unknown-kind fixture.",
+  "decisions_for_gate": {
+   "D1_fallback_shape": "Recommended: an unknown entry kind decodes to {kind:unknown, raw_kind:string, text:string|null, seq, at}. The fallback applies only when o.kind is a string that is not one of the six; a missing or non-string kind, or a known kind with bad fields, stays bad_request. seq and at stay required uints. text = o.text if it is a string, else null: the plain text a client renders, say for a future thinking entry. Other fields are dropped, like any unknown field. encodeHostMessage maps it back to {kind:raw_kind, seq, at}, plus text when non-null; that is the decoded_wire of the fixture. types.ts adds the arm | {kind: unknown; raw_kind: string; text: string|null} to the wire TranscriptEntry, not Open<> on kind, which would lose narrowing. unknown becomes a reserved kind the host must never emit. Alternative A: keep the whole entry as raw: Record<string, unknown>, the precedent being unknown_event keeping its payload. That gives an exact round trip and no decoded_wire, at the cost of an untyped bag every renderer has to dig into. Alternative B: no text, just {kind:unknown, raw_kind, seq, at}.",
+   "D2_readme_wording": "Versioning, README:181-182, becomes: - **Clients ignore unknown fields** and render unknown enum values (agent kind, host, status, PR state, transcript entry kind) as plain text. A transcript entry whose `kind` is a string this build does not know decodes to `{kind: \"unknown\", raw_kind, text, seq, at}` (`text` is the string `text` of the entry, else `null`; other fields are dropped), so a new entry kind does not bump `v`. `unknown` is reserved and is never a host entry kind. Tolerance, README:242-245: add transcript entry kind to the kept-as-string list; add: and reads an unknown transcript entry kind as the `unknown` fallback rather than failing the event; and end with: An unknown `v` is `unsupported_version` in both directions, checked before `type`, `proto` and every field. The Reopened-if lines stay as they are; this gate approval is the recorded reopening. No other README edits: the v:1.0, null-payload and Babel notes are untouched.",
+   "D3_utf8Length": "A lone surrogate counts 3 bytes, as TextEncoder and WTF-8 do. Alternative: reject lone surrogates in TS str() as bad_request for exact host parity; a wider change, not recommended now.",
+   "D4_proto_key": "__proto__ survives via Object.defineProperty, as in the Rust BTreeMap. Alternative: reject it as bad_request in both copies; needs a Rust change, not recommended."
+  },
+  "fixtures_new": {
+   "h2c.tolerant_transcript_unknown_kind": "transcript-appended with one known entry, one unknown string kind carrying a string text plus an extra field, and one unknown kind with no text; expect ok, client_only true, decoded_wire = the fallback re-encoded (extra field dropped). Kills: default restored to bad(bad entry kind); text extraction dropped; encoder not mapping kind unknown back to raw_kind.",
+   "h2c.err_transcript_kind_not_string": "one entry with kind 7; expect bad_request in TS and Rust. Kills: falling back for any kind value instead of only strings.",
+   "c2h.err_v_first_unknown_type": "{v:2,type:subscribe} -> unsupported_version. Kills: the v-supported check moved after type dispatch (TS envelope, Rust envelope/decode_client).",
+   "c2h.err_v_first_unknown_field": "{v:2,type:call,id:a,method:list_projects,new_field:1} -> unsupported_version. Kills: the v check moved after the field/exact checks.",
+   "h2c.err_v_first_unknown_type": "{v:2,type:bogus} -> unsupported_version. Kills the same move in the host-message path (decodeHostMessage / decode_host).",
+   "hs_c2h.err_v_first_wrong_proto": "{proto:nope,v:2} -> unsupported_version. Kills: v check moved after proto/exact in decodeHandshakeRequest / decode_handshake_request.",
+   "hs_h2c.err_v_first_wrong_proto": "{proto:nope,v:2,supported:[2]} -> unsupported_version. Kills: v check moved after proto in decodeHandshakeReply / decode_handshake_reply.",
+   "c2h.err_id_nonascii_too_long": "call.id = 65 x U+00E9 (65 chars, 130 bytes) -> bad_request. Kills: utf8Length(id) -> id.length (TS) and id.len() -> id.chars().count() (Rust).",
+   "c2h.ok_id_nonascii_max": "call.id = 64 x U+00E9 (128 bytes) -> ok. Kills: > -> >= in the cap, and a UTF-16-units-times-2 count.",
+   "c2h.ok_id_emoji_max": "call.id = 32 x U+1F600 (64 UTF-16 units, 128 bytes) -> ok. Kills: a surrogate fix that over-reaches so a valid pair counts 6.",
+   "c2h.err_id_emoji_too_long": "call.id = 33 x U+1F600 (66 units, 132 bytes) -> bad_request. Kills: id.length via the pair path, and a pair counted as 3 or less.",
+   "c2h.call_answer_question_proto_key": "answer kind question, answers {__proto__:x, q:y} -> ok, NOT client_only (Rust BTreeMap round-trips it). Kills: reverting to out[k] = ... (key silently dropped), in mobile jest (fs + JSON.parse) and in the desktop unit test in s1."
+  },
+  "plan": [
+   {
+    "slice": "s1",
+    "intent": "TS protocol. [1] record() falls back to the D1 shape for an unknown string kind; encodeHostMessage maps fallback entries back to the wire; types.ts gets the one new arm; README gets the D2 wording. [2] Add the 12 fixtures in fixtures_new and their imports and FIXTURES entries c87-c98 in fixtures/index.ts. [3] utf8Length counts 4 only for a high surrogate followed by a low surrogate 0xDC00-0xDFFF, else 3 for any surrogate unit; the question-answers loop writes with Object.defineProperty. desktop/src/protocol.test.ts gains three unit tests: utf8Length equals TextEncoder on a lone high, a lone low, high+U+00E9, high+high, high+a, and a+lone low+a valid pair; a hello whose client_name is MAX_TEXT_BYTES/6 + 1 copies of lone high + U+4E00 is rejected as too long, which the old code counts at 4 per copy and accepts; and decodeClientMessage on a hand-written string with answers {__proto__:x, q:y} asserts Object.keys(answers) equals [__proto__, q] and that the re-encoded text contains __proto__. The last is the desktop-side lock, because the Vite JSON import may strip the key from the fixture object on both sides of the compare. The builder records in its key whether the desktop fixture import kept __proto__.",
+    "files": [
+     "orchestra/protocol/codec.ts",
+     "orchestra/protocol/types.ts",
+     "orchestra/protocol/README.md",
+     "orchestra/protocol/fixtures/index.ts",
+     "orchestra/protocol/fixtures/*.json: only the 12 new files named in fixtures_new, no existing fixture edited",
+     "orchestra/desktop/src/protocol.test.ts"
+    ],
+    "done_when": [
+     "cd orchestra/desktop && npx tsc -p ../protocol/tsconfig.json --noEmit -> exit 0",
+     "cd orchestra/desktop && npx vitest run src/protocol.test.ts -> 0 failed; 99 fixture cases, 87 + 12, plus the existing tests and 3 new unit tests",
+     "cd orchestra/desktop && npm test -> 0 failed",
+     "cd orchestra/desktop && npm run build -> exit 0, the Assignable lock still compiles",
+     "cd orchestra/mobile && npm test -> 0 failed; the protocol suite reads the 12 new fixtures from disk",
+     "cd orchestra/mobile && npx tsc --noEmit -> exit 0",
+     "git -C orchestra diff --stat main -- desktop/src/types.ts desktop/src/components desktop/src/ipc.ts core/src desktop/src-tauri desktop/package.json mobile/package.json -> empty",
+     "Reviewer mutations; each must turn a gate red, then be reverted. M1 record() default back to bad(bad entry kind) -> h2c.tolerant_transcript_unknown_kind fails in vitest and jest. M2 fall back for any kind, dropping the typeof string test -> h2c.err_transcript_kind_not_string fails in TS. M3 move the v-supported check in envelope() after type dispatch, and in both handshake decoders after proto -> the 5 err_v_first_* fail. M4 utf8Length(id) -> id.length -> c2h.err_id_nonascii_too_long and c2h.err_id_emoji_too_long fail. M5 > -> >= on MAX_ID_BYTES -> both ok_id_*_max fail. M6 restore the old surrogate branch -> the new utf8Length and too-long unit tests fail. M7 count every surrogate unit as 3 -> c2h.ok_id_emoji_max and the TextEncoder test fail. M8 out[k] = str(...) -> the desktop __proto__ unit test and c2h.call_answer_question_proto_key in mobile jest fail."
+    ],
+    "risk": "high",
+    "risk_reason": "a compatibility-rule change in the file all three consumers share, and the desktop __proto__ fixture can pass vacuously through the Vite JSON import, which a green run does not reveal"
+   },
+   {
+    "slice": "s2",
+    "intent": "core/tests/wire_fixtures.rs: replace the tautological ran == files.len(). Today 9 of the 87 files are client_only ok cases, so only 78 are actually decoded, yet ran counts all 87 and the ran >= 80 floor is met only thanks to skips. Before the loop compute expected_skipped, the cases with expect ok and client_only true. In the loop count checked, meaning actually decoded, and skipped separately. Assert: each file name prefix before the first dot equals its dir field; client_only appears only on expect-ok cases; skipped == expected_skipped; checked == files.len() - expected_skipped; checked >= 85, since after s1 there are 99 files, 10 client_only and 89 checked, and the builder records the real numbers; and each of the four dirs has at least one checked ok case and one checked error case. No change to round_trip or any decoder.",
+    "files": [
+     "orchestra/core/tests/wire_fixtures.rs"
+    ],
+    "done_when": [
+     "cd orchestra && cargo test -p orchestra-core --test wire_fixtures -> 4 passed, 0 failed",
+     "cd orchestra && cargo test --workspace -> 0 failed, no new warnings",
+     "git -C orchestra diff --stat main -- core/src core/Cargo.toml Cargo.lock -> empty",
+     "Reviewer mutations; each must fail the wire_fixtures test, then be reverted. R1 if !client_only -> if false, skipping every ok case -> the checked and floor asserts fail. R2 if !client_only -> if true -> the tolerant_* cases panic, showing the skip is real. R3 set one fixture dir to another dir, say c2h.ping dir h2c -> the prefix assert fails. R4 add .take(50) to the loop iterator -> checked == files.len() - expected_skipped fails."
+    ],
+    "risk": "low",
+    "risk_reason": "a test-only file with no sensitive data and no file shared with s1; a green run plus the four mutations failing is sufficient evidence"
+   }
+  ],
+  "edges": "s1 -> s2 because the checked floor and recorded counts in s2 are taken over the 12 new fixtures from s1; the s2 code does not otherwise depend on s1. Same worktree, same branch, sequential.",
+  "not_doing": [
+   "Rust: no change to core/src: Entry enum, Record, codec.rs decode_host, args.rs. Rust stays strict on unknown entry kinds, so the unknown-kind fixture is client_only. A tolerant Rust client decoder is for P3.",
+   "desktop/src/types.ts, desktop/src/ipc.ts, SessionDetail.tsx: untouched. IPC from a same-commit host never carries an unknown kind, and the Assignable lock still holds.",
+   "Rejecting lone surrogates in TS strings for exact host parity, the D3 alternative.",
+   "The v:1.0 divergence, the null-vs-absent unknown-event payload, the Babel-helper rule, Rust seq as_u64 vs safe integer, and the ProtocolError stack text: left as recorded.",
+   "CI of any kind, folded into H1.",
+   "New dependencies in any package.json or Cargo.toml.",
+   "A Rust cross-check of fixtures/index.ts; the desktop glob test already guards that list.",
+   "Any change to another open-enum or tolerance rule beyond transcript entry kind.",
+   "Editing any existing fixture file."
+  ],
+  "human_gate": "Approve D1, the fallback shape {kind:unknown, raw_kind, text|null, seq, at} with unknown reserved; D2, the exact README wording, which reopens Versioning and Tolerance; D3, a lone surrogate counts 3 bytes rather than being rejected; and D4, __proto__ survives as in Rust. Commits are authored by njcurtis3 with no attribution."
+ },
+ "approved_by_human": true,
+ "scope_exceptions": [
+  "ORCHESTRATOR-OWNED, normally empty. Paths a builder may write that the approved plan does not list. guard-builder-scope.py DENIES a builder's Write/Edit outside architect.plan[].files, and this is the only way through it. Adding one is a deliberate, recorded act: pair it with deviation_from_approved_plan on the slice that needed it, and say why the gate's file set was wrong. Never add a path to silence the guard on work the human did not approve.",
+  "orchestra/protocol/fixtures/h2c.tolerant_transcript_unknown_kind.json",
+  "orchestra/protocol/fixtures/h2c.err_transcript_kind_not_string.json",
+  "orchestra/protocol/fixtures/c2h.err_v_first_unknown_type.json",
+  "orchestra/protocol/fixtures/c2h.err_v_first_unknown_field.json",
+  "orchestra/protocol/fixtures/h2c.err_v_first_unknown_type.json",
+  "orchestra/protocol/fixtures/hs_c2h.err_v_first_wrong_proto.json",
+  "orchestra/protocol/fixtures/hs_h2c.err_v_first_wrong_proto.json",
+  "orchestra/protocol/fixtures/c2h.err_id_nonascii_too_long.json",
+  "orchestra/protocol/fixtures/c2h.ok_id_nonascii_max.json",
+  "orchestra/protocol/fixtures/c2h.ok_id_emoji_max.json",
+  "orchestra/protocol/fixtures/c2h.err_id_emoji_too_long.json",
+  "orchestra/protocol/fixtures/c2h.call_answer_question_proto_key.json"
+ ],
+ "builders": {
+  "s1": {
+   "written_by": "builder",
+   "status": "done",
+   "branch": "p2-followups",
+   "commit": "6e28b41",
+   "changed": [
+    "protocol/codec.ts",
+    "protocol/types.ts",
+    "protocol/README.md",
+    "protocol/fixtures/index.ts",
+    "protocol/fixtures/ (12 new json)",
+    "desktop/src/protocol.test.ts"
+   ],
+   "notes": "",
+   "deviation_from_approved_plan": "Fixture paths came through the orchestrator's scope_exceptions, because the plan listed them as free text the guard could not match. Nothing else widened.",
+   "desktop_fixture_import_kept_proto": "No. A scratch vitest on the Vite JSON import of c2h.call_answer_question_proto_key.json gave answers keys [\"q\"], so the fixture compare is vacuous in desktop and the unit test is the lock.",
+   "gate_results": [
+    {
+     "cmd": "cd desktop && npx tsc -p ../protocol/tsconfig.json --noEmit",
+     "result": "exit 0"
+    },
+    {
+     "cmd": "cd desktop && npx vitest run src/protocol.test.ts",
+     "result": "1 file passed, 110 passed, 0 failed (99 fixture cases + existing + 3 new unit tests)"
+    },
+    {
+     "cmd": "cd desktop && npm test",
+     "result": "6 files passed, 168 passed, 0 failed"
+    },
+    {
+     "cmd": "cd desktop && npm run build",
+     "result": "exit 0, built"
+    },
+    {
+     "cmd": "cd mobile && npm test",
+     "result": "3 suites passed, 106 passed, 0 failed"
+    },
+    {
+     "cmd": "cd mobile && npx tsc --noEmit",
+     "result": "exit 0"
+    },
+    {
+     "cmd": "git diff --stat main -- desktop/src/types.ts desktop/src/components desktop/src/ipc.ts core/src desktop/src-tauri desktop/package.json mobile/package.json",
+     "result": "empty"
+    },
+    {
+     "cmd": "mutations M1-M8, each reverted by git checkout of codec.ts",
+     "result": {
+      "M1": "vitest red: h2c.tolerant_transcript_unknown_kind; jest 1 failed",
+      "M2": "vitest red: h2c.err_transcript_kind_not_string; jest 1 failed",
+      "M3": "vitest red: 5 err_v_first_* (c2h unknown_field, c2h unknown_type, h2c unknown_type, hs_c2h wrong_proto, hs_h2c wrong_proto); done by wrapping each decoder so the v check runs after it",
+      "M4": "vitest red: c2h.err_id_nonascii_too_long, c2h.err_id_emoji_too_long",
+      "M5": "vitest red: c2h.ok_id_emoji_max, c2h.ok_id_max, c2h.ok_id_nonascii_max",
+      "M6": "vitest red: the too-long unit test and the lone-surrogate TextEncoder unit test",
+      "M7": "vitest red: c2h.ok_id_emoji_max, utf8Length agrees with TextEncoder, the lone-surrogate unit test",
+      "M8": "vitest red: the __proto__ unit test; jest 1 failed"
+     }
+    }
+   ]
+  },
+  "s2": {
+   "written_by": "builder",
+   "status": "done",
+   "branch": "p2-followups",
+   "commit": "8ce2bd1",
+   "changed": [
+    "core/tests/wire_fixtures.rs"
+   ],
+   "notes": "",
+   "recorded_counts": "99 files, 10 client_only skipped, 89 decoded, floor 85",
+   "gate_results": [
+    {
+     "cmd": "cargo test -p orchestra-core --test wire_fixtures",
+     "result": "4 passed, 0 failed"
+    },
+    {
+     "cmd": "cargo test --workspace",
+     "result": "all test results ok (10, 0, 181, 4, 0, 0 passed), 0 failed, no warnings"
+    },
+    {
+     "cmd": "git diff --stat main -- core/src core/Cargo.toml Cargo.lock",
+     "result": "empty"
+    },
+    {
+     "cmd": "mutations R1-R4, each reverted",
+     "result": {
+      "R1": "if is_skipped -> if true: red, 'every client_only case was skipped' left 51 right 10",
+      "R2": "if is_skipped -> if false: red, panic on a tolerant case, so the skip is real",
+      "R3": "c2h.err_v_first_unknown_type dir set to h2c: red, 'the name prefix is the dir'",
+      "R4": ".take(50) on the loop: red, 'every client_only case was skipped' left 0 right 10"
+     }
+    }
+   ]
+  }
+ },
+ "reviews": {
+  "s1": {
+   "$comment": "RE-REVIEWS NEST, and this is the rule every reader follows. The TOP LEVEL of reviews.<slice> IS attempt 1. A re-review writes attempt_2, then attempt_3, and so on, each with the same fields as the top level. Every attempt SURVIVES PERMANENTLY - history is never overwritten, flattened, or migrated up. The LATEST attempt supplies the verdict: that is what close-run.py, brief.py and verify-state.py resolve through, and what fleetview's finalVerdict() has always shown. `ever_rejected` - did ANY attempt REJECT - is DISPLAY ONLY, forever, so a rejection stays visible after it is fixed; it must never gate anything, or the fleet stops being able to loop. NO NODE MAY REWRITE AN EARLIER ATTEMPT: a second reviewer writes its own attempt_N and leaves the ones before it alone, top-level verdict included - relocating that verdict would destroy the history the board keeps and leave a key stamped written_by:reviewer with someone else as its real author. The KEY INDEX numbers an attempt, not the `attempt` field inside it; the field is display. An EMPTY attempt_N is not a re-review, it is a key nobody wrote - write the whole attempt or none of it. The walk STOPS AT THE FIRST GAP, so an attempt_3 with no attempt_2 is ignored and the earlier verdict stands: A GAP IS MALFORMED AND NO NODE MAY LEAVE ONE. Write the next UNUSED N and never skip - a mis-numbered re-review is not reported anywhere, it is simply unread, and a REJECT nobody reads is a REJECT nobody acts on. The cap is attempt_9, matching fleetview's `for (i = 2; i < 10; i++)` exactly so the two readers cannot disagree; attempt_10 and beyond is reported loudly and resolved by nobody.",
+   "written_by": "reviewer",
+   "verdict": "PASS",
+   "attempt": 1,
+   "summary": "PASS. In a separate detached worktree at 6e28b41 (opf was in use by the s2 reviewer, so I left it alone) I re-ran every done_when: protocol tsc exit 0; vitest protocol 110 passed, of which 99 are fixture cases; desktop npm test 168 passed; build exit 0; mobile jest 106 passed; mobile tsc exit 0; the forbidden-path diff is empty; no existing fixture modified; author njcurtis3, no trailers. I ran M1-M8 myself as scratch edits, each reverted, and every one turned its named gate red. M8 fails the desktop unit test and mobile jest's proto_key case, while the desktop fixture case stays green, which confirms the Vite import strips __proto__ and the unit test is the real lock. M3 written as v-check-after-dispatch fails exactly the 5 err_v_first_*. Probes: a literal host kind 'unknown' round-trips to itself, which is sane; non-string or missing kind and a known kind with bad fields give bad_request; the README matches D2 word for word. Notes: the encoder replacer rewrites any {kind:'unknown',raw_kind} object, including raw result.ok and unknown_event payloads. Nothing asserts the decoded fallback shape directly.",
+   "findings": [
+    {
+     "file": "orchestra/protocol/codec.ts",
+     "line": 513,
+     "severity": "minor",
+     "origin": "builder",
+     "issue": "encodeHostMessage applies unknownEntryWire as a JSON.stringify replacer over the WHOLE message, not just transcript entries. Any object anywhere with kind 'unknown' and a string raw_kind gets rewritten. Two raw passthroughs are hit: result.ok and unknown_event.payload. Probe: decode then encode of {v:1,type:'result',id:'a',ok:{kind:'unknown',raw_kind:'x',detail:1}} gives ok:{kind:'x'}, so detail is lost and the kind is changed; an unknown_event payload of the same shape is rewritten the same way. Before this diff both round-tripped exactly. Not a blocker: encodeHostMessage has no production caller today (only the two fixture suites), and a payload has to mimic the reserved fallback. Still, scope the mapping to batch entries (event transcript-appended payload.entries) before any TS host or mock uses the encoder."
+    },
+    {
+     "file": "orchestra/protocol/fixtures/h2c.tolerant_transcript_unknown_kind.json",
+     "line": 0,
+     "severity": "minor",
+     "origin": "",
+     "issue": "The fixture compares only the re-encoded wire, so the decoded D1 shape is never asserted at runtime. tsc catches a missing raw_kind and text:undefined. But a decoder that cast-passed the raw kind through, e.g. {kind: o.kind as any, text, seq, at}, would still pass every gate. One unit test asserting decodeHostMessage(...).payload.entries[1] equals {kind:'unknown', raw_kind:'thinking', text:'hmm', seq:1, at:...} and entries[2].text === null would lock it."
+    },
+    {
+     "file": "orchestra/protocol/codec.ts",
+     "line": 434,
+     "severity": "info",
+     "origin": "",
+     "issue": "Edge behaviour, checked by probe and consistent with D1 as written. A host kind 'unknown' decodes to {kind:'unknown', raw_kind:'unknown', text, ...} and re-encodes to kind 'unknown': a faithful round trip, and a host breaking the reservation renders as plain text, which is sane. kind '' and kind 'toString' also take the fallback. A host-sent raw_kind field is dropped like any unknown field. Missing kind, kind null and kind 7 give bad_request. user_prompt with no text stays bad_request, and an unknown kind with seq -1 stays bad_request."
+    },
+    {
+     "file": "orchestra/protocol/fixtures/c2h.call_answer_question_proto_key.json",
+     "line": 0,
+     "severity": "info",
+     "origin": "",
+     "issue": "Confirmed the builder's desktop_fixture_import_kept_proto = No. Under M8 the desktop fixture case for this file stays green, so it is vacuous in vitest. The lock is the new unit test plus mobile jest, and both go red. Rust acceptance of this non-client_only fixture belongs to the Rust suite (s2's gate) and was not re-run here."
+    }
+   ]
+  },
+  "s2": {
+   "verdict": "PASS",
+   "attempt": 1,
+   "written_by": "reviewer",
+   "risk": "low",
+   "summary": "PASS, low risk confirmed. Commit 8ce2bd1 touches only core/tests/wire_fixtures.rs (git show --stat), author njcurtis3, no Claude trailers; diff vs main over core/src, core/Cargo.toml, Cargo.lock is empty. I re-ran cargo test -p orchestra-core --test wire_fixtures (4 passed) and cargo test --workspace (10/0/181/4/0/0 passed, 0 failed, no warnings). I counted fixtures myself: 99 case files, 10 client_only, so checked = 89 >= 85. I ran R1-R4 myself as scratch edits to wire_fixtures.rs, each reverted with git checkout, and each turned the test red: R1 (skip test -> true) left 51 right 10 on the skipped assert; R2 (-> false) panicked in round_trip on a client_only case; R3 (c2h.ping dir forced to h2c) failed the prefix assert, Some(c2h) vs Some(h2c); R4 (.take(50)) left 0 right 10 on the skipped assert. The new asserts do what the intent says and round_trip and the decoders are unchanged. Worktree left clean.",
+   "findings": [
+    {
+     "severity": "note",
+     "origin": "",
+     "title": "R1 and R4 are caught by the skipped assert, which runs before the checked assert",
+     "detail": "Both mutations trip assert_eq!(skipped, expected_skipped) first, so the checked == files.len() - expected_skipped line is never the one that fires on them. That is fine, since the test still goes red, but the done_when wording names the checked/floor asserts. The checked assert is independently sound: checked + skipped == files.len() on every path that reaches it."
+    }
+   ]
+  }
+ },
+ "integrator": {
+  "written_by": "the node that wrote this key - here, always the string integrator",
+  "merged": [],
+  "conflicts": [],
+  "verification": "what command proved it works, and its output"
+ },
+ "ops": {
+  "written_by": "the node that wrote this key - here, always the string ops",
+  "gated": true,
+  "actions": []
+ },
+ "log": [
+  "orchestrator: opened run 2026-10-17 from the user's \"Yes\" to the P2 follow-up recommendation; orchestra main @ 9d8f98f, pushed",
+  "orchestrator: scout returned (15 facts, 4 unknowns, 3 risks); no plan-killer (desktop SessionDetail.tsx:96 switch is the real break only if desktop types are widened); spawning architect",
+  "orchestrator: architect returned single-loop s1 (high) -> s2 (low) with gate decisions D1-D4; awaiting human gate",
+  "orchestrator: human gate APPROVED 2026-10-17 (\"approve\"): s1, s2 and D1-D4 as proposed",
+  "orchestrator: builder blocked by scope guard on protocol/fixtures/*.json (architect.plan s1 listed them as a free-text string, not paths). Added the 12 gate-approved fixture paths from architect.fixtures_new to scope_exceptions verbatim; no other path widened. Builder to record deviation_from_approved_plan on s1. Re-prompting builder.",
+  "orchestrator: builder returned s1 6e28b41, s2 8ce2bd1 on p2-followups; spawning fresh reviewers s1 (high), s2 (low); reviewers write state.json one at a time via scratch + cat",
+  "orchestrator: s1 PASS (2 notes), s2 PASS (1 note), both attempt 1; merged p2-followups into orchestra main --no-ff as 5efc224 (clean)",
+  "orchestrator: CLOSED 2026-10-17 via close-run.py, merged 5efc224. Scope-exception incident: plan listed the 12 fixtures as free text; orchestrator added the 12 gate-approved paths. Open notes carried to ROADMAP: encodeHostMessage applies the unknown-entry replacer over the whole message (rewrites {kind:unknown,raw_kind} inside result.ok / unknown_event payloads; encoder used only by tests today, matters for H3); no runtime assert of the decoded D1 fallback shape; desktop fixture case for __proto__ is vacuous under Vite (locked by unit test + mobile jest). No state.json corruption this run."
+ ]
+}
