@@ -1,311 +1,16 @@
 # CURRENT-STATE — graph_agents
 
-> **Last verified: 2026-10-16**
+> **Last verified: 2026-10-17**
 >
-> **What the 2026-10-16 pass covers** (after run `2026-10-16-orchestra-p1-a0-h0`, a **diamond** against `orchestra`,
-> three parallel slices in linked worktrees plus an integrator; no fleet definition file changed). Re-checked by
-> `audit-fleet.py`: the status headline (24 runs, none in flight), the new Runs-table row, and the roster's execution
-> counts read from run state (scout 24 and architect 24 runs, builder 79 slices, reviewer 78 reviews, integrator 5 runs).
-> Also re-counted by hand: four diamonds in the Runs table before this one, so it is the fifth. **Not re-checked:** any
-> narrative claim outside those rows. The two `bash_write_targets.py` / `measure_bash_corpus.py` "registered" drifts are
-> the long-standing false positives, unchanged; `Archer-Store` is still an unregistered sibling awaiting the owner.
->
-> **What the second 2026-10-14 pass covers** (after run `2026-10-14-orchestra-d4-tasks-worktrees`, a **single-loop**
-> against `orchestra`, five slices on one branch with two fix rounds; no fleet definition file changed). Re-checked by
-> `audit-fleet.py`: the status headline (23 runs, none in flight), the D4 Runs-table row, and the roster's execution
-> counts read from run state (scout 23 and architect 23 runs, builder 76 slices, reviewer 75 reviews, integrator 4 runs).
-> **Not re-checked:** any narrative claim outside those rows. The two `bash_write_targets.py` / `measure_bash_corpus.py`
-> "registered" drifts are the long-standing false positives, unchanged; `Archer-Store` is still an unregistered sibling
-> awaiting the owner.
->
-> **What the 2026-10-14 pass covers** (after run `2026-10-10-orchestra-d3-notify-detail`, a **single-loop** against
-> `orchestra`, five slices on one branch plus an owner-ordered fix round; no fleet definition file changed). Re-checked by
-> `audit-fleet.py`: the status headline (23 run directories, one of them `2026-10-14-orchestra-d4-tasks-worktrees` in
-> flight), the D3 Runs-table row, and the roster's execution counts read from run state (scout 23 and architect 22 runs,
-> counting D4's in-flight scout; builder 71 slices, reviewer 70 reviews, integrator 4 runs; fix rounds and re-review
-> attempts are not counted as extra slices). **Not re-checked:** any narrative claim outside those rows. The two
+> **What the 2026-10-17 pass covers** (after run `2026-10-17-orchestra-p2-protocol-v1`, a **single-loop** against
+> `orchestra`, four sequential slices on one branch in a linked worktree, merged by the orchestrator; no fleet definition
+> file changed). Re-checked by `audit-fleet.py`: the status headline (25 runs, none in flight), the new Runs-table row,
+> and the roster's execution counts read from run state (scout 25 and architect 25 runs, builder 83 slices, reviewer 82
+> reviews, integrator 5 runs). **Not re-checked:** any narrative claim outside those rows. The two
 > `bash_write_targets.py` / `measure_bash_corpus.py` "registered" drifts are the long-standing false positives,
-> unchanged. `Archer-Store` printed as an unregistered sibling directory: new on disk, not in the five deliberate
-> deregistrations, left for the owner to register or deregister.
+> unchanged; `Archer-Store` is still an unregistered sibling awaiting the owner.
 >
-> **What the second 2026-10-10 pass covers** (after run `2026-10-10-orchestra-d2-persistence`, a **single-loop**
-> against `orchestra`, five slices on one branch; no fleet definition file changed). Re-checked by `audit-fleet.py`: the
-> status headline (21 runs), the run's Runs-table row, and the roster's execution counts (scout/architect 21 runs,
-> builder 66 slices, reviewer 65 reviews, integrator 4 runs) read from run state. **Not re-checked:** any narrative claim
-> outside those rows. The two `bash_write_targets.py` / `measure_bash_corpus.py` "registered" drifts are the
-> long-standing false positives, unchanged.
->
-> **What the 2026-10-10 pass covers** (after run `2026-10-10-orchestra-d1-closeout`, a **single-loop** against
-> `orchestra`, four slices on one branch; no fleet definition file changed). Re-checked by `audit-fleet.py`: the status
-> headline (20 runs), the run's Runs-table row, and the roster's execution counts (scout/architect 20 runs, builder 61
-> slices, reviewer 60 reviews, integrator 4 runs) read from run state. **Not re-checked:** any narrative claim outside
-> those rows. The two `bash_write_targets.py` / `measure_bash_corpus.py` "registered" drifts are the long-standing
-> false positives, unchanged.
->
-> **What the third 2026-10-09 pass covers** (after run `2026-10-09-orchestra-review-followups`, a diamond against
-> `orchestra`; it follows `2026-10-09-orchestra-desktop-mvp`, also a **diamond** against
-> the `orchestra` app; no fleet definition file changed in either). Re-checked by `audit-fleet.py`: the status headline (19 runs),
-> both runs' Runs-table rows, and the roster's execution counts (scout/architect 19 runs, builder 57 slices, reviewer 56
-> reviews, integrator 4 runs) read from run state. **Not re-checked:** any narrative claim outside those rows, and
-> nothing about orchestra's own code beyond what the run's reviews and integrator recorded. The two
-> `bash_write_targets.py` / `measure_bash_corpus.py` "registered" drifts are the long-standing false positives,
-> unchanged. The earlier same-day pass (after `2026-10-09-orchestra-fleet-sync`) re-measured every marker-only
-> definition-file change; nothing it checked has moved since.
->
-> **What the 2026-10-07 pass covers** (after run `2026-10-07-native-app-expertise`, single loop
-> -- forced, it edits `.claude/agents/**` and `.claude/skills/**`; plan approved by the owner).
-> **Native app expertise added:** `decisions/0003-native-stack.md` (78 ln), `conventions/native-mobile.md`
-> (152 ln), `conventions/native-desktop.md` (136 ln), new `ui` values `native-mobile`/`native-desktop`
-> (`ui` may now be an array), gated native rules in all five non-integrator agents, native
-> scaffolding in `new-app`, and Expo/Tauri detection in `scout-facts.py` with its first suite
-> `.graph/test_scout_facts.py` (147 ln). Every changed definition file was read in full by a fresh
-> reviewer this run (s1 and s2 twice). Re-checked here: every `(N ln)` row, the roster's line
-> and execution counts, the status headline, the Runs table and the Decision records row.
-> **Not re-checked:** any narrative claim outside those rows. **Same day, run
-> `2026-10-07-native-followups`** closed that run's four follow-ups (array-aware `responsive-web`
-> wording, the guard's MSYS path bug, `scout-facts` unparseable `package.json`, `app.json`); the
-> plan-scope guard and scout-fact collector rows and both line counts were re-checked after it. `audit-fleet.py` afterwards: only the 2 long-standing
-> `bash_write_targets.py` / `measure_bash_corpus.py` rows.
->
-> **The 2026-10-06 pass covered** (direct edit, single loop -- forced, since it edits
-> `.claude/skills/**` and `.claude/agents/**`; plan approved by the owner before any code).
-> **Recursive Language Models added** as a reading tool: `.graph/rlm.py` (529 ln), its offline
-> suite `.graph/test_rlm.py` (186 ln, 43 checks), the `/rlm` skill (98 ln), and
-> `decisions/0002-rlm-scope.md`. Wired into `scout.md`, `postmortem` and `audit-fleet` only;
-> `reviewer`, `architect` and `integrator` are excluded by decision. **Exercised live** on
-> this file: 5 haiku sub-calls, $0.0996, 79s wall, 12/12 open gaps found plus 1 false
-> positive (#18). Three live findings changed the tool before it shipped: `--max-budget-usd`
-> bills and then discards the answer; thinking is ~90% of a sub-call's cost but turning it
-> off gave a wrong answer; and the first live session overspent $0.237 against $0.10. Not
-> re-checked in this pass: any narrative claim outside the rows below. `audit-fleet.py`
-> afterwards: the same 2 long-standing `bash_write_targets.py` / `measure_bash_corpus.py`
-> rows and nothing else. **Docs follow-up, same day:** `README.md` now covers RLM, the
-> seventh router and the full layout; `reviewer.md`, `architect.md` and `integrator.md`
-> each state their own `/rlm` exclusion. Roster line counts re-measured. **Tagged
-> `v1.0.0`**, the fleet's first release.
->
-> A point-in-time snapshot **verified against disk**, not a living spec. `GRAPH.md` and
-> `CLAUDE.md` describe how the fleet is *supposed* to work; this file records what is
-> *actually true right now*. **Stale entries here are worse than missing ones** — if you
-> change the fleet, update this file in the same session, and bump the date above.
->
-> **What the 2026-09-20 pass covers** — a graph run, not a direct edit:
-> `2026-09-20-fleet-gaps`, the fleet's **second diamond**, three slices, three builders in
-> three worktrees, three independent reviewers, one integrator, 10 nodes and 472 events.
-> **Gap #19's open core is CLOSED** (`check-return-cap.py`, report-only by decision).
-> **Gap #20 is measured for the first time** — 52 stops, 3 matched, 0 orphan-with-evidence,
-> 49 phantom — and its `parent` diagnostic is confirmed dead, collecting nothing across a
-> full live run. **Gap #22's append lock passed its contention test**: three concurrent
-> builders, later three concurrent reviewers, one `activity.jsonl`, no torn or lost line.
-> `audit-fleet.py` no longer reports the five deregistered siblings. **Three new gaps
-> booked — #23, #24, #25** — all found by executing rather than by reading: step 0.5 checks
-> the target repo when the harness builds worktrees relative to the launch dir; `brief.py`
-> renders schema placeholder text as a real prior review attempt; `postmortem/SKILL.md`'s
-> section table is stale. All three need `.claude/**` edits, which force single-loop and a
-> fresh session. Full suite 13/13 green from merged master, re-run by the orchestrator
-> independently of the integrator. `audit-fleet.py` afterwards: **125 claims checked, 2
-> drifted**, both the long-standing `bash_write_targets.py` / `measure_bash_corpus.py` rows.
->
-> **What the 2026-09-19 pass covers** (direct edit, no graph run — four independent one-file
-> fixes, each below the stop-rule threshold, chosen off a gap review the owner ranked).
-> **Gap #14 closed**: `guard-builder-scope.py` gained `schema_placeholders()`, so an untouched
-> `_schema.json` placeholder is no longer parsed as an approved path. **Gap #15 closed**:
-> `flag-stale-state.py` no longer fires on app files edited inside a builder worktree, and the
-> hook gained its first test file — `test_flag_stale_state.py` (141 ln, 23 checks) — after 25 days
-> and one rewrite with none. **Gap #22 booked and its forward half closed**: the heartbeat's
-> append is now lock-serialised; the measurement behind it is in the gap entry, and every
-> `activity.jsonl` written before today stays lossy by an unmeasurable amount. **The `.graph/CURRENT`
-> pointer**: `parked` added to the closed-status lists in `record-activity.py` and
-> `guard-builder-scope.py` (`show-board.py` already had it), and `close-run.py` now says to clear
-> the pointer on a green close. All 12 suites exit 0, `verify-invariant.py` is clean across 5
-> targets, and `audit-fleet.py` afterwards reports **119 claims checked, 2 drifted** — both the
-> pre-existing `bash_write_targets.py`/`measure_bash_corpus.py` rows already booked at the Bash
-> write classifier, neither touched by this pass. **What this pass did NOT do: nothing has run
-> through the graph since 2026-09-06**, so `--for` briefs, the sonnet builder, `tokens`/`say`,
-> the `parent` diagnostic and `/postmortem` all remain unexercised by a real run, and so do all
-> four fixes above.
->
-> **What the 2026-09-11 pass covers** (direct edit, no graph run — a `.claude/skills/**`
-> addition is single-loop by rule anyway). Added `/postmortem`:
-> `graph_agents/.graph/postmortem.py` (309 ln today, 264 when this
-> pass added it), `graph_agents/.graph/test_postmortem.py`
-> (238 ln, 28 checks today; 198 ln and 17 checks then, all against fixture `state.json`/`activity.jsonl` pairs built to carry
-> gap #20's exact phantom-stop shape), `.claude/skills/postmortem/SKILL.md`
-> (65 ln). This is the third of the three routers a 2026-09-03 brainstorm named worth
-> building — `/close-run` and `/audit-fleet` were the other two, built the same day; this one
-> was deliberately left for later because it reads `activity.jsonl` and gap #20 was open.
-> Built now, scoped around the gap rather than waiting on it — see the Decisions log and gap
-> #20's own entry. Re-measured `wc -l` for the roster row (6 skills, was 5) and the new tool
-> row. Ran `audit-fleet.py` afterwards: **117 claims checked, 2 drifted**, both pre-existing
-> and already booked at the Bash write classifier row (`bash_write_targets.py`/
-> `measure_bash_corpus.py` read as unregistered hooks) — nothing this pass touched is new
-> drift.
->
-> **What the second 2026-09-09 pass covers** (direct edit, no graph run — a per-node read
-> contract plus one model-tier change is below the stop-rule threshold). `brief.py` gained
-> `--for <node>[:<slice>]`: a per-node brief derived from `state.json` (goal, that node's
-> plan entry, scout facts or the builder's report as the node needs them, prior review
-> attempts) instead of the whole file, cutting what a node reads on start from ~168KB to a
-> few KB on `2026-09-06-bash-write-guard`, the run it was measured against. `GRAPH.md` §3's
-> contract and all six agent files' read steps now point at it, `state.json` only for what
-> the brief omits. `builder` moved opus → sonnet: the argument is that a builder executes a
-> human-approved slice rather than deciding anything, and the never-downgraded `reviewer`
-> exists to catch what it misses — `GRAPH.md` § Model tiering carries the argument in full,
-> not restated here. Re-measured with `wc -l`: `GRAPH.md` 366→386, `brief.py` 479→680,
-> `architect.md` 96→97, `builder.md` 89→91, `reviewer.md` 97→100, `integrator.md` 52→55,
-> `ops.md` 54→56. `--for` was exercised by hand against `2026-09-06-bash-write-guard` for
-> all six node types and its two error paths (unknown node, missing slice on
-> builder/reviewer); **not** added to `test_brief.py` — booked, not closed. `audit-fleet.py`
-> reports clean on everything this pass touched. Fixed two pieces of drift this pass did not
-> cause but found while re-running the auditor: the Status headline said *twelve runs*
-> against 13 directories, and the Runs table did not list `2026-09-06-bash-write-guard` —
-> the same two-drift shape three consecutive closes have now produced; added that run's row
-> from its own `state.json` `log`.
->
-> **What the second 2026-09-09 pass does NOT cover.** No narrative section of any run was
-> re-read; the gap list, the Decisions log and every per-run *what happened* section stand
-> as the first 2026-09-09 pass left them. `--for`'s per-node shape was designed against this
-> file's schema and one real run, not measured across a diamond or a re-reviewed re-run —
-> the builder brief's "prior review attempts" section is untested against an actual REJECT
-> loop through the new code path. The two pre-existing auditor complaints about
-> `bash_write_targets.py`/`measure_bash_corpus.py` being unregistered hooks are unchanged
-> from the first pass and still booked there, not here.
->
-> **What the first 2026-09-09 pass covers.** Run `2026-09-06-bash-write-guard`, three sequential
-> slices, and the prose it made false. Re-measured with `wc -l` this pass, every count
-> below taken from disk rather than from a gate report: `guard-builder-scope.py` 326→557,
-> `test_guard_builder_scope.py` 247→614, `GRAPH.md` 362→366, `feature-graph/SKILL.md`
-> 362→374, `builder.md` 80→89, plus three new files at 1689, 734 and 272. Re-ran all five
-> fleet suites on the run branch — `test_bash_write_targets.py` (199 cases),
-> `test_guard_builder_scope.py` (82 checks), `test_hooks_resolve.py` (9 commands),
-> `test_close_run.py`, `test_audit_fleet.py` — all exit 0, and `audit-fleet.py` afterwards.
-> Read the run's whole `log` and both `reviews` keys before writing, which is where the
-> numbers in gap #13 come from: the unresolved-write-shape rate, the pre-filter's two
-> different rates, the curl classifier delta, and five figures this run measured its way
-> out of and which must not be restated in their earlier form.
-> `audit-fleet.py` afterwards reports **112 claims checked, 4 drifted**, and all four are
-> named rather than left to be rediscovered: the *twelve runs vs 13 directories* headline
-> and the branch reading `feat/bash-write-guard` instead of `master` are this run being in
-> flight and resolve when it closes and merges; the two saying `bash_write_targets.py` and
-> `measure_bash_corpus.py` are "registered" with no `settings.json` entry are the auditor's
-> rule that every non-`test_` `.py` under `hooks/` is a hook, meeting a module and a
-> measurement tool — real, new, and booked in the What-is-live row rather than silenced.
->
-> **What the 2026-09-09 pass does NOT cover.** No narrative section of any run was
-> re-read, here or in the run states — the per-run *what happened* sections, the Decisions
-> log above the row added today, and every gap other than #13 stand as earlier passes left
-> them. The roster's execution counts were **deliberately not bumped**: the auditor
-> measures scout 13 / architect 13 / builder 36 / reviewer 35 against the 12/12/34/33 in
-> the table, but this run is still open and writing its own keys as this pass runs, so any
-> number written here would be stale before the run closed. The **Status headline and the
-> Runs table are untouched on purpose** — that is `/close-run`'s work, and the auditor's
-> "twelve runs vs 13 directories" line is this run's own directory in flight. Two claims
-> this file does **not** make and a reader should not infer: nothing here says what the
-> harness does when a `PreToolUse` hook exceeds its `timeout` (unknown to this fleet — see
-> gap #13, item 10), and nothing here says the guard's linked-worktree path is tested (it
-> is reviewer-verified only, item 14).
->
-> **What the 2026-09-06 second pass covers.** The commit-attribution guard: read every file it touches, ran its 38 subprocess cases and `test_hooks_resolve.py` (9 commands, all resolve) and `test_guard_builder_scope.py`, and verified the hook **live, twice** in a throwaway repo — a trailered commit denied, the same commit clean going through authored `njcurtis3` — once before the matcher was tightened and once after. Re-measured with `wc -l`: `CLAUDE.md` 95→113, `GRAPH.md` 336→362, `new-app` 96→100, `builder.md` 75→80, `integrator.md` 47→52, `ops.md` 49→54, plus the two new files at 217 and 234. Roster execution counts bumped to the auditor's measured values (scout 12, architect 12, builder 34, reviewer 33, integrator 1, ops 0) — those are counts of *written keys*, not a judgment that each node did its job. Audited all 11 sibling repos for existing contamination with `git log --all` and booked the result as gap #21. `audit-fleet.py` re-runs at **107 claims checked, none drifted**.
->
-> **What the second pass does NOT cover.** No run was executed and no run state changed — this was a direct edit, below the stop-rule threshold, on hook + definition files. The gap list's reasoning, the per-run *what happened* sections and the Decisions log were **not** re-read. The 12 historical commits carrying trailers are **recorded, not cleaned** (gap #21). And the guard's own blind spots are real and stated rather than closed: it cannot see a PR body, a release note, a tag message, or a message typed into an editor — `ops.md` now carries that half in prose, which is exactly the arrangement this whole change was made because it does not hold.
->
-> **What the 2026-09-06 pass covers.** Run `2026-09-06-fleetview-followups` closed, and this pass is the drift it caused: the Status headline still said *eleven runs* against 12 directories on disk, and the Runs table did not list the run at all — the same two-drift shape `2026-09-04-fleetview-payload` produced, which is now the third consecutive close to produce it. Both fixed; `audit-fleet.py` re-runs at **103 claims checked, none drifted**. Verified in `git` that `s1-record-activity-deferral` and `s2-scope-exceptions-member-guard` are both ancestors of `fleetview` master at `ed38d7e`, and re-ran `node fleetview/test.js` on merged master at **212 assertions, 0 failures** (193 before the run). Independently re-derived `s2`'s central safety claim rather than taking the reviewer's word: extracted `PROSE_OPENER`/`isRealPath`/`realScopeExceptions`/`scopeExceptionsMalformed` out of `index.html` and ran them against every real run state beside a literal copy of the old predicate — **0 of 12 runs change their banner decision**, and both docstring-only runs correctly stay silent. Also confirmed `serve.py` is byte-identical to the run's baseline `7eb4b20`, which is the fact `s1`'s merged paragraph depends on. **Gap #13 was independently rediscovered** by `s2`'s reviewer (the plan-scope guard is registered `Write|Edit`, so a Bash heredoc writes unwatched); it was already on this list and is left as it stands, not duplicated.
->
-> **What the 2026-09-06 pass does NOT cover.** No line counts were re-measured this pass — no fleet definition file changed, and the checker's `(N ln)` family passed untouched. The narrative claims, the gap list's reasoning, the per-run *what happened* sections and the Decisions log were **not** re-read. One fact this file does not record and a reader should not infer: `fleetview` master is **ahead of `origin/master`** by both merges plus a pre-run crash fix, so the work is closed and merged but **not pushed**.
->
-> **What the 2026-09-05 pass covers.** Re-measured with `wc -l`: `verify-state.py` 420→560, `brief.py` 392→479, `close-run.py` 240→254, `test_close_run.py` 204→289, `_schema.json` 31→32, `reviewer.md` 85→97, `integrator.md` 45→47, plus two new suites (`test_verify_state.py` 238, `test_brief.py` 191). Re-ran all five fleet suites on merged master, all exit 0. Verified in `git` that each of the five `feat/attempt-*` branches is an ancestor of `master` at `ea53381`, and the three `feat/split-*` branches of `fleetview` master at `b261a7f`. Re-derived `fleet-hardening`'s blocker count against the new resolver (7→3) and confirmed by hand that both survivors are the real findings. Added the two runs closed today to the Runs table and corrected three rows that claimed `close-run` and `brief.py` had never been used for real — they had, that same day.
->
-> **What it does NOT cover, stated because the checker cannot say it.** Every narrative claim in the gap list, the per-run *what happened* sections and the Decisions log was **not** re-read this pass. The roster's execution counts were bumped to the auditor's measured values (scout 11, architect 11, builder 32, reviewer 31, integrator 1, ops 0), which are counts of *written keys*, not a judgment that each node did its job. `close-run/SKILL.md:47` is **knowingly stale**: its blocker table still says a `REJECT` means the re-review never landed, which `2026-09-05-review-attempts` s2 made impossible. The human dropped that file from s5's scope at the gate; it is recorded as debt in that run's log and is not fixed here.
->
-> **What the 2026-08-26 stamp covers.** Re-checked against disk this pass: every line count
-> and every frontmatter model/tool grant in the roster below; the 6 registry app ids **and
-> their `kind` values** against the directories on disk; run 3's `state.json` end to end;
-> the four `App 1` commits it claims, including the merge commit, read out of that
-> repo's `git log`; `builder.md:3` against the `GRAPH.md` §4 footnote that described it;
-> and the staleness hook, by running 20 synthetic payloads through it (both `tool_input`
-> and `tool_response` shapes, junction and canonical paths, closed and parked runs).
-> **Second 2026-08-26 pass** (direct edit, no graph run — one hook plus one script mode is
-> below the stop-rule threshold): `verify-state.py --audit` and `flag-state-gap.py`, both
-> driven through 12 synthetic cases, plus every line count in the tables below re-measured
-> with `wc -l`. That pass also read all four run `state.json` files through the new audit,
-> which is how gap #7's `fleet-hardening` finding surfaced. A **third** 2026-08-26 pass
-> added `written_by` authorship: 6 more fixtures (healthy, orchestrator-forged builder key,
-> builder-stamped review, partly unstamped, legacy unstamped, template text left in), all
-> 10 earlier fixtures re-run as regressions, both CLI modes re-proven against all four real
-> runs, and every roster line count re-measured again. A **fourth** pass added
-> `.graph/CURRENT` and the plan-scope guard, driven through 12 synthetic cases covering
-> both what it blocks and the seven conditions under which it must stay silent, plus the
-> `scope_exceptions` audit rule in three states. A **fifth** pass added the node heartbeat
-> and FleetView's activity lane, verified end-to-end against a live server rather than by
-> fixture alone, and corrected the "no remote" claim in the git-repo row below. A **sixth**
-> pass ran `new-app` for `personal-archive` (gap #4) — the registry is now 7 apps, and
-> `verify-invariant.py` was re-run clean across all 7. Verified directly for that pass: the
-> new repo's `git log` and tracked file list, its 6 tests passing, its CLI's three
-> subcommands run by hand, and the verbatim no-sibling-import line matched with `grep -Fxq`.
-> A **seventh** pass ran `archive-adapters`, the first diamond. Verified directly for that pass:
-> both fleet fixes driven through fixtures (14 payloads for the guard, 5 for the audit) with the
-> must-still-fail cases tested BEFORE the must-now-pass case; all four prior runs re-audited and
-> confirmed byte-identical; `personal-archive` `master` at `a5ebed4` with 32 tests green together;
-> the roster line counts for the two changed files re-measured. Not re-checked: everything else in
-> the roster, unchanged since the sixth pass.
->
-> **What the 2026-09-03 stamp covers** (direct edit, no graph run). Verified directly:
-> `brief.py` rendered against **all 8 runs on disk** — the diamond, the two runs carrying
-> off-plan slices, the `parked` run whose builder keys are still untouched template, and the
-> four runs with no `activity.jsonl` — plus a synthetic mid-flight fixture exercising the
-> live lane, a `blocked` builder, a `REJECT`, and a slice not yet started; both glyph modes;
-> and repo-relative path output from `repos/`. All six roster line counts re-measured with
-> `wc -l` after the return-block rewrite, as were `GRAPH.md` and the `feature-graph` skill.
-> Confirmed rather than assumed: `_schema.json` was left byte-identical on purpose, because
-> `is_untouched()` compares string leaves and editing a template description would flip
-> older runs' untouched keys to "written" — the 2026-08-26 regression, restated.
-> A **second 2026-09-03 pass** added the board hook. Verified directly: the hooks
-> reference read for what `SubagentStop` does with stdout and with `systemMessage` (quoted
-> verbatim in gap #19, because this is the kind of ruling that gets re-proposed); all four
-> `activity.jsonl` files re-counted for the stop-event anomaly behind gap #20 — 471 of 503
-> stops unattributed, every one carrying an `agent_id` that never had a `SubagentStart`;
-> `Agent` confirmed as the spawn tool name from the same logs, 31 occurrences, all in the
-> main session. `show-board.py` driven through 24 cases as a subprocess, and
-> `test_hooks_resolve.py` re-run over all **8** commands. **Not observed**: `systemMessage`
-> actually rendering in the main tab — see gap #19.
-> A **third 2026-09-03 pass** added `/close-run`. Verified directly: `close-run.py` run
-> against **all 8 historical runs**, with `fleet-hardening`'s 8 blockers and
-> `archive-adapters`' clean result both read out rather than assumed; `test_close_run.py`
-> driven through 27 checks, each building a real `git init` repository with a real branch
-> merged or not merged; the four line counts above re-measured with `wc -l`. **Not
-> exercised**: no run has been closed through this skill — it has only been pointed at
-> history.
-> A **fourth 2026-09-03 pass** added `/audit-fleet`, and it is the first pass where the
-> mechanical half of this re-verification was done by a script instead of by hand.
-> Verified directly: `audit-fleet.py` run against this file, reporting **94 claims checked,
-> 8 drifted** — and all eight were confirmed by hand before anything was rewritten. Three
-> line counts had been stale since 2026-09-02 (`guard-builder-scope.py` 279→326, its test
-> 194→247, `new-app/SKILL.md` 72→96); the roster's `integrator` row still said **no** while
-> this file's own prose and gap #2 had both said since 2026-08-26 that it ran; and **three
-> closed runs were absent from the Runs table entirely**, one of them
-> (`2026-08-31-mobile-first-criteria`) not mentioned anywhere in this file at all.
-> `test_audit_fleet.py` was driven through 63 checks over 30 synthetic umbrellas, each a
-> real `git init` fleet with a controlled committer date, including a case asserting the
-> tool leaves every fleet file byte-identical. **Not exercised**: nothing fires it
-> automatically — it is run by hand, like every other checker here, and the staleness hook
-> still only nags.
-> A **fifth 2026-09-03 pass** recorded the board being observed. Verified directly: the
-> board's appearance reported from a fresh session; the dispatch-vs-return timing measured
-> across every `Agent` event in all five runs carrying a heartbeat (32 of 32 within 0.2s of
-> a `SubagentStart`) rather than inferred from one; the four line counts of the files
-> corrected in that pass re-measured; and `/audit-fleet` re-run to green afterwards, which
-> is the first time this file's own checker has policed a pass that edited it.
-> **Not** re-checked on any 2026-09-03 pass: the registry's contents, the invariant checker
-> and FleetView — untouched, and recorded below as their own passes found them. The guard's
-> line counts were corrected this pass; its behaviour was not re-tested.
->
-> **Not** re-checked on 2026-08-26: `verify-state.py`'s four *named-key* exit paths, the portfolio
-> `entry_docs` sweep, and FleetView — all three were verified 2026-08-26 by the audit that
-> produced that pass's fixes, and are recorded below as that audit found them.
-
----
-
-## Status: 24 runs, 23 of them executed; the fifth diamond has run
+## Status: 25 runs, 24 of them executed; the fifth diamond has run
 
 Built 2026-08-25 in a single session. Eleven run directories on disk. The first five are
 narrated in full below; three more ran 2026-08-31 → 2026-09-03 and were **missing from
@@ -371,7 +76,7 @@ this fleet has written a line of product code yet**", eleven hours after one had
 | Thing | State | Path |
 |---|---|---|
 | Umbrella constitution | live | `graph_agents/CLAUDE.md` (131 ln) |
-| Fleet history | live, **split out of this file 2026-09-22**. Holds the sediment: the per-run `### <run-id> — what happened` narratives and the Changelog. Both are append-only and never revised, and together they were **31% of this file by weight** while answering nothing about what is currently true. The split line is the one `audit-fleet.py` already drew — it parses neither section and said so before the move — so it was verified by claim count: **126 claims before, 126 after**. `flag-stale-state.py` names both files and is silent on this one | `graph_agents/HISTORY.md` (413 ln) |
+| Fleet history | live, **split out of this file 2026-09-22**. Holds the sediment: the per-run `### <run-id> — what happened` narratives and the Changelog. Both are append-only and never revised, and together they were **31% of this file by weight** while answering nothing about what is currently true. The split line is the one `audit-fleet.py` already drew — it parses neither section and said so before the move — so it was verified by claim count: **126 claims before, 126 after**. `flag-stale-state.py` names both files and is silent on this one | `graph_agents/HISTORY.md` (414 ln) |
 | Decision records | live, **added 2026-09-22**, 3 records (0002, RLM scope, added 2026-10-06; 0003, native stack -- Expo/EAS + Tauri 2, added 2026-10-07). Numbered records for questions settled once, so they are not re-argued from scratch. Distinct from `conventions/`: a convention says *how we build*, a decision says *what we chose and what would reverse it*. Nothing reads them at runtime | `graph_agents/decisions/0001-no-jev-in-the-fleet.md` (136 ln) |
 | Graph spec | live | `graph_agents/GRAPH.md` (445 ln) |
 | Portfolio index | live, **6 nodes** — 3 products, 2 tools, 1 site — ids and `kind` verified 2026-08-31; **`orchestra` added 2026-10-09** via `/new-app` (product, `ui` `["native-desktop","native-mobile"]`, repo github.com/njcurtis3/Orchestra): desktop command center + Android remote for coding agents, carrying a vendored copy of this fleet in `orchestra/fleet/` filled only by `.graph/orchestra-sync/sync.py`. **Narrowed from 8 to 4 on 2026-08-31**: `koenrane.xyz`, `personal-archive`, `thrml`, `whoop-med-tracker` removed at the owner's direction — those repos are personal, not part of the development umbrella going forward. Not deleted from disk, just deregistered; the fleet routes to none of them. **`telosrg-site` added same day** via `/new-app` — the org's public marketing site. Also gained `org`/`org_status`/`org_domain`/`org_domain_status`/`org_github`/`org_github_status` fields (2026-08-31): "Telos Research Group", working name not yet a formed legal entity; domain `telosrg.com` **purchased** 2026-08-31 (re-verified registered via RDAP against Verisign after the owner reported buying it); GitHub org **github.com/TelosRG registered** 2026-08-31 (re-verified via `api.github.com/orgs/TelosRG` after the owner reported creating it) | `graph_agents/portfolio/registry.json` (174 ln), **untracked on purpose** — see below |
@@ -418,10 +123,10 @@ this explanation and this explanation did not exist; both ends were fixed 2026-0
 
 | Node | Model | Tools | Lines | Has executed? |
 |---|---|---|---|---|
-| `scout` | haiku | Read, Glob, Grep, Bash, WebSearch, WebFetch | 88 | yes, 24 runs |
-| `architect` | opus | Read, Glob, Grep, Bash | 121 | yes, 24 runs |
-| `builder` | sonnet | Read, Write, Edit, Glob, Grep, Bash | 103 | yes, 79 slices |
-| `reviewer` | opus | Read, Glob, Grep, Bash | 149 | yes, 78 reviews |
+| `scout` | haiku | Read, Glob, Grep, Bash, WebSearch, WebFetch | 88 | yes, 25 runs |
+| `architect` | opus | Read, Glob, Grep, Bash | 121 | yes, 25 runs |
+| `builder` | sonnet | Read, Write, Edit, Glob, Grep, Bash | 103 | yes, 83 slices |
+| `reviewer` | opus | Read, Glob, Grep, Bash | 149 | yes, 82 reviews |
 | `integrator` | opus | Read, Write, Edit, Glob, Grep, Bash | 62 | yes, 5 runs |
 | `ops` | opus | Read, Write, Edit, Glob, Grep, Bash | 84 | **no** |
 
@@ -1077,6 +782,7 @@ still read by a human or by an agent that says which parts it actually re-read.
 | `2026-10-10-orchestra-d2-persistence` | orchestra | **single-loop, 5 slices on one branch** (shared state.rs/mod.rs/lib.rs ruled out a diamond) | **executed**, approved at the gate with all 7 decisions as recommended; all five slices PASS on attempt 1 | ROADMAP D2, sessions survive a restart: `suspended`/Paused status, expired inbox items and full result text (s1); versioned atomic snapshot in app_data_dir with a revision-ordered writer and a quit path that saves Paused before killing children, so a clean quit no longer records Failed (s2); lazy `--resume` on reply with a UUID-checked id (s3); window-state plugin plus an own visible-display check (s4); docs (s5). The s3 reviewer probed real claude 2.1.296 to confirm an unknown resume id gives is_error:true and exit 1. **Fleet lessons:** the architect listed bare paths and kept gate options out of `plan`, and both D1 tooling gaps stayed quiet; the architect accidentally ran a stale D1 script left in the shared scratchpad, which overwrote its own key before it rewrote it. Merged to orchestra `main` as `329e93c`; cargo test 67, npm test 25; owner GUI checks pending |
 | `2026-10-14-orchestra-d4-tasks-worktrees` | orchestra | **single-loop, 5 slices on one branch** (session/mod.rs, lib.rs, commands.rs and git.rs each shared by 2-3 slices) | **executed**, approved at the gate with all 11 decisions as recommended plus an orchestrator-proposed amendment (land refuses Claude-attributed task commits); s3/s5 PASS on attempt 1, **s1 and s2 on attempt 2, s4 on attempt 3** (owner-authorized past the cap) | ROADMAP D4: git runner with typed refs and a containment check (s1); wait_exit/stop_and_wait covering grandchildren via the job object, plus an on-machine probe (s2); Task entity, schema 2, queue of 2 in per-task worktrees under app_data_dir (s3); diff, land (--no-ff onto the recorded base, clean-checkout and attribution refusals that keep the session resumable) and discard with link-safe cleanup (s4); tasks UI with confirms and plain-text diff (s5). **Measured on this machine:** `git worktree remove` while a child holds the folder half-removes it (checkout deleted, worktree unregistered, empty dir left); `git worktree remove --force` **follows NTFS junctions** and deleted a canary outside the worktree — found when a reviewer's own probe emptied the real `node_modules` (restored with `npm ci`). **Fleet lessons:** parallel reviewers on one checkout must not link shared dirs into probe worktrees; a builder's commit message claimed a fail-closed check that did not exist, caught by the attempt-2 reviewer and confirmed by grep — the attempt-3 reviewer was briefed to verify every claim against code. Merged `--no-ff` to orchestra `main` as `7e62149`; cargo test 191, npm test 58; not pushed; owner GUI checks pending |
 | `2026-10-16-orchestra-p1-a0-h0` | orchestra | **diamond, 3 parallel slices** in linked worktrees under a short path (`C:/Users/natha/wt/`), one run for three ROADMAP milestones because `.graph/CURRENT` names one run and the scope guard reads only that run | **executed**, approved at the gate with the P1 link decision (8 items) and the H0/A0 decisions as recommended; s1 and s3 PASS on attempt 1, **s2 REJECTed once** (jest packages in `dependencies`; the 48dp touch floor was overridable) and PASSed on attempt 2; integrator merged s3, s2, s1 with 0 conflicts | P1: the client<->host link contract in `protocol/README.md` (s1); A0: Expo starter replaced by the real mobile shell with jest-expo and expo-dev-client (s2); H0: the Rust core split into `orchestra-core` under a root Cargo workspace, 19 pure renames, 181 core + 10 shell tests (s3). **Fleet lessons:** orchestra's repo-local git config had `user.name = user.email` (source untraced; the classic `git config user.name user.email` slip) and one s3 commit took that name before it was caught, fixed and re-authored; `git worktree remove` fails with Filename too long on worktrees holding `node_modules`/cargo targets, so worktrees went under a short path and leftovers were removed only after a reparse-point check. Merged `--no-ff` to orchestra `main` as `3422e61`; cargo test --workspace 191, desktop npm 58, mobile 5 tests + expo-doctor 21/21; not pushed |
+| `2026-10-17-orchestra-p2-protocol-v1` | orchestra | **single-loop, 4 sequential slices** on one branch in a linked worktree (`C:/Users/natha/wt/op2`); the architect declined a diamond because a Rust/serde misfit would land back in s1's fixtures | **executed**, approved at the gate with G1-G7, S1, S2 as recommended plus one orchestrator amendment (gitignored `ROADMAP.md` dropped from s4: a worktree cannot see it); all 4 slices PASS on attempt 1, three fresh reviewers in parallel (s1 high, s2 high, s3+s4 low); no integrator | P2: protocol v1 as TS source of truth in `protocol/`, Rust copy `orchestra_core::wire`, 87 shared JSON fixtures checked by cargo, desktop vitest and mobile jest; IPC arg structs moved into core with `deny_unknown_fields` intact. **Fleet lesson:** two concurrent reviewers each truncated `state.json` (`json.dump(..., ensure_ascii=False)` in `w` mode hit a lone surrogate in finding text; the second empty-write came seconds after the orchestrator's first restore). Restored twice by the orchestrator from the intact prefix, both reviewers then rewrote their own keys via a scratch file + `cat`; node-written log lines after the architect's were lost. Read-only reviewers writing `state.json` by script is unguarded. Merged `--no-ff` to orchestra `main` as `9d8f98f`; cargo 181+4+10, desktop vitest 153, mobile jest 94, expo-doctor 21/21; not pushed |
 | `2026-10-10-orchestra-d3-notify-detail` | orchestra | **single-loop, 5 slices on one branch** (session/mod.rs is the hub every slice touched) | **executed**, approved at the gate with all 7 decisions as recommended; s1/s2/s5 PASS on attempt 1, **s4 PASS on attempt 2 and s3 on attempt 3** after an owner-ordered fix round (attempt 2 REJECTed on a torn tail cut inside a multi-byte UTF-8 character; the third attempt was owner-authorized past the 2-attempt cap) | ROADMAP D3: inbox events carry only the changed session and text-only lines skip the snapshot (s1); per-session model and permission mode from a Rust allowlist, re-passed on resume (s2); per-session transcripts on disk outside the snapshot, read as bytes with lossy decoding so a torn tail cannot reset numbering or hide history (s3); OS notifications on needs-input/finish/fail (s5); session detail view with transcript, cost and follow-up prompts, keyed by session id (s4). A paid probe confirmed all four permission modes still emit can_use_tool. **Fleet lesson:** the "notes, not blockers" from attempt-1 reviewers were worth a fix round — one of them hid a second, worse bug that only a fresh reviewer found. Merged `--no-ff` to orchestra `main` as `7e62e10`, pushed 2026-10-14; cargo test 108, npm test 41; owner GUI checks pending (Windows toasts need an installed build) |
 | `2026-10-07-native-app-expertise` | umbrella (the fleet itself) | single-loop, 4 slices (**forced**, edits `.claude/agents/**` and `.claude/skills/**`) | **executed**, approved at the gate; s3/s4 PASS on attempt 1, **s1 and s2 each REJECTed on attempt 1 and PASSed on attempt 2** | Primed the fleet for native apps: `decisions/0003-native-stack.md` (Expo + EAS for mobile, Tauri 2 for desktop, no Mac so iOS on EAS and macOS on a GitHub Actions runner), `conventions/native-mobile.md` and `native-desktop.md`, new `ui` values `native-mobile`/`native-desktop` (and `ui` may be an array), gated native rules in five agents, native scaffolding in `new-app`, Expo/Tauri detection in `scout-facts.py`. huntstack's `ui` became `["responsive-web","native-mobile"]` (registry untracked, on disk only). s1 REJECT: an `appVersion` runtimeVersion policy with no version-bump rule would OTA to binaries lacking a new native module. s2 REJECT: an amended skip line cancelled mobile-first for array `ui` |
 | `2026-09-20-fleet-gaps` | umbrella (the fleet itself) | **diamond, 3 slices** | **executed**, approved at the gate; s1/s3 PASS on attempt 1, **s2 REJECTed on attempt 1 and PASSed on attempt 2** | The fleet's **second diamond**, and the first run since 2026-09-06. Closed gap #19's open core (`check-return-cap.py`) and gave gap #20 its first measurement (52 stops: 3 matched, 0 orphan-with-evidence, 49 phantom). `audit-fleet.py` stopped reporting the five deregistered siblings. Three builders in three worktrees wrote one `activity.jsonl` concurrently with no torn or lost line -- the 2026-09-19 append lock's first contention test. Also the first run to exercise `--for` briefs, the sonnet builder, `tokens`/`say`, and all four 2026-09-19 fixes. Produced three new findings of its own (step 0.5's wrong question, `brief.py`'s placeholder rendering, `postmortem/SKILL.md` stale) |

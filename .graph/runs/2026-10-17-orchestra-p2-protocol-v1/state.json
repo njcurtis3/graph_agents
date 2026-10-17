@@ -1,0 +1,516 @@
+{
+ "$comment": "Shared state for ONE work-graph run. Lives at .graph/runs/<run-id>/state.json. Every node reads this on start and appends to its OWN key on finish - the builder writes its own builders.<slice> key, including the branch it worked on. Never rewrite another node's key. Every node key carries written_by, naming the node that wrote it: that is the ONLY record of authorship this file has, and without it 'never rewrite another node's key' is unverifiable - an orchestrator hand-writing all six keys is indistinguishable from six nodes doing their jobs. verify-state.py --audit checks it. This file is the edge: it is how context crosses between agents that cannot see each other.",
+ "run_id": "2026-10-17-orchestra-p2-protocol-v1",
+ "goal": "start P2 (orchestra/ROADMAP.md P2 \u2014 Protocol v1 in code: TypeScript definitions in protocol/ as source of truth, a matching Rust copy with tests against shared JSON fixtures, and decide how mobile consumes protocol/)",
+ "app": "orchestra",
+ "status": "done",
+ "scout": {
+  "written_by": "scout",
+  "facts": [
+   "orchestra/protocol/README.md:132 envelope: every message is JSON {v: 1, type, ...}; version is integer 1 (README:136 supported: [1]).",
+   "orchestra/protocol/README.md:135-139 handshake: plaintext client frame {proto: \"orchestra\", v} before Noise; host replies {proto, v, supported: [1]} or error{code: unsupported_version, supported} and closes; both plaintext frames bound into the Noise prologue; unknown type at known v gives error{code: unknown_type}.",
+   "orchestra/protocol/README.md:142 client to host: hello{v, client_name, app_version}; :143-147 call{v, id, method, args} where method is the Tauri command name verbatim (list_projects, list_sessions, list_inbox, get_transcript, list_tasks, get_task_diff, storage_status, start_session, stop_session, answer, create_task, cancel_task, land_task, discard_task, retry_cleanup) and args are the same serde structs with deny_unknown_fields; :148 ping.",
+   "orchestra/protocol/README.md:151 host to client: welcome{v, host_id, host_name, scopes, features}; :152-153 snapshot{v, seq, projects, sessions, inbox, tasks, storage} on connect, no replay; :154-156 event{v, seq, name, payload} with name in session-updated, inbox-updated, transcript-appended, task-updated, plus notice; :157 result{v, id, ok | error}; :158 error{v, code, message}; :159 pong.",
+   "orchestra/protocol/README.md:86-91 scopes: read = snapshot, events, get_transcript, list_*, get_task_diff, storage_status; answer = answer; control = start_session, stop_session, create_task, cancel_task, retry_cleanup; land = land_task, discard_task. pick_project host-local only (:93-94). Out-of-scope call gives error{code: forbidden} (:95). Phone default is read plus answer (:93).",
+   "orchestra/protocol/README.md:103-111 revocation: open connection gets error{code: revoked} and closes; failed handshake closes with no message. Error codes named in README: forbidden (:95), revoked (:105), unsupported_version (:136-137), unknown_type (:139), already_answered (:167). No other codes are defined.",
+   "orchestra/protocol/README.md:120 reserved: register_push{token, platform} call and a push feature flag in welcome (not in the method list at :143-147).",
+   "orchestra/protocol/README.md:192-197 reserved: agent (string, claude today) on sessions and tasks (D7, :192); host_id in welcome and optional host on items only if D8 survives (:193-194); tasks carry pr: null or {state, url, checks} (D6, :195); notice event and a read path (H2, :196); host key pinning (H3, :197).",
+   "orchestra/protocol/README.md:169-170 MAX_TEXT_BYTES = 32768; the frame size is NOT fixed in the README (deferred to P2: :169, :174, :204). Idempotency: call.id is client-generated and the host remembers recent ids per client (:165-167).",
+   "orchestra/protocol/README.md:177-183 versioning: optional fields and new events or flags do not bump v; clients ignore unknown fields; host input stays strict (deny_unknown_fields) and new call args are gated on welcome.features; removing or changing meaning bumps v.",
+   "orchestra/ROADMAP.md:285-286 P1 Message set bullet names hello, snapshot, session and inbox events, answer, ack, error. The README has no ack message (protocol/README.md:142-159).",
+   "orchestra/ROADMAP.md:297-302 P2 checklist: TS definitions in protocol/ as source of truth; Rust copy in desktop/src-tauri with tests against shared JSON fixtures (line 299, stale, see Q3); decide mobile consumption (copy step or path import inside this repo).",
+   "orchestra/desktop/src-tauri/src/lib.rs:86-102 generate_handler registers 16 commands: pick_project, list_projects, start_session, list_sessions, list_inbox, answer, stop_session, create_task, list_tasks, cancel_task, get_task_diff, land_task, discard_task, retry_cleanup, get_transcript, storage_status.",
+   "orchestra/desktop/src-tauri/src/commands.rs:74-210 tauri::command definitions; each returns a bare type or Result of T and String (e.g. :93, :115, :134). Errors are plain strings, not codes (commands.rs:1-2). No typed error enum exists for the wire error{code}.",
+   "orchestra/desktop/src-tauri/src/lib.rs:50-53 Tauri events: session-updated (SessionSummary), inbox-updated (Vec of InboxItem), transcript-appended (TranscriptBatch), task-updated (TaskSummary). README event names match verbatim (protocol/README.md:154-155).",
+   "orchestra/core/src/session/mod.rs:59-64 enum Event has no Serialize derive; payload types are serialized directly. core/src/notify.rs:10-25 NoticeKind and Notice have no Serialize derive: there is no wire type for the README notice event.",
+   "orchestra/core/src/session/mod.rs:44-57 SessionSummary derives Serialize with no rename: id, project_id, project_name, status (SessionStatus), started_at, last_activity_at, last_message, claude_session_id, model (Option of Model), permission_mode (Option of PermissionMode). No agent, host or pr field exists (reserved D6/D7/D8 absent).",
+   "orchestra/core/src/session/state.rs:20-21 SessionStatus rename_all snake_case, Serialize and Deserialize; values starting, working, waiting_permission, waiting_question, needs_attention, idle, suspended, ended, failed (:7-19).",
+   "orchestra/core/src/session/state.rs:37-38 InboxKind snake_case (permission, question, finished, error); :46-47 Decision snake_case, Deserialize only (allow, deny); :52-69 InboxItem derives Serialize and Deserialize with no rename: id, session_id, kind, created_at, resolved, expired, summary, tool_name, tool_input_preview, questions (Option of Vec of Question), result_text.",
+   "orchestra/core/src/session/task.rs:24-26 TaskStatus rename_all snake_case, Serialize: queued, running, needs_input, done, landing, landed, discarded, cleanup_pending, error (:51-63). task.rs:97-111 TaskSummary derives Serialize with no rename and no pr field; Task (:71) is not serialized (worktree path stays in Rust).",
+   "orchestra/core/src/session/settings.rs:7-9 Model rename_all snake_case (opus, sonnet, fable); :32-40 PermissionMode explicit renames manual, acceptEdits, plan.",
+   "orchestra/desktop/src-tauri/src/commands.rs:22-71 arg structs (StartArgs, CreateTaskArgs, CancelTaskArgs, TaskIdArgs, StopArgs, TranscriptArgs) all deny_unknown_fields; Answer at :65-71 is tag kind, rename_all snake_case, deny_unknown_fields, with variants permission (item_id, decision, message), question (item_id, answers), reply (session_id, text). Matches README answer permission, question, reply (protocol/README.md:89).",
+   "orchestra/core/src/session/transcript.rs:40-41 Entry tag kind, snake_case; :63-66 Record flattens entry with seq and at; :72-76 TranscriptBatch (session_id, entries), Serialize; :79-82 TranscriptPage (entries, next_seq).",
+   "orchestra/core/src/session/store.rs:24-29 StorageStatus Serialize (ok, reason, found_version, skip-if-none). store.rs:73-80 Snapshot is the on-disk state, NOT the wire snapshot in README:152; a new wire type is needed.",
+   "orchestra/core/src/session/mod.rs:283-300 CommitView and TaskDiff derive Serialize with no rename; desktop/src/types.ts:109-139 mirror TaskSummary, CommitView and TaskDiff field for field. desktop/src/types.ts:24-36 and 50-62 SessionSummary and InboxItem also match Rust.",
+   "orchestra/core/src/session/mod.rs:32 MAX_TEXT_BYTES = 32768 (Rust); the same constant is duplicated in TS at orchestra/desktop/src/types.ts:92 with no shared source.",
+   "orchestra/Cargo.toml:1-3 workspace resolver 3, members core and desktop/src-tauri. No root package.json (absence verified).",
+   "orchestra/core/Cargo.toml:8 edition 2024; :13-15 dependencies serde (derive) and serde_json only; :17-18 windows-sys under cfg(windows). No snow, no WebSocket crate, no tokio, so P3 adds new deps.",
+   "orchestra/core/src/lib.rs:1-4 modules git, notify, projects, session. No protocol module exists; nothing protocol-related exists in core.",
+   "orchestra/core/src/session/protocol.rs:1-3 NAME COLLISION: session::protocol already exists and is the claude stream-json parser, not the client-host protocol. A new core/src/protocol.rs would be ambiguous next to it.",
+   "orchestra/desktop/src-tauri/Cargo.toml:22-29 the Tauri shell depends on orchestra-core via path ../../core; no protocol deps.",
+   "orchestra/core/src/session/protocol.rs:133-136 and orchestra/core/src/session/mod.rs:2988 use include_str on core/tests/fixtures/stream_json/*.jsonl: a precedent for loading shared fixtures from core.",
+   "orchestra/CLAUDE.md:21 says the protocol row is Rust copy in desktop; orchestra/protocol/README.md:13-14 says orchestra-core (core/, created by H0). ROADMAP.md:230 already flags the CLAUDE.md row as stale. core/ matches the code layout.",
+   "orchestra/mobile/package.json:42-61 scripts test=jest; jest config preset jest-expo, moduleNameMapper, testPathIgnorePatterns; no roots set, so jest roots default to mobile/. jest 29.7.0 (:38). typescript ~6.0.3 (:40).",
+   "orchestra/mobile/tsconfig.json:2 extends expo/tsconfig.base; :6-12 paths only @/* and @/assets/*; :15-20 include ts and tsx globs relative to mobile/. A ../protocol import is followed by tsc but is not in include; no protocol path mapping exists.",
+   "orchestra/mobile/ has NO metro.config.js, jest.config, babel.config.js or .babelrc (ls verified). Expo default Metro is in use. Expo getWatchFolders returns [] unless a workspace root is detected (orchestra/mobile/node_modules/@expo/metro-config/build/getWatchFolders.js:22-31), so Metro watches only mobile/. Nothing in mobile/package.json or app.json sets watchFolders.",
+   "orchestra/desktop/tsconfig.json:11-12 allowImportingTsExtensions and resolveJsonModule true; :23 include src only, so protocol/ is not compiled unless imported. desktop/vite.config.ts has no alias and no server.fs.allow; :27-30 watch ignores only src-tauri.",
+   "orchestra/desktop/package.json:11 test = vitest run; vitest ^5.0.3 (:25). No vitest config file exists, so vitest uses vite.config.ts with root desktop/.",
+   "No file in desktop/src or mobile/src imports from protocol/ today (grep for protocol paths and identifiers found none). The only mirror is MAX_TEXT_BYTES in desktop/src/types.ts:92.",
+   "protocol/ contains only README.md (ls -la). No package.json, tsconfig.json, test runner, index file, or fixtures directory exists.",
+   "orchestra/mobile/src/__tests__/ holds home.test.tsx and touchable.test.tsx; desktop/src holds five test files (detail, ipc, reply, state, tasks).",
+   "cargo test --workspace (orchestra/, run 2026-10-17 08:21): orchestra_lib 10 passed (log line 16), orchestra_core 181 passed (log line 209), doc-tests 0; exit 0. Log: scratchpad cargo-test.log.",
+   "desktop npm test: 58 passed across 5 files (vitest 5.0.3). desktop npm run build (tsc and vite build): passes.",
+   "mobile npm test (jest 29.7.0): 5 passed in 2 suites. mobile npx tsc --noEmit: exit 0.",
+   "orchestra/.github/workflows/ holds only desktop-release.yml. Triggers: workflow_dispatch and push tags desktop-v* (:7-10). Jobs run on windows-latest and macos-latest, working-directory desktop, steps checkout, setup-node, rust-toolchain, rust-cache, npm ci, tauri-action (:15-57). It runs NO tests; no mobile or protocol job exists."
+  ],
+  "unknowns": [
+   "Q1: README omits ack, but ROADMAP.md:285-286 names it. README is the decision of record; architect to confirm ack is dropped.",
+   "Q1: is notice a v1 event or H2-only? protocol/README.md:155-156 lists it in the v1 host to client event list; :196 lists it under Room for later (H2). Contradiction; no notice wire type exists in core (notify.rs:10-25 not Serialize).",
+   "Q1: frame-size number is not fixed in README (:169, :204); P2 must choose it. MAX_TEXT_BYTES = 32768 is the only recorded number.",
+   "Q1: README gives field names but no field types or closed sets (welcome.scopes shape, welcome.features shape, error.code set). P2 must define them.",
+   "Q2: snapshot.inbox and snapshot.tasks: InboxItem and TaskSummary serialize directly, but README does not say whether snapshot carries full InboxItem or a summary.",
+   "Q2: result.error needs a typed code. Tauri commands return Result of T and String (commands.rs), so no mapping from string errors to README error codes exists.",
+   "Q3: core/src/session/protocol.rs name collision: the new module name must differ (e.g. wire or link). Architect decides.",
+   "Q3: P3 needs snow and a WebSocket crate in core; neither is in core/Cargo.toml today (:13-18). P2 may not need them.",
+   "Q4 unverified: whether Metro bundles ../protocol/*.ts without watchFolders. Expected: resolves by fs read but does not watch, so HMR misses edits. Must test with npx expo start, or add metro.config.js with watchFolders for protocol/.",
+   "Q4 unverified: whether jest-expo transforms files outside mobile/. The roots default excludes ../protocol tests from discovery; a test under mobile/src that imports protocol may work. Not run.",
+   "Q4 unverified: Vite dev server may refuse to serve files outside desktop/ (server.fs.allow defaults to the workspace root found from desktop/). Build (rollup) is not affected. Test with vite dev or tauri dev.",
+   "Q5: no test in the repo exercises the protocol; no shared fixtures exist for any runner today.",
+   "Q6: no CI runs any test for any app on push or PR. Protocol tests run only locally unless a new workflow is added.",
+   "ROADMAP P2 desktop/src-tauri location and CLAUDE.md:21 desktop wording are stale against protocol/README.md:14 (core/). Architect to confirm core/ and fix ROADMAP and CLAUDE.md wording."
+  ],
+  "risks": [
+   "No natural home for protocol/ TS tests: protocol/ has no package.json, tsconfig.json, runner or fixtures. mobile jest (roots default mobile/, config mobile/package.json:51-61) and desktop vitest (root desktop/, tsconfig include src at desktop/tsconfig.json:23) will not discover tests under protocol/ without config changes. Both clients must test the same contract (protocol/README.md:9-12).",
+   "Metro does not watch protocol/ (mobile/ has no metro.config.js; Expo getWatchFolders returns [] in a non-workspace repo). A relative import will likely bundle but may not hot-reload; metro.config.js with watchFolders is the safe path.",
+   "Module name collision: core/src/session/protocol.rs exists (claude stream-json). A core/src/protocol.rs would shadow meaning in reviews and imports.",
+   "Rust and TS MAX_TEXT_BYTES are two independent constants (core/src/session/mod.rs:32, desktop/src/types.ts:92); P2 adds a third copy unless fixtures lock them.",
+   "CI runs no tests; a protocol fixture test passes only when someone runs it locally.",
+   "README and ROADMAP contradictions to resolve before types: ack (ROADMAP.md:286 vs README), notice (protocol/README.md:155 vs :196), frame size deferred."
+  ],
+  "build": "cargo test --workspace green (191 passed); desktop vitest 58 green; desktop build green; mobile jest 5 green; mobile tsc clean"
+ },
+ "architect": {
+  "written_by": "architect",
+  "shape": "single-loop",
+  "parallel_safe": false,
+  "rationale": "Single-loop, one builder, one branch off orchestra main @ 3422e61, slices run in order s1 -> s2 -> s3 -> s4. A diamond is not earned here. (1) Every slice uses s1's artifact (protocol/fixtures + the TS codec), so s1 has to come first and only s2/s3/s4 could run in parallel. s3 and s4 are each about one file, so the fan-out buys almost no time. (2) The likeliest failure is the Rust copy finding that serde cannot express a shape the TS fixtures pinned (adjacent method/args tagging under deny_unknown_fields, flatten). The fix then lands back in protocol/fixtures, which is s1's file set. That is exactly the overlap that breaks a fan-in. (3) It is one app and one reviewable diff, and the TS and Rust copies are best written by the one builder who wrote the fixtures. Risk tags: s1 high: it is the source of truth that every other slice consumes, and its tolerance rules (unknown enum to plain text, unknown event ignored) are logic a round-trip test passes whether or not they are lenient in the right places. s2 high: it touches desktop/src-tauri/src/commands.rs (shell file) and moves the deny_unknown_fields IPC arg structs, which are the host's input-validation boundary. A dropped deny_unknown_fields still compiles and still passes the happy-path tests. s3 low: no sensitive data, no file another slice touches, metro.config.js is not in the native high-risk list (app.json/app.config/eas.json), no native module or config plugin, so no runtimeVersion change (no build exists yet either). The one thing tests cannot see (Metro actually bundling ../protocol) is covered by a recorded scratch-import step in done_when. s4 low: wording only, in two docs no other slice touches, no data.",
+  "decisions_for_gate": [
+   "G1 ack: dropped. README.md:130-159 is the record and has no ack. result{id} is the acknowledgement of a call. ROADMAP.md:286 is stale and gets fixed locally (gitignored).",
+   "G2 notice: not typed in v1 code. The event name 'notice' is reserved in the constants (README:155), but no payload type exists until H2 (README:196). Adding an event does not bump v (README:178), and clients ignore unknown event names (G6), so H2 adds it with no v2. core/notify.rs is untouched.",
+   "G3 frame size: MAX_MESSAGE_BYTES = 4194304 (4 MiB) for one decoded JSON message, UTF-8 bytes, checked first by both decoders (oversize -> bad_request). Why not smaller: snapshot carries every InboxItem, and one item can hold several 32 KiB text fields. Splitting a message into Noise messages (65535 bytes max each) is P3's job. MAX_TEXT_BYTES stays 32768. Alternative for the gate: 1 MiB.",
+   "G4 field types and closed sets: v is the integer 1. type is a string. call.id is a non-empty string of at most 128 bytes. seq is a non-negative integer (u64 / safe JS integer), and the codec does not check its ordering (P3). welcome.scopes is an array drawn from read|answer|control|land. welcome.features is an array of strings, empty in v1 (push is reserved, not sent). host_id and host_name are strings. hello.client_name and hello.app_version are strings. Every client-sent string is capped at MAX_TEXT_BYTES. result has exactly one of ok (any JSON; null for unit commands) or error{code,message}. Handshake frames are {proto:orchestra, v} and {proto, v, supported:[1]}, with no type field; they get their own decode functions. The method set is the 15 names at README:143-146; pick_project is not a wire method (-> bad_request). Method->scope is the README:86-91 table as data. It is not enforced in P2.",
+   "G5 snapshot payloads: full types, per the mirror rule (README:161). projects: Project[] {id,name}. sessions: SessionSummary[]. inbox: the full InboxItem[], the same as list_inbox. tasks: TaskSummary[]. storage: StorageStatus. No summary type.",
+   "G6 client tolerance (README:179-180), host input strict (README:181). The client decoder keeps unknown enum string values verbatim as plain text: session/task status, inbox kind, model, permission_mode, scope, feature, error code, diff file status. It ignores unknown fields. An unknown event name decodes to an unknown-event value, not an error. Optional agent?: string and host?: string are declared on the wire SessionSummary/TaskSummary (host? also on InboxItem). They are absent from core output today, and core types are not changed for D7/D8. pr (D6) is not declared, because its shape (checks) is undecided. An unknown v, in either direction, is a loud error (unsupported_version). An unknown type at a known v is unknown_type. Host decode of client messages is deny_unknown_fields everywhere, including hello and the handshake frame.",
+   "G7 error codes, closed set on the host: unsupported_version, unknown_type, bad_request, forbidden, revoked, already_answered, failed. Two are new beyond the README: bad_request (malformed JSON, wrong field type, unknown field, oversize, unknown method, string over its cap) and failed (a command's String error, mapped in P3). error may carry supported:[1] (README:136). The client side keeps an unknown code as plain text (G6).",
+   "Structural S1: the Rust module is orchestra_core::wire (core/src/wire/), not protocol, to avoid core/src/session/protocol.rs. The arg structs (StartArgs, CreateTaskArgs, CancelTaskArgs, TaskIdArgs, StopArgs, TranscriptArgs, Answer) move from desktop/src-tauri/src/commands.rs to core/src/wire/args.rs with deny_unknown_fields unchanged. commands.rs then imports them. One Rust copy, not two. Core gains Deserialize on its host-output payload types (no deny_unknown_fields there) so h2c fixtures can round-trip. No new crates.",
+   "Structural S2: consumption with no workspace. Relative imports only, no path alias, no copy step, no package.json in protocol/. protocol/ uses extensionless relative imports and erasable TS only (no enum or namespace, import type), so desktop tsc, mobile tsc, Vite, Metro and Babel all compile it as source. Mobile: Metro needs watchFolders, because Expo getWatchFolders returns [] outside a workspace and Metro will not resolve a file outside its watched roots. So mobile/metro.config.js = getDefaultConfig(__dirname) + watchFolders [../protocol]. jest-expo needs no config: imports outside rootDir resolve and transform, and the test file sits under mobile/src so the default roots discover it. Desktop: no runtime import in P2. Vite dev server.fs.allow would block ../protocol. H3 puts the client socket in Rust, so the webview may never need it. Desktop only runs the canonical TS fixture test (vitest, desktop/src/protocol.test.ts). That test also type-asserts that desktop/src/types.ts payload types are assignable to the wire types and that desktop MAX_TEXT_BYTES equals the protocol constant, so the TS copies are locked without rewiring the desktop.",
+   "Wording, protocol/README.md (s1 touches it anyway): (a) :5-6 'It holds no code and no schema files' becomes a pointer to the code and fixtures. (b) A short 'P2 decided' paragraph under 'What P2 and P3 decide' records G3, G4 and G7 once approved. (c) The three P1 review notes: :199 'D6, D7 or D8 changing shape reopens the matching item' is replaced by the stock 'no reversal condition was recorded at the gate' line; :30-31 SSH tunnel 'Rejected' gains 'for v1'; :193 host_id in welcome is reworded as applying regardless of D8. The gate may veto (c) item by item."
+  ],
+  "fixture_contract": "One case per file in orchestra/protocol/fixtures/*.json, plus constants.json. A case is {name, dir: c2h|h2c|hs_c2h|hs_h2c, wire: JSON value, or raw: string for malformed JSON, expect: ok | {error: code}, client_only?: true}. For ok: decode(stringify(wire)) succeeds, and encode(decoded) deep-equals wire (key order ignored), in both copies. For an error: decode fails with exactly that code in both copies. client_only cases (unknown enum values, extra fields, unknown event name) get the full check in TS only; Rust checks only that they parse as JSON. constants.json = {v, supported, max_text_bytes, max_message_bytes, methods, method_scope, event_names (incl. reserved notice), scopes, error_codes}. Both copies assert that their constants equal it. Rust reads the directory at test time via CARGO_MANIFEST_DIR/../protocol/fixtures (read_dir, so there is no list to drift). TS imports through protocol/fixtures/index.ts, and the desktop test asserts with import.meta.glob that index.ts covers every *.json. The oversize case is generated in code in both runners, not checked in. Minimum coverage: every message type in both directions, all 15 methods with valid args, all 3 answer kinds, both handshake replies, unsupported v both directions, missing v, unknown type, unknown field on c2h (bad_request), pick_project (bad_request), unknown status/agent/host/event name (client_only ok).",
+  "plan": [
+   {
+    "slice": "s1",
+    "risk": "high",
+    "intent": "TS protocol v1, the source of truth: wire types, constants, strict c2h and tolerant h2c decoders, encoders, handshake codec, typed ProtocolError{code}, the fixture set, and the canonical TS fixture test run by desktop vitest. Plus the protocol/README.md wording items.",
+    "files": [
+     "orchestra/protocol/index.ts",
+     "orchestra/protocol/types.ts",
+     "orchestra/protocol/constants.ts",
+     "orchestra/protocol/codec.ts",
+     "orchestra/protocol/tsconfig.json",
+     "orchestra/protocol/fixtures/*.json",
+     "orchestra/protocol/fixtures/index.ts",
+     "orchestra/protocol/README.md",
+     "orchestra/desktop/src/protocol.test.ts"
+    ],
+    "done_when": [
+     "cd orchestra/desktop && npx tsc -p ../protocol/tsconfig.json --noEmit -> exit 0 (protocol tsconfig is strict, noUnusedLocals/Parameters, isolatedModules, lib ES2020+DOM)",
+     "cd orchestra/desktop && npx vitest run src/protocol.test.ts -> all pass; one test per fixture file plus a constants test, an index-covers-glob test and the oversize test",
+     "cd orchestra/desktop && npm test -> 58 existing + new, 0 failed",
+     "cd orchestra/desktop && npm run build -> exit 0 (this typechecks the test, including the types.ts-assignable-to-wire assertions)",
+     "grep -c 'holds no code and no schema files' orchestra/protocol/README.md -> 0",
+     "git -C orchestra diff --stat main -- desktop/package.json desktop/package-lock.json -> empty (no new deps)"
+    ]
+   },
+   {
+    "slice": "s2",
+    "risk": "high",
+    "intent": "The Rust copy in orchestra-core: core/src/wire/ with ClientMessage/HostMessage/handshake types, a decode/encode codec (oversize check first, then parse {v,type}, then the v check before anything else), WireError{code: ErrorCode, message}, Method + method_scope, constants, and the args moved out of commands.rs. Deserialize derives on payload types. An integration test checks every shared fixture and constants.json.",
+    "files": [
+     "orchestra/core/src/lib.rs",
+     "orchestra/core/src/wire/mod.rs",
+     "orchestra/core/src/wire/args.rs",
+     "orchestra/core/src/wire/codec.rs",
+     "orchestra/core/src/wire/message.rs",
+     "orchestra/core/tests/wire_fixtures.rs",
+     "orchestra/core/src/session/mod.rs",
+     "orchestra/core/src/session/state.rs",
+     "orchestra/core/src/session/task.rs",
+     "orchestra/core/src/session/transcript.rs",
+     "orchestra/core/src/session/store.rs",
+     "orchestra/core/src/projects.rs",
+     "orchestra/desktop/src-tauri/src/commands.rs"
+    ],
+    "done_when": [
+     "cd orchestra && cargo test -p orchestra-core --test wire_fixtures -> pass; the test asserts the number of cases it ran equals the number of *.json case files in protocol/fixtures",
+     "cd orchestra && cargo test --workspace -> orchestra_core 181 + new, orchestra_lib 10, 0 failed",
+     "git -C orchestra diff main -- core/Cargo.toml desktop/src-tauri/Cargo.toml Cargo.lock -> empty (no new crates)",
+     "grep -n 'mod protocol' orchestra/core/src/lib.rs -> no match; grep -n 'pub mod wire' orchestra/core/src/lib.rs -> 1 match",
+     "grep -c 'deny_unknown_fields' orchestra/core/src/wire/args.rs -> >= 7 (all moved arg structs keep it); grep -n 'struct StartArgs' orchestra/desktop/src-tauri/src/commands.rs -> no match",
+     "reviewer mutation check: set max_text_bytes to 1 in protocol/fixtures/constants.json -> both cargo test -p orchestra-core --test wire_fixtures and the s1 vitest command fail; revert"
+    ]
+   },
+   {
+    "slice": "s3",
+    "risk": "low",
+    "intent": "Mobile consumes protocol/ by relative import: metro.config.js with watchFolders [../protocol], and a jest suite that runs the same fixture manifest through the TS codec under jest-expo/Babel (proving the mobile toolchain compiles protocol/).",
+    "files": [
+     "orchestra/mobile/metro.config.js",
+     "orchestra/mobile/src/__tests__/protocol.test.ts"
+    ],
+    "done_when": [
+     "cd orchestra/mobile && npm test -> 2 existing suites + protocol suite, 0 failed",
+     "cd orchestra/mobile && npx tsc --noEmit -> exit 0 (protocol/ compiled under the expo base config)",
+     "cd orchestra/mobile && npx expo-doctor -> no new failures vs main",
+     "cd orchestra/mobile && npx expo export --platform android --output-dir SCRATCHPAD/export -> exit 0",
+     "scratch evidence, not committed: temporarily import PROTOCOL_VERSION from ../../protocol into src/app/_layout.tsx, rerun the expo export -> exit 0, then git -C orchestra diff --stat -- mobile/src/app -> empty after revert. The builder records the output in its key. Repeat with metro.config.js removed to show it is needed (expected: a resolve failure)"
+    ]
+   },
+   {
+    "slice": "s4",
+    "risk": "low",
+    "intent": "Doc wording: CLAUDE.md protocol row says the Rust copy lives in core (orchestra_core::wire), and the Commands block gains the protocol test commands and updated test counts. README.md:159 is reworded from 'Empty until the link is designed'. The local gitignored ROADMAP.md P2 line 299 says core, and ack is noted as dropped.",
+    "files": [
+     "orchestra/CLAUDE.md",
+     "orchestra/README.md",
+     "orchestra/ROADMAP.md (gitignored, local only, not committed)"
+    ],
+    "done_when": [
+     "grep -c 'Rust copy in desktop' orchestra/CLAUDE.md -> 0; grep -c 'core/src/wire' orchestra/CLAUDE.md -> >= 1",
+     "grep -c 'Empty until the link is designed' orchestra/README.md -> 0",
+     "git -C orchestra status --porcelain -- ROADMAP.md -> empty (still ignored)"
+    ]
+   }
+  ],
+  "edges": "s1 -> s2 (Rust tests consume protocol/fixtures/*.json and constants.json); s1 -> s3 (mobile test imports protocol/ codec and fixtures/index.ts); s2 -> s4 and s3 -> s4 only for the test counts and module path quoted in CLAUDE.md. Sequential in one loop.",
+  "not_doing": [
+   "No server, listener, WebSocket, Noise/snow, @noble, pairing, QR, keys, scope enforcement, idempotency store or rate limiting (P3/A1). method_scope is data only.",
+   "No new crates in core or the shell, and no new npm deps in desktop or mobile.",
+   "No UI in desktop or mobile, and no mobile screen imports protocol/ (A1).",
+   "No rewiring of desktop/src/ipc.ts or types.ts onto protocol/. They stay the local IPC copy, locked by type assertions in the s1 test. No vite server.fs.allow change.",
+   "No notice payload type and no Serialize on core/notify.rs (H2). No pr field (D6). No agent/host fields added to core types (D7/D8). The wire TS types only declare them optional.",
+   "No root package.json, workspace, path alias, copy/sync script, or package.json in protocol/.",
+   "No CI workflow for protocol, mobile or Rust tests (scout Q6). This is a real gap and should be its own task. The tests are local-only until then.",
+   "No mapping of command String errors to codes (P3). The failed code only exists in the set.",
+   "No change to app.json, eas.json, tauri.conf.json or capabilities.",
+   "No redesign of protocol/README.md decisions. Only G1-G7 fill its gaps, and the wording items are limited to the three named review notes plus :5-6."
+  ]
+ },
+ "approved_by_human": true,
+ "scope_exceptions": [
+  "ORCHESTRATOR-OWNED, normally empty. Paths a builder may write that the approved plan does not list. guard-builder-scope.py DENIES a builder's Write/Edit outside architect.plan[].files, and this is the only way through it. Adding one is a deliberate, recorded act: pair it with deviation_from_approved_plan on the slice that needed it, and say why the gate's file set was wrong. Never add a path to silence the guard on work the human did not approve."
+ ],
+ "builders": {
+  "s1": {
+   "written_by": "builder",
+   "status": "done",
+   "branch": "p2-protocol-v1",
+   "commit": "654552d",
+   "changed": [
+    "orchestra/desktop/src/protocol.test.ts",
+    "orchestra/protocol/README.md",
+    "orchestra/protocol/codec.ts",
+    "orchestra/protocol/constants.ts",
+    "orchestra/protocol/fixtures/index.ts",
+    "orchestra/protocol/index.ts",
+    "orchestra/protocol/tsconfig.json",
+    "orchestra/protocol/types.ts",
+    "orchestra/protocol/fixtures/*.json (88 files incl. constants.json)"
+   ],
+   "notes": "Fixture case format gained an optional decoded_wire (what a lossy client decode re-encodes to) so extra-field tolerance cases round-trip; documented in protocol/README.md.",
+   "gate_results": [
+    {
+     "cmd": "cd orchestra/desktop && npx tsc -p ../protocol/tsconfig.json --noEmit",
+     "output": "exit 0, no output"
+    },
+    {
+     "cmd": "cd orchestra/desktop && npx vitest run src/protocol.test.ts",
+     "output": "Test Files 1 passed (1); Tests 95 passed (95)  [87 fixture cases + index-covers-glob + coverage + constants + desktop MAX_TEXT_BYTES + 4 limits/utf8]"
+    },
+    {
+     "cmd": "cd orchestra/desktop && npm test",
+     "output": "Test Files 6 passed (6); Tests 153 passed (153)  [58 existing + 95 new]"
+    },
+    {
+     "cmd": "cd orchestra/desktop && npm run build",
+     "output": "tsc && vite build: 33 modules transformed, built in 1.53s, exit 0 (typechecks the test and the types.ts-assignable-to-wire assertions)"
+    },
+    {
+     "cmd": "grep -c 'holds no code and no schema files' orchestra/protocol/README.md",
+     "output": "0"
+    },
+    {
+     "cmd": "git -C orchestra diff --stat main -- desktop/package.json desktop/package-lock.json",
+     "output": "(empty)"
+    }
+   ]
+  },
+  "s2": {
+   "written_by": "builder",
+   "status": "done",
+   "branch": "p2-protocol-v1",
+   "commit": "5dfff23",
+   "changed": [
+    "orchestra/core/src/lib.rs",
+    "orchestra/core/src/projects.rs",
+    "orchestra/core/src/session/mod.rs",
+    "orchestra/core/src/session/state.rs",
+    "orchestra/core/src/session/task.rs",
+    "orchestra/core/src/session/transcript.rs",
+    "orchestra/core/src/wire/args.rs",
+    "orchestra/core/src/wire/codec.rs",
+    "orchestra/core/src/wire/message.rs",
+    "orchestra/core/src/wire/mod.rs",
+    "orchestra/core/tests/wire_fixtures.rs",
+    "orchestra/desktop/src-tauri/src/commands.rs"
+   ],
+   "notes": "core/src/session/store.rs left untouched: StorageStatus.reason is &'static str and cannot derive Deserialize, so wire::WireStorageStatus is an owned copy with From<&StorageStatus>.",
+   "gate_results": [
+    {
+     "cmd": "cd orchestra && cargo test -p orchestra-core --test wire_fixtures",
+     "output": "4 passed; 0 failed (every_fixture_case_agrees_with_the_typescript_copy asserts ran == files.len() and >= 80; constants; oversize; string cap)"
+    },
+    {
+     "cmd": "cd orchestra && cargo test --workspace",
+     "output": "orchestra_lib 10 passed; orchestra bin 0; orchestra_core 181 passed; wire_fixtures 4 passed; doc-tests 0; 0 failed; no warnings"
+    },
+    {
+     "cmd": "git -C orchestra diff main -- core/Cargo.toml desktop/src-tauri/Cargo.toml Cargo.lock",
+     "output": "(empty, 0 bytes)"
+    },
+    {
+     "cmd": "grep -n 'mod protocol' core/src/lib.rs ; grep -n 'pub mod wire' core/src/lib.rs",
+     "output": "no match (rc=1) ; 5:pub mod wire;"
+    },
+    {
+     "cmd": "grep -c deny_unknown_fields core/src/wire/args.rs ; grep -n 'struct StartArgs' desktop/src-tauri/src/commands.rs",
+     "output": "7 ; no match (rc=1)"
+    },
+    {
+     "cmd": "MUTATION: set max_text_bytes to 1 in protocol/fixtures/constants.json, run both suites, revert",
+     "output": "cargo test -p orchestra-core --test wire_fixtures: constants_match_fixtures_constants_json FAILED (left: Number(1) right: Number(32768)), 1 failed 3 passed. vitest src/protocol.test.ts: FAIL constants > match fixtures/constants.json, 1 failed | 94 passed (95). Reverted; fixtures dir clean in git status afterwards."
+    }
+   ]
+  },
+  "s3": {
+   "written_by": "builder",
+   "status": "done",
+   "branch": "p2-protocol-v1",
+   "commit": "836115b",
+   "changed": [
+    "orchestra/mobile/metro.config.js",
+    "orchestra/mobile/src/__tests__/protocol.test.ts",
+    "orchestra/protocol/README.md",
+    "orchestra/protocol/codec.ts"
+   ],
+   "deviation_from_approved_plan": "(1) Touched s1 files protocol/codec.ts and protocol/README.md (both in the approved set overall): the mobile jest run showed Babel compiles a class extending Error and iterable destructuring into @babel/runtime helpers that protocol/ (no node_modules) cannot resolve, so ProtocolError is now an interface plus a prototype-based constructor, and the README gained a 'Using it' section. (2) The mobile test reads fixtures with fs instead of importing protocol/fixtures/index.ts, whose default JSON imports compile to the same helper; mobile tsconfig.json and package.json are not in the set, so fs is typed locally in the test. (3) The scratch import into src/app/_layout.tsx is outside the approved set, so the scratch Metro evidence redirected one existing import (@/constants/theme, imported by src/app/index.tsx) to ../protocol/index.ts through a temporary resolver.resolveRequest in metro.config.js; reverted, nothing committed.",
+   "notes": "",
+   "gate_results": [
+    {
+     "cmd": "cd orchestra/mobile && npm test",
+     "output": "Test Suites 3 passed (2 existing + protocol); Tests 94 passed (5 existing + 89: 87 fixture cases, finds-whole-set, constants)"
+    },
+    {
+     "cmd": "cd orchestra/mobile && npx tsc --noEmit",
+     "output": "exit 0"
+    },
+    {
+     "cmd": "cd orchestra/mobile && npx expo-doctor",
+     "output": "21/21 checks passed. No issues detected!"
+    },
+    {
+     "cmd": "cd orchestra/mobile && npx expo export --platform android --output-dir SCRATCHPAD/export",
+     "output": "exit 0, android bundle exported (entry-*.hbc 2.7MB); repeated after the scratch work with the final metro.config.js: exit 0"
+    },
+    {
+     "cmd": "SCRATCH A: metro.config.js with watchFolders plus a temporary resolveRequest sending '@/constants/theme' to ../protocol/index.ts; expo export --platform android --no-bytecode",
+     "output": "exit 0, Android Bundled (1247 modules) vs 1245 on the unmodified app; grep -c unsupported_version in the bundle = 2 (protocol/ is in the bundle)"
+    },
+    {
+     "cmd": "SCRATCH B: same, watchFolders line removed",
+     "output": "exit 1, Android Bundling failed (1244 modules): Failed to get the SHA-1 for: C:/Users/natha/wt/op2/protocol/index.ts. Potential causes: 1) The file is not watched. Ensure it is under the configured projectRoot or watchFolders."
+    },
+    {
+     "cmd": "git -C orchestra diff --stat -- mobile/src/app ; metro.config.js restored to the committed version",
+     "output": "(empty) ; final config re-exported OK"
+    },
+    {
+     "cmd": "git -C orchestra diff --stat main -- mobile/package.json mobile/package-lock.json",
+     "output": "(empty)"
+    }
+   ]
+  },
+  "s4": {
+   "written_by": "builder",
+   "status": "done",
+   "branch": "p2-protocol-v1",
+   "commit": "acec3f5",
+   "changed": [
+    "orchestra/CLAUDE.md",
+    "orchestra/README.md"
+   ],
+   "deviation_from_approved_plan": "orchestra/ROADMAP.md dropped from s4 per the human gate amendment (gitignored, absent from the worktree); the orchestrator updates it at close.",
+   "notes": "",
+   "gate_results": [
+    {
+     "cmd": "grep -c 'Rust copy in desktop' orchestra/CLAUDE.md ; grep -c 'core/src/wire' orchestra/CLAUDE.md",
+     "output": "0 ; 1"
+    },
+    {
+     "cmd": "grep -c 'Empty until the link is designed' orchestra/README.md",
+     "output": "0"
+    },
+    {
+     "cmd": "git -C orchestra status --porcelain -- ROADMAP.md",
+     "output": "(empty, still ignored)"
+    }
+   ]
+  }
+ },
+ "reviews": {
+  "s1": {
+   "written_by": "reviewer",
+   "verdict": "PASS",
+   "attempt": 1,
+   "summary": "PASS. Re-ran all six done_when on the branch tip in C:/Users/natha/wt/op2: protocol tsc exit 0, protocol.test.ts 95/95, npm test 153/153, npm run build exit 0, README grep 0, no desktop package diff. I probed the decoders with about 60 inputs the fixtures do not cover: v 1.0, \"1\", null, -1 and 1.5; a missing or null type; null fields; negative, fractional and 2^60 seq; a 64-char/128-byte non-ASCII id (accepted) and 65 chars (rejected); 11000 x U+20AC and 8193 emoji prompts (rejected); __proto__ keys; result with both or neither of ok/error; unknown scope, code, event and pong extras. Every result matched G4/G6/G7, and v is checked before type and fields. ProtocolError works with instanceof, code, message, name and String(). I ran 22 mutations in a scratch copy and the tests caught 20. Two survived and are notes: the call.id cap counting chars instead of bytes, and moving the v check after the field checks. README edits match G3/G4/G7 and wording items a-c. All files are in plan, and the commits are njcurtis3 with no attribution. Worktree left clean.",
+   "findings": [
+    {
+     "file": "orchestra/protocol/fixtures/",
+     "line": 0,
+     "severity": "note",
+     "origin": "",
+     "issue": "No fixture locks the v-first check order. In a scratch copy I moved the unsupported_version check after the type, field and proto checks in all four decoders, and all 95 tests still passed. The realistic v2 message ({v:2,type:'subscribe'} or {v:2,type:'call',...,new_field}) could therefore come back as unknown_type or bad_request in either copy, and nothing would catch it. The code is correct today (envelope() in codec.ts and codec.rs). Add c2h/h2c/hs fixtures with v:2 plus an unknown type or unknown field, expecting unsupported_version."
+    },
+    {
+     "file": "orchestra/protocol/fixtures/",
+     "line": 0,
+     "severity": "note",
+     "origin": "",
+     "issue": "The call.id 128-byte cap is checked only with ASCII ids (c2h.err_id_too_long, c2h.ok_id_max). Changing utf8Length(id) to id.length at codec.ts:284 survived all tests. The code is correct (65 x U+00E9 = 130 bytes is rejected), but the byte rule is not locked for either copy. Add a non-ASCII id fixture of 65 x U+00E9, expecting bad_request."
+    },
+    {
+     "file": "orchestra/protocol/codec.ts",
+     "line": 67,
+     "severity": "note",
+     "origin": "",
+     "issue": "utf8Length reads a high surrogate followed by a non-low-surrogate as one 4-byte pair. A JSON-escaped prompt of 8192 x '\ud800\u4e00' counts as 32768 and is accepted by decodeClientMessage, although it is 49152 bytes as UTF-8 with replacement. serde_json rejects lone surrogates, so the Rust host returns bad_request: the two copies disagree. This is low impact, because the TS strict decoder is not the host in v1. Fix: count 4 only when the next unit is 0xDC00-0xDFFF, or reject lone surrogates."
+    },
+    {
+     "file": "orchestra/protocol/codec.ts",
+     "line": 216,
+     "severity": "note",
+     "origin": "",
+     "issue": "answer{kind:question} with answers {\"__proto__\":\"x\",\"q\":\"y\"} decodes to answers {q:'y'}. The out[k]= assignment on a {} literal hits the __proto__ setter, which ignores a string, so the key is dropped silently, where Rust keeps it as a map key. Low impact for the same reason as the surrogate note. Fix: Object.create(null) or Object.defineProperty."
+    },
+    {
+     "file": "orchestra/protocol/codec.ts",
+     "line": 93,
+     "severity": "note",
+     "origin": "",
+     "issue": "{v:1.0} (and 1e0) is accepted by the TS decoders, because JSON.parse cannot tell it from 1. core/src/wire/codec.rs integer() presumably returns bad_request for it. This is a cross-copy divergence with no fixture, though no conforming encoder emits 1.0. Leave it or pin it with a fixture. Not a v1 behaviour risk."
+    },
+    {
+     "file": "orchestra/protocol/codec.ts",
+     "line": 430,
+     "severity": "note",
+     "origin": "architect",
+     "issue": "An unknown transcript entry kind fails the whole transcript-appended event or get_transcript decode with bad_request on the client. This matches G6, whose open-enum list leaves out entry kind, but it means a new entry kind is in effect a v bump for clients. A future reader of README 'Versioning' may expect that to be tolerant. Record it, or make an unknown kind a passthrough record, when entry kinds next change."
+    },
+    {
+     "file": "orchestra/protocol/codec.ts",
+     "line": 55,
+     "severity": "note",
+     "origin": "",
+     "issue": "The ProtocolError stack's first line reads 'Error: <msg>', not 'ProtocolError: <msg>', because the stack is borrowed from new Error(). Cosmetic only: instanceof ProtocolError/Error, .code, .message, .name and String(e) are all correct."
+    }
+   ]
+  },
+  "s3": {
+   "written_by": "reviewer",
+   "verdict": "PASS",
+   "attempt": 1,
+   "summary": "PASS, low tag stands. Re-ran in C:/Users/natha/wt/op2/mobile on acec3f5: npm test (3 suites, 94 tests, 0 failed), npx tsc --noEmit (exit 0), npx expo-doctor (21/21), npx expo export --platform android to the scratchpad (Exported). git status --porcelain is clean, no dist/ tracked, committed metro.config.js only appends ../protocol to watchFolders with no resolveRequest left over, and mobile package.json/lock/tsconfig are unchanged vs main. Did not repeat the scratch A/B Metro evidence; took it from builders.s3. The deviation into s1's protocol/codec.ts (ProtocolError rebuilt as a prototype-based constructor, Object.entries destructuring replaced by Object.keys) is behaviour-preserving: instanceof ProtocolError and Error both hold, .code and .name are set, and I re-ran desktop vitest (6 files, 153 passed), tsc -p protocol/tsconfig.json (exit 0) and cargo test --workspace (all green) to confirm s1/s2 still hold.",
+   "findings": [
+    {
+     "file": "orchestra/protocol/codec.ts",
+     "line": 43,
+     "issue": "Note: the no-helper rule (no class, no iterable destructuring, no JSON default import) is only enforced by the mobile jest run failing to resolve @babel/runtime; it is documented in codec.ts and protocol/README.md 'Using it', which is adequate. A future edit to any protocol/ file will be caught because Babel inlines the helper import at module top level, so any mobile test importing the file fails.",
+     "severity": "note",
+     "origin": ""
+    },
+    {
+     "file": "orchestra/mobile/src/__tests__/protocol.test.ts",
+     "line": 32,
+     "issue": "Note: __dirname and fs are typed locally because mobile tsconfig.json is outside the slice set; acceptable as recorded in deviation (2), but a later @types/node addition would make the local declare const __dirname a duplicate-declaration error worth removing then.",
+     "severity": "note",
+     "origin": ""
+    }
+   ]
+  },
+  "s4": {
+   "written_by": "reviewer",
+   "verdict": "PASS",
+   "attempt": 1,
+   "summary": "PASS. Re-ran done_when in C:/Users/natha/wt/op2: grep -c 'Rust copy in desktop' CLAUDE.md = 0, grep -c 'core/src/wire' CLAUDE.md = 1, grep -c 'Empty until the link is designed' README.md = 0; ROADMAP.md is absent from the worktree and dropped at the gate per the recorded deviation. Diff touches only CLAUDE.md and README.md. Verified the quoted counts and commands against real runs rather than the builder's paste: cargo test --workspace gives 181 core lib + 4 wire_fixtures + 10 shell, matching the new line; cargo test -p orchestra-core --test wire_fixtures target exists; npx tsc -p ../protocol/tsconfig.json --noEmit from desktop/ exits 0; desktop and mobile npm test both include the protocol fixtures as stated. No stale 'Rust copy'/'empty' wording remains elsewhere in either file.",
+   "findings": []
+  },
+  "s2": {
+   "written_by": "reviewer",
+   "verdict": "PASS",
+   "attempt": 1,
+   "summary": "PASS, no blockers. Re-ran every done_when at HEAD acec3f5 (no core, desktop/src-tauri or Cargo.lock change after 5dfff23). wire_fixtures 4/4 over 87 case files. cargo test --workspace: core 181 + wire 4, lib 10, 0 failed, no warnings after a forced rebuild. The Cargo diff is 0 bytes, the greps match, and the commit has no attribution. Mutation max_text_bytes=1 fails both cargo and vitest; reverted. Diffed the 7 arg structs against main's commands.rs field by field: same fields, types, Model/PermissionMode/Decision enums and deny_unknown_fields. The only additions are Serialize/Clone/PartialEq/skip_serializing_if, none of which changes Deserialize, so Tauri IPC reads args as before. MAX_TEXT_BYTES validation stays in session (untouched), and wire::MAX_TEXT_BYTES aliases it. Probed the Rust codec with 29 inputs (v 1.0/1e0/'1'/null/1.5/2/-1, extra fields on Answer variants, hello and handshake, null model and message, pick_project): every host-side code matches codec.ts. The derives add no serde attributes, and WireStorageStatus serializes the same as StorageStatus. The notes are client-side tolerance gaps only.",
+   "findings": [
+    {
+     "file": "orchestra/core/src/wire/codec.rs",
+     "line": 387,
+     "issue": "Client-side decode_host reads event seq with Value::as_u64, so seq 1.0 is bad_request in Rust and ok in TS (Number.isSafeInteger). Rust also accepts seq above 2^53, which TS rejects. Hosts emit integers, so nothing triggers it today. No fixture covers it; worth one when P3 adds a Rust client.",
+     "severity": "note",
+     "origin": "builder"
+    },
+    {
+     "file": "orchestra/core/src/wire/codec.rs",
+     "line": 391,
+     "issue": "An unknown event with no payload key decodes to payload Null and re-encodes as payload: null. TS leaves it undefined and omits the key. Client-side only, no fixture.",
+     "severity": "note",
+     "origin": ""
+    },
+    {
+     "file": "orchestra/core/tests/wire_fixtures.rs",
+     "line": 974,
+     "issue": "assert_eq!(ran, files.len()) is tautological: ran is incremented once per file, client_only skips included. The real anti-drift guards are read_dir (no list) and the ran >= 80 floor, and both are sound. The done_when wording is met, but the equality catches nothing.",
+     "severity": "note",
+     "origin": "architect"
+    },
+    {
+     "file": "orchestra/core/src/wire/codec.rs",
+     "line": 222,
+     "issue": "serde_json rejects a lone UTF-16 surrogate escape as not JSON (bad_request), while JSON.parse accepts it. Rust is stricter than TS on host input, which is the safe direction.",
+     "severity": "note",
+     "origin": ""
+    }
+   ]
+  }
+ },
+ "integrator": {
+  "written_by": "the node that wrote this key - here, always the string integrator",
+  "merged": [],
+  "conflicts": [],
+  "verification": "what command proved it works, and its output"
+ },
+ "ops": {
+  "written_by": "the node that wrote this key - here, always the string ops",
+  "gated": true,
+  "actions": []
+ },
+ "log": [
+  "orchestrator: opened run 2026-10-17 from the user's \"start P2\"; orchestra main @ 3422e61 clean",
+  "orchestrator: scout returned (45 facts, 14 unknowns, 6 risks, build green); no plan-killer; spawning architect",
+  "architect: [entry lost in the corruption below; reconstructed in substance] wrote plan: single-loop s1->s2->s3->s4 with gate decisions G1-G7, S1, S2",
+  "orchestrator: architect returned single-loop s1->s4 with gate items G1-G7, S1, S2; awaiting human gate",
+  "orchestrator: human gate APPROVED 2026-10-17 (\"approve\"): G1-G7, S1, S2, wording fixes as proposed; amendment shown at gate: ROADMAP.md (gitignored) dropped from s4, orchestrator updates it at close",
+  "orchestrator: builder returned s1-s4 on p2-protocol-v1 (654552d, 5dfff23, 836115b, acec3f5); spawning fresh reviewers: s1 (high), s2 (high), s3+s4 (low)",
+  "orchestrator: 09:58 the s2 reviewer's write crashed mid-file (lone surrogate, ensure_ascii=False) and truncated state.json inside reviews.s2. Restored by the orchestrator at 10:02 from the intact prefix (through reviews.s4 verbatim; integrator/ops reset to schema template, no node had written them; log rebuilt from the orchestrator transcript, so node-written log lines after the architect entry may be lost). At 10:02:34 the file was emptied to 0 bytes again by a concurrent write; restored a second time at ~10:04 the same way. reviews.s1 and reviews.s2 to be written by their reviewers.",
+  "orchestrator: all 4 slices PASS attempt 1 (s1 7 notes, s2 4 notes, s3 2 notes, s4 0); merged p2-protocol-v1 into orchestra main --no-ff as 9d8f98f (clean, no conflicts)",
+  "orchestrator: CLOSED 2026-10-17 via close-run.py (closeable, all 4 slices in main). P2 done, merged 9d8f98f. Dropped at gate: ROADMAP.md edit from s4 (orchestrator updates it). Open notes carried to ROADMAP follow-ups: v-first order and non-ASCII call.id cap not locked by a fixture; TS utf8Length miscounts lone high surrogates; __proto__ answer key dropped in TS; v:1.0 / seq:1.0 TS-Rust divergence; unknown transcript entry kind fails the event; wire_fixtures ran==files assert is tautological; Rust unknown-event payload null vs TS absent; no-Babel-helper rule enforced only by mobile jest. Incident: state.json truncated twice by reviewer writes (ensure_ascii=False + w mode), restored by orchestrator from intact prefix."
+ ]
+}
