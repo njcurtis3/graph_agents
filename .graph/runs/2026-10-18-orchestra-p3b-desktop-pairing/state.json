@@ -1,0 +1,666 @@
+{
+ "$comment": "Shared state for ONE work-graph run. Lives at .graph/runs/<run-id>/state.json. Every node reads this on start and appends to its OWN key on finish - the builder writes its own builders.<slice> key, including the branch it worked on. Never rewrite another node's key. Every node key carries written_by, naming the node that wrote it: that is the ONLY record of authorship this file has, and without it 'never rewrite another node's key' is unverifiable - an orchestrator hand-writing all six keys is indistinguishable from six nodes doing their jobs. verify-state.py --audit checks it. This file is the edge: it is how context crosses between agents that cannot see each other.",
+ "run_id": "2026-10-18-orchestra-p3b-desktop-pairing",
+ "goal": "start P3b (orchestra/ROADMAP.md P3b - the desktop: pairing UI (QR code, paired devices list, revoke, scope grants, confirm dialog); enable toggle and bind addresses in link/config.json, off by default; a keyring (Credential Manager) KeyProvider in the shell crate; Tauri commands wiring LinkHost and a test pinning the CSP string; warn before the first non-loopback bind (Windows Firewall). Orchestrator suggested folding in the P3a medium follow-up: host_key written atomically.)",
+ "app": "orchestra",
+ "status": "done",
+ "scout": {
+  "written_by": "scout",
+  "facts": [
+   "Q1 start(&self) -> Result<Vec<SocketAddr>, LinkError>: validate_binds first; empty binds returns Ok(vec![]) with nothing read or created; returns actually-bound addrs (port 0 resolves). orchestra/core/src/link/server.rs:303-334. stop(&self) sets stop flag, joins accept threads then connection threads, clears pending and window (server.rs:355-370). Drop calls stop (server.rs:445-447). is_running / local_addrs at server.rs:372-378.",
+   "Q1 open_pairing(&self) -> Result<PairingOffer, LinkError> (NotRunning, NoAddress): server.rs:385-395. close_pairing(&self) at server.rs:397.",
+   "Q1 PairingOffer (pairing.rs:92-105), Serialize+Deserialize: v: u64 (=1); host_id: String (hex of first 16 bytes of SHA-256 of host pubkey); host_name: String; addrs: Vec<String> (ip:port); host_key: String (hex, 32 bytes); secret: String (hex, 32-byte psk); expires_at: u64 (ms since epoch). Debug redacts secret (pairing.rs:113-121). to_json() at pairing.rs:108.",
+   "Q1 seam: LinkCallbacks { pub on_pairing_request: Box<dyn Fn(PendingPairing) + Send + Sync>, pub log: Box<dyn Fn(LinkLog) + Send + Sync> } (server.rs:114-117). PendingPairing { id, client_name, fingerprint } all String (server.rs:104-110). Called on the connection thread (conn.rs:332) with no lock held (add_pending releases first, conn.rs:328-331). Doc asks it to stay quick and never call LinkHost from it (server.rs:112-113).",
+   "Q1 seam is ASYNC-SAFE (suspicion refuted): the callback returns at once. The connection thread then holds on a sync_channel(1) polling recv_timeout(25 ms) (conn.rs:34, 327-352) until Confirmed, Rejected, disconnect, stop, or deadline = limits.confirm_timeout = PAIRING_TTL 300 s (mod.rs:44, 59; pairing.rs:14). Not cut by handshake_timeout (10 s, applied before hello, conn.rs:250) nor idle_timeout (120 s, message loop only, conn.rs:457).",
+   "Q1 confirm_pairing(&self, id: &str, scopes: Option<&[Scope]>) -> Result<Client, LinkError> (server.rs:405-416). Default scopes [Read, Answer] (clients.rs:19). Stores client, then sends Confirmed; if the connection already gave up it revokes the stored client and returns UnknownPairing (server.rs:410-414). reject_pairing(&self, id: &str) -> Result<(), LinkError> (server.rs:419-423).",
+   "Q1 list_clients(&self) -> Result<Vec<Client>, LinkError> (server.rs:426-428); set_scopes(&self, client_id: &str, scopes: &[Scope]) -> Result<(), LinkError> (server.rs:431-433); revoke(&self, client_id: &str) -> Result<(), LinkError> (server.rs:436-442; also drops the id cache).",
+   "Q1 Client (clients.rs:23-31) derives Debug, Clone, PartialEq, Eq only, not Serialize; PublicKey (keys.rs:164) not Serialize. The shell needs its own DTO for list_clients.",
+   "Q1 KeyProvider (keys.rs:209-212): pub trait KeyProvider: Send + Sync { fn load_or_create(&self) -> Result<SecretKey, KeyError>; }. FileKeyProvider (keys.rs:216-222): pub fn new(link_dir: &Path) -> Self; path = link_dir/host_key. SecretKey (keys.rs:96) has no Clone or Serialize; Debug redacted (keys.rs:128-132).",
+   "Q1 construction: LinkHost::new(sessions: Arc<Sessions>, config: LinkConfig, keys: Box<dyn KeyProvider>, callbacks: LinkCallbacks) (server.rs:295-297); nothing read or opened until start. LinkConfig { binds: Vec<SocketAddr>, host_name: String, link_dir: PathBuf, storage: StorageStatus, limits: LinkLimits } (mod.rs:67-78); LinkConfig::new(host_name, link_dir, storage) leaves binds empty = off (mod.rs:80-90). Defaults (mod.rs:49-62): max_connections 16, handshakes_per_minute 10, idle 120 s, write 30 s, handshake 10 s, confirm and pairing_ttl 300 s. StorageStatus is Clone + Serialize with no path (session/store.rs:94-103).",
+   "Q1 start() errors: validate_binds, AlreadyRunning, keys.load_or_create (KeyError), ClientStore::open (unknown clients schema refuses, clients.rs:121-135), bind failure (server.rs:303-334).",
+   "Q2 Sessions built in setup: desktop/src-tauri/src/lib.rs:29-36 (handle clone; store::open(app_data_dir/state.json)); lib.rs:47-74 Sessions::with_writer(emit closure, spawn, notify, writer, transcripts, worktree_base). AppSessions = Arc<Sessions> (commands.rs:20).",
+   "Q2 managed state: app.manage(sessions) and app.manage(status) at lib.rs:82-83. A LinkHost would be managed the same way (Arc::clone of sessions before manage). Commands take State<'_, T> (commands.rs:36, 42).",
+   "Q2 registration: tauri::generate_handler![...] at lib.rs:86-103; new commands must be added there. Async + spawn_blocking for I/O or git (commands.rs:42-47, 68-75, 98-104). Sync commands exist (commands.rs:35-38, 78-81). Sync commands run on the main thread in Tauri v2 (external knowledge, not verified here).",
+   "Q2 events: the Sessions emit closure calls handle.emit(name, payload) for session-updated, inbox-updated, transcript-appended, task-updated (lib.rs:47-56), with an AppHandle captured by move. A pairing event would follow the same pattern from on_pairing_request. No pairing event exists yet.",
+   "Q2 shutdown: app.run closure, RunEvent::Exit -> handle.try_state::<AppSessions>() -> sessions.shutdown() (lib.rs:107-113). Nothing stops a link there yet. stop() joins; connection threads check the stop flag at least every 25 ms in the confirm loop and each read, but a blocked write can take up to write_timeout 30 s (mod.rs:39-40; conn.rs:184), so the join is bounded by about 30 s.",
+   "Q2 durability on exit: clients.json is written in confirm via temp + sync_all + rename (clients.rs:213-225; server.rs:405-416), so skipping the join cannot corrupt it.",
+   "Q3 host_key write, exact code (keys.rs:284-297): `if let Some(dir) = self.path.parent() { create_dir(dir)?; }` then `let key = SecretKey::generate()?;` then `match create_new(&self.path) { Ok(mut f) => { f.write_all(key.expose())?; f.sync_all()?; Ok(key) } Err(e) if e.kind() == ErrorKind::AlreadyExists => self.read(), Err(e) => Err(e.into()), }`. create_new (keys.rs:266-275) sets mode 0o600 at creation on Unix. The final path is written in place: a crash after create and before write leaves a 0-byte file, which read() rejects as BadFile and never overwrites (keys.rs:20, 225-233).",
+   "Q3 temp + rename is straightforward on Windows: clients.rs:213-225 already does File::create(tmp), write_all, sync_all, fs::rename in production code. std rename replaces an existing target on Windows (MoveFileExW, external knowledge). Risk: rename fails with access denied if another process holds the target open (AV scanners); surface as KeyError::Io or retry.",
+   "Q3 Unix with 0600 preserved: create the temp with create_new + mode(0o600) (reuse keys.rs:266-275), write, sync_all, rename in the same dir; the inode keeps 0600. A stale temp from a crash makes create_new fail with AlreadyExists, so remove a leftover temp first. clients.rs uses a fixed json.tmp with File::create, which does not set mode on an existing file.",
+   "Q3 race: two processes starting on the same link dir could both see NotFound and rename over each other, so the last rename wins while the first serves its key. create_new today sends the second creator to read(). A no-clobber publish (std::fs::hard_link(tmp, final) then remove tmp) keeps that property. Not tested.",
+   "Q4 Cargo.lock has NO keyring, keyring-core, qrcode, if-addrs or local-ip-address package entry. windows-sys is in the lock at 0.45.0, 0.60.2, 0.61.2 (Cargo.lock:4818-4840). core/Cargo.toml:21 uses windows-sys 0.60 with Win32_Foundation, Win32_Security, Win32_System_JobObjects, Win32_System_Threading. Win32_Security_Credentials exists in windows-sys 0.60.2 and implies Win32_Security (local registry copy, Cargo.toml:143). Not enabled anywhere yet.",
+   "Q4 Cargo.lock records no features. Enabling a windows-sys feature in desktop/src-tauri/Cargo.toml adds no package version, but adds a dependency edge on the orchestra package entry (Cargo.lock:2520 onward), so the lock changes by one line and CI --locked needs it committed.",
+   "Q4 keyring crate on crates.io: 4.2.0, updated 2026-08-29, 32.1M downloads, license MIT OR Apache-2.0. Default features v1 and cli. Deps: keyring-core ^1.0.0 (normal) plus per-target stores: windows-native-keyring-store ^1 (windows), apple-native-keyring-store ^1 (macOS/iOS), dbus-secret-service-keyring-store ^1 and zbus-secret-service-keyring-store ^1 (unix non-Apple; zbus is async), linux-keyutils-keyring-store ^1 (Linux), db-keystore (64-bit non-mobile). The Windows store uses windows-sys ^0.61.2 (in lock), byteorder, regex (in lock), zeroize (in lock), keyring-core (not in lock). Search results disagreed on the version (3.0.4 vs 4.1.6); crates.io is the authority.",
+   "Q4 direct route: CredWriteW, CredReadW, CredDeleteW via windows-sys Win32_Security_Credentials adds no crate. CRED_MAX_CREDENTIAL_BLOB_SIZE (2560 bytes) is Win32 knowledge, not verified here; a 64-char hex host key fits.",
+   "Q4 CI cannot build the shell on Linux or macOS: test.yml runs cargo test --workspace only on windows-latest (test.yml:42-54); core-check-macos checks only -p orchestra-core (test.yml:56-68). Any Linux or macOS keyring code in the shell is uncompiled.",
+   "Q4 core guard: test.yml:24-31 greps cargo tree -p orchestra-core for gtk|webkit|tauri|wry only. A keyring or QR crate in core would NOT trip it. Keeping them shell-only is a review rule, not a check.",
+   "Q4 scope: ROADMAP P3b names Windows Credential Manager. CLAUDE.md says Windows first for desktop, macOS via the GitHub runner. Linux keyring is not named for P3b (reading of the docs, not a recorded decision).",
+   "Q5 no QR library in desktop/package.json (dependencies: @tauri-apps/api, react, react-dom) or desktop/package-lock.json (grep hits are sha512 hashes only). No QR crate in Cargo.lock.",
+   "Q5 npm candidate qrcode-generator 2.0.4: MIT, zero dependencies; unpacked tarball 555,539 bytes including docs (minified runtime size not measured). npm qrcode 1.5.4: MIT, depends on pngjs, yargs, dijkstrajs.",
+   "Q5 Rust candidate qrcode 0.14.1: MIT OR Apache-2.0, last updated 2024-07-05. Features: default = [image, svg, pic]; svg = [] with no dependency; image optional (crates.io features map). So qrcode with default-features = false and feature svg adds no extra crate. Belongs in the shell, not core.",
+   "Q5 CSP (desktop/src-tauri/tauri.conf.json:24): img-src 'self' data: is already allowed, so an img with a data:image/svg+xml URL passes. An inline svg element in the DOM is not governed by img-src. style-src 'self' with no unsafe-inline blocks style attributes and style elements, so SVG must use presentation attributes (fill, d) and no style=. Not verified by rendering in WebView2.",
+   "Q5 the PairingOffer carries the 32-byte secret (pairing.rs:100-102), so any QR renderer sees it in the webview. By design (pairing.rs:90-91, show once in the QR). host_key must never reach the webview.",
+   "Q6 App.tsx is one component: useReducer(reducer, initialState) (App.tsx:29); no router, no settings or devices view. Header App.tsx:92-98 (h1, Open project button, NewSession). Storage banner App.tsx:99-107 (role=alert); error banner App.tsx:108-115 with Dismiss. Grid App.tsx:116-149: SessionList, TaskList, then one detail pane chosen by selectedTask > selectedSession > Inbox.",
+   "Q6 components/: DiffView, Inbox, InboxItemView, NewSession, SessionDetail, SessionList, TaskDetail, TaskList (.tsx). No Devices or PairingConfirm files and no modal or dialog component. The only dialog-like element is an inline role=alertdialog card in TaskDetail.tsx:136-138, styled by .confirm (App.css:399-402).",
+   "Q6 state.ts: State (state.ts:3-9), Action union (state.ts:11-19), initialState (state.ts:21), reducer (state.ts:63). Selection is by id in the reducer (selected, selectedTask).",
+   "Q6 ipc.ts: invoke wrappers (pickProject ~276, listProjects, startSession, storageStatus, ...) each decode the payload. Event listeners use listen<unknown> with a decoder and onError: onSessionUpdated ~351, onInboxUpdated ~363, onTranscriptAppended ~375, onTaskUpdated ~387. App subscribes at App.tsx:40-44 and unlistens in cleanup (App.tsx:69-73).",
+   "Q6 styling: one global App.css with plain class selectors; min-width 800px media query at App.css:276; prefers-color-scheme dark at App.css:283. No CSS modules, Tailwind or UI library.",
+   "Q6 tests: six .test.ts files, no .tsx: desktop/src/{detail,ipc,protocol,reply,state,tasks}.test.ts. npm test (vitest run) passed 168 at scout time. vite.config.ts has no test block (default node environment). node_modules has no jsdom, happy-dom or @testing-library. Component tests need new devDependencies and a config change, which changes desktop/package-lock.json (CI desktop-npm runs npm ci then npm test, test.yml:70-82).",
+   "Q7 exact CSP (tauri.conf.json:24, app.security.csp): default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src ipc: http://ipc.localhost . Not null; no unsafe-eval; no unsafe-inline.",
+   "Q7 capabilities/default.json: identifier default, windows [main], permissions [core:default]. Dialog, notification and window-state plugins are registered without a grant (lib.rs:15-20).",
+   "Q7 no existing Rust or TS test reads tauri.conf.json or the csp (grep matches only the file itself). Shell tests are #[cfg(test)] modules in commands.rs:150-230 and window.rs:88-100; no integration tests in desktop/src-tauri. Pin-test options: Rust include_str!(\"../tauri.conf.json\") or a vitest test importing the JSON.",
+   "Q8 session/store.rs:142-155 pub fn save(path, snapshot) is the only public atomic write (temp with_extension json.tmp, sync_all, rename), but it takes a Snapshot, not bytes. clients.rs:213-225 fn save is private to ClientStore. keys.rs has no temp+rename. No generic atomic-write helper exists, so link/config.json needs a small new helper or a copied pattern.",
+   "Q8 paths: LinkConfig.link_dir holds host_key and clients.json (mod.rs:73-74). Shell app data dir from lib.rs:32; state file app_data_dir/state.json (lib.rs:34). link/config.json would sit beside host_key and clients.json. Missing config means off.",
+   "Q9 no code, doc or config in the repo mentions the Windows Firewall (grep). WebSearch found no Tauri-specific guidance. General Windows behaviour: a first listening socket can prompt, and Cancel creates a block rule (ROADMAP P3b bullet). The documented avoidance is an installer or admin-created firewall rule (Microsoft Learn, wf adding an application, external). Detecting an existing rule would need INetFwPolicy2 COM, which is not in the tree.",
+   "Q10 no std interface enumeration. Windows: GetAdaptersAddresses needs windows-sys features Win32_NetworkManagement_IpHelper and Win32_Networking_WinSock (not enabled; no new crate; hand-written FFI). Unix: getifaddrs via libc (libc 0.2.190 in lock; core already uses libc on unix). A UDP-connect trick yields only the default-route source address, not Tailscale.",
+   "Q10 crates: if-addrs 0.15.0, MIT OR BSD-3-Clause, updated 2026-02-08, 30.9M downloads, deps libc (non-Windows) and windows-sys ^0.61.2 (in lock). local-ip-address 0.6.13, MIT OR Apache-2.0, updated 2026-05-19, 35.5M downloads, deps libc, neli (Linux), windows-sys ^0.61.2 (in lock). Neither is in Cargo.lock today.",
+   "Q10 Tailscale address range is 100.64.0.0/10 (CGNAT; external knowledge, not checked on a live adapter). Filter enumerated addresses by that range.",
+   "Q11 test.yml: core (ubuntu-24.04 and arm) runs the GUI-tree guard and cargo test -p orchestra-core --locked (test.yml:14-40). windows-workspace (windows-latest) runs cargo test --workspace --locked (test.yml:42-54), which includes desktop/src-tauri unit tests. core-check-macos checks core only (test.yml:56-68). desktop-npm (ubuntu) runs npm ci and npm test in desktop (test.yml:70-82). So new shell tests run on windows-latest; new frontend tests run in desktop-npm; no CI job builds the shell on Linux or macOS.",
+   "BUILD cargo test -p orchestra-core --locked exit 0 (245 core, 26 link, 4 wire fixtures). desktop npm test 168 passed. Not run: shell crate build or test, npm run build.",
+   "P3a state verified on disk: core/src/link has clients, conn, frame, keys, mod, noise, pairing, server. core/Cargo.toml has snow 0.10, tungstenite 0.30 (handshake only), getrandom 0.3 (core/Cargo.toml:14-17). The P3 connect-src bullet was dropped at the gate (protocol/README.md:46-49).",
+   "Shell has no link code: desktop/src-tauri/src has commands.rs, lib.rs, main.rs, window.rs only. Frontend has no link or devices code.",
+   "Protocol for P3b (protocol/README.md): Pairing (lines 59-83): window opens only on user action, 5 minutes, single use; host shows client name and fingerprint; user confirms on the host. Authorisation (84-102): scopes read/answer/control/land; phone default read+answer; pick_project host-local only. Revocation (103-117): revoke deletes the key; live connection gets error{revoked} then closes. What P3 decided (261+): pairing secret 256-bit (amends P1 128-bit).",
+   "P3a follow-ups still open (ROADMAP.md P3a list): host_key not atomic (medium, fix first; Q3); stop() does not join in-flight call workers; revoke during connect may let one snapshot out; client name not length-capped in on_pairing_request; confirm and timeout at the same instant can store a client that never gets welcome (touches the P3b confirm UI)."
+  ],
+  "unknowns": [
+   "Whether windows-sys CredWriteW/CredReadW/CredDeleteW and CREDENTIALW compile as expected: the feature exists (verified), the calls are not built here.",
+   "CRED_MAX_CREDENTIAL_BLOB_SIZE (2560) and the CRED_PERSIST_* choice are Win32 knowledge, not checked against docs in this run.",
+   "keyring 4.2.0 under default-features = false: only crates.io metadata was read; store internals were not.",
+   "Whether any Linux or macOS keyring is in P3b scope: the roadmap names Credential Manager only, and no CI job builds the shell off Windows.",
+   "Whether the QR SVG renders under style-src 'self' in WebView2 (not rendered). Minified size of qrcode-generator and any Rust svg cost (not measured).",
+   "Whether Tauri v2 sync commands run on the main thread here (external knowledge, not verified).",
+   "Windows Firewall: whether a LAN or Tailscale bind prompts on this machine and a loopback bind does not (not tested); whether an existing rule can be detected (not checked).",
+   "Whether an installer-created firewall rule is in P3b scope or a later release (desktop-release.yml exists); not decided in any doc read.",
+   "Whether the confirm-versus-revoke race (P3a follow-up) can be reproduced from the UI (not reproduced).",
+   "Whether on_pairing_request can emit a Tauri event without blocking: the existing emit closure (lib.rs:47-56) suggests yes; not measured.",
+   "Vitest component-test environment: which jsdom or happy-dom and @testing-library versions to add was not chosen or checked.",
+   "Behaviour when link/config.json says enabled but clients.json has an unknown schema or the port is busy: start() returns Err (server.rs:303-334); the UI for that is unspecified."
+  ],
+  "risks": [
+   "PLAN-KILLER CHECK: the suspicion that the seam blocks is refuted. on_pairing_request returns at once and the connection thread holds the pairing on a channel for up to 300 s (conn.rs:327-352; mod.rs:44). The shell can emit and return; confirm_pairing and reject_pairing come later from a command.",
+   "SELF-JOIN DEADLOCK: calling LinkHost::stop() from on_pairing_request joins its own thread (server.rs:355-370; conn.rs:327-331). Keep the callback to emit only.",
+   "MAIN-THREAD BLOCK: stop() joins connection threads, each up to write_timeout 30 s (mod.rs:39-40). Any command that stops or starts the link must be async with spawn_blocking (commands.rs:42-47 pattern). The exit hook (lib.rs:107-113) can wait about 30 s, or skip the join.",
+   "HOST_KEY CRASH WINDOW (P3a medium, Q3): keys.rs:288-297 writes in place, so a crash leaves a 0-byte host_key that is BadFile forever until deleted (keys.rs:229-233). Temp + rename fixes it, but stale-temp and two-process cases need handling.",
+   "CARGO.LOCK MUST BE COMMITTED: any new shell dependency or feature edge changes the orchestra entry in Cargo.lock (around line 2520). CI runs cargo test --workspace --locked (test.yml:50-54) and -p orchestra-core --locked (test.yml:39), so an uncommitted lock fails CI.",
+   "LINUX/macOS UNCOMPILED: no CI job builds desktop/src-tauri on Linux or macOS. Keep keyring Windows-only in P3b unless a job is added.",
+   "CORE TREE: the GUI guard (test.yml:24-31) does not catch keyring or QR crates. Keep both out of core/Cargo.toml by review; the qrcode svg feature and keyring stay shell-only.",
+   "KEYRING TREE: keyring 4.2.0 adds keyring-core and per-OS store crates to the lock; enabling the Linux stores would bring zbus (async) into the shell tree. Use default-features = false or the direct windows-sys route if the tree must stay small.",
+   "CSP PIN TEST SCOPE: ROADMAP P3a dropped the connect-src change (G6), but CLAUDE.md:96-97 still says to add the origin. The pin should assert the current string at tauri.conf.json:24 unchanged, since the Rust host opens the socket and the webview opens none (protocol/README.md:46-49). Any CSP change needs a written reason first.",
+   "SECRET IN THE WEBVIEW: PairingOffer.secret (pairing.rs:100-102) reaches JS by design (the QR). host_key must never be sent to the frontend; the shell should expose only public data (Client has no Serialize; it needs its own DTO).",
+   "NO COMPONENT TEST INFRA: six .ts test files, no jsdom, no testing library. Component tests add devDependencies and change desktop/package-lock.json; desktop-npm uses npm ci (test.yml:70-82), so the lock must be committed in sync.",
+   "NO PAIRING EVENTS OR TYPES: the shell emits four event names (lib.rs:47-56). Pairing request and clients-changed events need new names, decoders in ipc.ts and types in types.ts.",
+   "CONFIRM AND REVOKE RACE (P3a follow-up): confirm can fail after the store write (server.rs:410-414 returns UnknownPairing). The UI must show that Accept can fail.",
+   "SLOT HOLD: a pending pairing occupies one of 16 connection slots for up to 300 s (mod.rs:52; conn.rs:337). The UI should show one pending request at a time, or bound the list.",
+   "BIND CHOICES: validate_binds refuses unspecified addresses (server.rs:44-49). LinkConfig.binds empty means off (mod.rs:69, 81). The shell must never offer 0.0.0.0 or ::; the core would refuse at start anyway.",
+   "WINDOWS FIREWALL: the first non-loopback listen can prompt, and Cancel creates a block rule (ROADMAP P3b bullet). The warning must come before the first enable of a non-loopback bind. Nothing in the repo avoids the prompt programmatically today."
+  ]
+ },
+ "architect": {
+  "written_by": "architect",
+  "shape": "single-loop",
+  "parallel_safe": false,
+  "run_scope": "orchestra only (one app). ROADMAP.md is in no slice; the orchestrator updates it at close. No protocol/ change: the offer JSON and the handshake are P3a's, unchanged; the new link-* event names go from the shell to the webview only and are not wire events.",
+  "rationale": "Single-loop, one branch, slices run in order s1 -> s2 -> s3 -> s4. The file sets ARE disjoint (core link files / shell Rust plus Cargo files / frontend / docs), but a diamond needs 3+ slices whose done_when stands alone and that consume nothing from each other. Here s3 consumes s2's IPC contract (command names, DTO shapes, event names), s4 records s1-s3's as-built behaviour and test counts, and only s1 is truly independent. Two parallel-safe pieces do not earn a graph. Fixing the contract in this plan (notes.ipc_contract) lets s3 be written against the plan, but its review still needs s2 on disk. Risk tags: s1 HIGH - it rewrites the host private key write path (sensitive material) and changes the confirm/timeout state machine, whose race a test can only partly see. s2 HIGH - unsafe Win32 FFI that reads and writes the host private key, the boundary that keeps the pairing secret out of IPC text (no test can prove there is no other leak path), thread/lock rules where a mistake is a deadlock (stop() from a callback) or a 30 s main-thread hang, and Cargo.lock. It does not touch tauri.conf.json or capabilities/** (the CSP pin only reads the file via include_str). s3 HIGH - the confirm dialog is the user's trust decision (default scopes, Accept failure, expiry) and it renders the secret-bearing QR; with no component-test harness (G11) that behaviour is visible only to a reader and to the owner's hand test. s4 LOW - prose only, no sensitive data, no file shared with another slice; grep done_when plus a scope check is enough. No file appears in two slices: lib.rs and Cargo.lock only in s2, App.tsx only in s3, CLAUDE.md and protocol/README.md only in s4. Disagreements with the scout, flagged and not plan-changing: (1) the risk 'CLAUDE.md:96-97 still says add its origin' is stale. P3a s4 already rewrote it: orchestra/CLAUDE.md:96-99 now says the link needs no origin, and grep 'add its origin' returns 0. No slice edits that line. (2) 'host_key must never reach the webview' must be read as the PRIVATE key (SecretKey). PairingOffer.host_key (pairing.rs:98-99) is the host's static PUBLIC key and is meant to be in the QR. (3) Verified rather than trusted: on_pairing_request returns at once and the conn thread polls a sync_channel(1) until the deadline (conn.rs:326-352). stop() joins accept, then connection threads (server.rs:355-370). Every LinkHost query except open_pairing goes through shared() and fails NotRunning when the link is stopped (server.rs:380-442), so list_clients/revoke/set_scopes do NOT work while the link is off. LinkConfig is owned by LinkHost with no setter, so changing binds means building a new LinkHost. Also verified: ClientStore is pub with open/list/set_scopes/revoke (clients.rs:113-212); Client has no last-seen field and LinkLog has no connect event; the stored name is already clipped to 128 bytes (clients.rs:21,183,240), but PendingPairing.client_name is not (conn.rs:333-336); Scope has no serde (wire/mod.rs:39-45); windows-sys 0.61.2 is in Cargo.lock and has CredWriteW/CredReadW/CredFree/CredDeleteW, CRED_TYPE_GENERIC, CRED_PERSIST_LOCAL_MACHINE and CRED_MAX_CREDENTIAL_BLOB_SIZE=2560 under Win32_Security_Credentials (checked in the local registry copy). desktop-release.yml builds the shell on windows-latest and macos-latest, at tag time only.",
+  "decisions_for_gate": [
+   {
+    "id": "G1",
+    "title": "Shape and slices",
+    "recommend": "Single-loop on one branch (p3b-desktop-pairing), in the order s1 core follow-ups, s2 shell Rust (keyring, config, commands, QR, CSP pin), s3 frontend (Devices view, pairing and confirm dialogs, settings, firewall notice), s4 docs.",
+    "alternatives": [
+     "Diamond s1 || s2 || s3, then s4: the file sets are disjoint, but s3 consumes s2's contract and s1 is the only free slice. The saving is small and a fan-in risk is added; rejected.",
+     "Two runs (Rust now, UI next): ships commands nobody can click and leaves the owner's hand test for later; rejected."
+    ]
+   },
+   {
+    "id": "G2",
+    "title": "Keyring approach",
+    "recommend": "Call Win32 Credential Manager directly from the shell: windows-sys 0.61 with the Win32_Security_Credentials feature, as a [target.'cfg(windows)'.dependencies] entry in desktop/src-tauri/Cargo.toml. 0.61.2 is already in Cargo.lock, so no new crate is added; the lock gains one dependency edge on the orchestra package. New module desktop/src-tauri/src/keyring.rs: CredentialKeyProvider { target: String } implements KeyProvider. load_or_create: CredReadW(target, CRED_TYPE_GENERIC). Found with a 32-byte blob -> SecretKey::from_bytes. Wipe the CREDENTIALW blob before CredFree. Found with any other length -> KeyError::BadFile, never overwritten (same fail-closed rule as the file). ERROR_NOT_FOUND -> SecretKey::generate, CredWriteW (CRED_TYPE_GENERIC, CRED_PERSIST_LOCAL_MACHINE: survives logoff, does not roam), then read back and return what is stored, which narrows the two-process first-start race to the read-back. Any other failure -> KeyError::Io(ErrorKind::Other) (no new KeyError variant). Target name: 'com.telosrg.orchestra/link/host_key' (the bundle identifier). The 32 raw bytes are stored as the blob, well under 2560. Tests use a unique per-test target and CredDeleteW afterwards; they never touch the real one. Consequence to state in the UI copy: if the user deletes this credential, the host gets a new key and every paired phone is refused as 'host key changed' (the protocol pins the host key) until it is paired again. Unverified: that CredWriteW succeeds on the windows-latest runner; if it does not, the round-trip test is ignored with a written reason and run locally.",
+    "alternatives": [
+     "keyring crate 4.2.0 (MIT OR Apache-2.0), Windows-only target dependency with default-features=false: less unsafe code of ours, but v4 split into keyring-core plus per-store crates. Which features select the Windows store under default-features=false was not read (scout unknown). It adds keyring-core, windows-native-keyring-store and byteorder to the lock. Take it if the owner prefers no unsafe in the shell; the builder must then read the crate source first.",
+     "Keep FileKeyProvider on the desktop for P3b and defer the keyring: zero risk, but it contradicts protocol/README.md:73 and the ROADMAP P3b bullet; rejected."
+    ]
+   },
+   {
+    "id": "G3",
+    "title": "An existing host_key file: migrate or keep?",
+    "recommend": "No migration, and the file is left alone. Before P3b no desktop build ever constructed a LinkHost (P3a added no shell wiring; desktop/src-tauri/src has no link code), so no desktop install can have link/host_key or a phone paired against it. On Windows the provider never reads or deletes link/host_key. On other OSes FileKeyProvider keeps using it (G4).",
+    "alternatives": [
+     "Import link/host_key into the keyring on first start and delete the file: code that serves no install that exists; rejected.",
+     "Import it and keep the file: two copies of a private key; rejected."
+    ]
+   },
+   {
+    "id": "G4",
+    "title": "Linux and macOS scope, and CI",
+    "recommend": "Windows first. The provider is chosen in one cfg'd function in keyring.rs: cfg(windows) -> CredentialKeyProvider; cfg(not(windows)) -> orchestra_core::link::keys::FileKeyProvider::new(link_dir) (a 0600 file, already compiled and tested on Linux and macOS in core CI). Everything else in s2 (config, QR, if-addrs, commands) is target-neutral. The firewall notice is shown on every OS, with per-OS wording chosen from an os field in link_status (G8). No new CI job: the only code not compiled by windows-workspace is that one cfg(not(windows)) line, plus if-addrs's own unix path, which is a mature crate. desktop-release.yml builds the shell on macos-latest at tag time. Native-desktop rule: Linux and macOS are planned in this slice, not a follow-up, through the FileKeyProvider fallback.",
+    "alternatives": [
+     "Add a macos-latest 'cargo check -p orchestra --locked' job to test.yml: compiles the shell off Windows on every push for a few runner minutes. Pick it if the owner wants the release build never to be the first place macOS shell code compiles; it adds orchestra/.github/workflows/test.yml to s2's files.",
+     "macOS Keychain and Linux Secret Service now: an uncompiled, untested path and zbus in the tree; rejected for P3b."
+    ]
+   },
+   {
+    "id": "G5",
+    "title": "QR rendering and the secret in the UI",
+    "recommend": "Render in Rust: qrcode 0.14.1 (MIT OR Apache-2.0, last release 2024-07-05; stable, not active) with default-features=false and features=['svg'], which adds no further crate. A new shell module desktop/src-tauri/src/qr.rs encodes PairingOffer::to_json() at EcLevel::M into an SVG string. The SVG must use presentation attributes only: no style attribute and no <style> element. The link_open_pairing command returns PairingView { qr_svg, host_name, addrs, expires_at }. It never returns the PairingOffer itself and has no secret field, so the secret reaches the webview only as pixels, never as text. The private SecretKey never leaves Rust. TS shows the QR as <img src={qrDataUrl(svg)}> with 'data:image/svg+xml,' + encodeURIComponent(svg). The CSP already allows img-src 'self' data:, and an <img> needs no unsafe-inline style and no innerHTML. UI rules: the PairingView lives only in the dialog component's state (never in the app reducer, never console.log'd, never in an error string). Closing the dialog calls link_close_pairing and drops the state. A countdown to expires_at is shown, and at zero the QR is replaced by 'This code expired' with an Open again button. When a pairing request arrives the QR dialog closes, because the window is single-use and is consumed by the first hello. A loopback-only offer carries a hint that only this computer can reach 127.0.0.1. Shell test: serde_json of a PairingView contains neither the key 'secret' nor the offer's secret hex; the SVG contains no 'style'. Unverified until the hand test: that the data: SVG renders in WebView2 under this CSP.",
+    "alternatives": [
+     "qrcode-generator 2.0.4 on npm (MIT, zero deps; 555 KB unpacked including docs, minified size not measured): the secret hex then crosses IPC as text and lives in JS memory. That is allowed by design, but needs more discipline. It adds orchestra/desktop/package.json and orchestra/desktop/package-lock.json to s3.",
+     "npm qrcode 1.5.4: pulls pngjs, yargs and dijkstrajs; rejected."
+    ]
+   },
+   {
+    "id": "G6",
+    "title": "link/config.json",
+    "recommend": "Path: app_data_dir/link/config.json, beside clients.json (and host_key on non-Windows). Schema: {\"schema\":1, \"enabled\":false, \"port\":47800, \"binds\":[\"127.0.0.1\"], \"firewall_notice_seen\":false}. binds are bare IP strings; the one port is shared by every bind. A missing file means these defaults, so the link is off. An unknown schema or a file that does not parse -> link off, the file left alone, the settings read-only with 'written by a newer Orchestra' or 'could not be read'. This is the clients.json rule. The atomic write is a small private helper in desktop/src-tauri/src/link_config.rs: temp file, write_all, sync_all, rename. It copies the clients.rs:213-225 pattern and takes no core dependency. enabled PERSISTS: at setup, if enabled, the shell starts the link on a background thread. The point of the link is that a phone reconnects without a click on the desktop. The header shows the link state at all times. A saved bind that no longer exists on any interface (DHCP changed, Tailscale down) is skipped at start. The link starts on the binds that remain, and link_status.missing lists the skipped ones for the UI ('192.168.1.20 is not on this computer right now'). The config is NOT rewritten, so the address can come back. If no bind remains, the link stays off with that reason. A start error (port busy, unreadable clients.json, keyring failure) leaves the link off, keeps enabled as saved, and shows the error with Retry.",
+    "alternatives": [
+     "enabled does not persist (off on every launch): safer against forgotten exposure, but the phone cannot reconnect after a desktop restart until someone clicks. Take it if the owner values that.",
+     "Fail the whole start when any saved bind is missing: simpler and stricter, but a laptop that changed Wi-Fi silently loses the link, including Tailscale."
+    ]
+   },
+   {
+    "id": "G7",
+    "title": "Bind choices, interface enumeration, port policy",
+    "recommend": "Choices are enumerated, never free text. Use the if-addrs crate 0.15.0 (MIT OR BSD-3-Clause, updated 2026-02-08, about 31M downloads; deps libc on unix and windows-sys 0.61.2, which is already in the lock). The list is IPv4 only: 127.0.0.1 (always, 'This computer only'); 100.64.0.0/10 labelled 'Tailscale'; RFC1918 10/8, 172.16/12 and 192.168/16 labelled 'Local network'; anything else 'Other'. Link-local 169.254/16 is excluded. 0.0.0.0, :: and their IPv4-mapped forms are never listed. link_set_config also re-checks in Rust that each bind parses, is in the current enumeration or is 127.0.0.1, and passes core validate_binds, so the core would refuse an unspecified address at start anyway. Port: one fixed, user-editable port (default 47800, range 1024-65535) for all binds. Never 0 (ephemeral), because a phone stores ip:port from the QR and must find the host again after a restart. A busy port is a start error naming the port, with the port field next to it.",
+    "alternatives": [
+     "local-ip-address 0.6.13 (MIT OR Apache-2.0): adds neli on Linux; no advantage here.",
+     "GetAdaptersAddresses through windows-sys plus getifaddrs through libc by hand: no crate, but two unsafe FFI paths and one uncompiled off Windows; rejected.",
+     "Free-text address with validation: invites typos and 0.0.0.0 attempts; rejected for v1.",
+     "IPv6 binds (Tailscale fd7a:115c:a1e0::/48, ::1): the core supports them; the UI can add them later."
+    ]
+   },
+   {
+    "id": "G8",
+    "title": "Firewall notice",
+    "recommend": "Shown when the user first saves an enabled config containing a non-loopback bind while firewall_notice_seen is false. The save is held until they press Continue, which sets firewall_notice_seen=true in the same write. link_set_config refuses a first non-loopback enable without the flag, so the order is enforced in Rust and not only in the UI. Windows wording: 'Windows may ask whether Orchestra can use the network. Tick Private networks and choose Allow. If you choose Cancel, Windows adds a rule that blocks Orchestra, and your phone cannot connect until you allow it under Windows Security > Firewall & network protection > Allow an app through firewall.' macOS: 'macOS may ask whether Orchestra can accept incoming connections. Choose Allow.' Linux: 'If a firewall such as ufw is on, allow TCP port <port>.' Loopback-only never shows it. Whether Windows classes the Tailscale adapter as Private or Public is unverified, so the copy does not claim it.",
+    "alternatives": [
+     "Create a firewall rule programmatically (INetFwPolicy2 COM, needs elevation) or from the installer: the installer route belongs to R1 (release, ops gate); rejected for P3b.",
+     "Show the notice on every non-loopback enable: noisy; rejected."
+    ]
+   },
+   {
+    "id": "G9",
+    "title": "The confirm dialog",
+    "recommend": "One request is shown at a time. The pairing window is single-use, so there is normally at most one, and Open pairing is disabled while a request is pending. The shell keeps a small list anyway, and the UI shows the first with 'N more waiting'. The shell's on_pairing_request only pushes PendingView { id, client_name, fingerprint, expires_at = now + confirm_timeout } into a leaf mutex and emits link-pairing-request. It never calls LinkHost, because stop() from that thread self-joins and deadlocks. The dialog (role=alertdialog, rendered at App level over either view) shows the name as text: React escapes it; CSS ellipsis; title attribute for the full name. The core caps the name at 128 bytes and strips control characters (G12), and the UI truncates to 64 characters for display. The fingerprint is shown in monospace with 'Check that your phone shows the same code', and there is a countdown. Scope checkboxes: read and answer checked, control and land unchecked, with one-line descriptions from the README table. Accept with no scope at all is refused. Accept and Reject are the buttons; Escape rejects. Accept failure is explicit. UnknownPairing -> 'Your phone stopped waiting. Open pairing again.' (this covers the P3a race and a dropped connection). StoreError::Full -> '32 devices are paired. Remove one first.' Any other error -> the core message. On timeout the dialog turns to 'This request expired' with Close, and the shell drops entries past expires_at when it reads the list.",
+    "alternatives": [
+     "Queue and show every request: a pending request holds one of 16 slots for 300 s, so a list invites slot exhaustion; rejected.",
+     "Auto-reject a second request: impossible from the callback (it must not call LinkHost) and needs a worker thread; not worth it at a 1-request steady state."
+    ]
+   },
+   {
+    "id": "G10",
+    "title": "Devices panel and placement",
+    "recommend": "A 'Devices' button in the header, next to Open project, and a link-state pill ('Link off' / 'Link on - 2 addresses' / 'Link error'). With no router, App keeps a view state 'work' | 'devices', and 'devices' replaces the three columns with the Devices panel, which has a Back button. The panel has three parts. (a) Link settings: an enable switch, address checkboxes from link_interfaces, the port field, Save, and status, missing addresses and errors. (b) Pair a phone: opens the QR dialog, enabled only while the link is running and no request is pending. (c) Paired devices: name, fingerprint, paired_at date, and the four scope checkboxes (a change saves at once through link_set_scopes, and the last scope cannot be unchecked; read is explained as required for status). Remove asks first ('Remove <name>? It is disconnected now and must pair again.'), then link_revoke. No last-seen: Client has no such field and LinkLog has no connect event, so it needs a core change (NOT DOING). paired_at is shown instead. Devices are listed and editable while the link is OFF: with no running host the shell opens ClientStore::open(link_dir) itself, under its lifecycle mutex, so a lost phone can be revoked without opening a socket. While running, it goes through LinkHost. The panel must work at the 640 px window minimum.",
+    "alternatives": [
+     "Devices read-only while the link is off: simpler, but revoking a lost phone would require turning on the network first; rejected.",
+     "A modal settings sheet instead of a view swap: the device list does not fit at 640 px; rejected."
+    ]
+   },
+   {
+    "id": "G11",
+    "title": "Tests and the CSP pin",
+    "recommend": "No jsdom, happy-dom or @testing-library, so no package.json or package-lock change. All UI logic goes into a pure module, desktop/src/link.ts, tested in desktop/src/link.test.ts under vitest's node environment: the link view reducer, default scopes, scope toggling that keeps at least one, needsFirewallNotice(config, prev), interface labels, display truncation, countdown formatting and expiry, Accept-error text mapping, and qrDataUrl. ipc.test.ts gains decoder tests for the new DTOs and events, including rejecting a payload that carries a 'secret' field. Rust shell tests run in windows-workspace: config default, round trip, unknown schema left alone, temp file then rename; bind validation (0.0.0.0, ::, ::ffff:0.0.0.0, a port out of range, an address not in the enumeration); interface classification; the PairingView carries no secret; the QR SVG has no style; a Credential Manager round trip on a test target (same key on the second call, BadFile on a 31-byte blob). The CSP pin is a cfg(test) test named csp_pinned in desktop/src-tauri/src/lib.rs. It reads ../tauri.conf.json with include_str, parses it with serde_json, and asserts app.security.csp equals exactly \"default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src ipc: http://ipc.localhost\". tauri.conf.json is not modified.",
+    "alternatives": [
+     "Add vitest component tests (jsdom plus @testing-library/react, or happy-dom): covers the dialogs' states, but adds devDependencies, a vitest environment config and lock churn. Versions were not chosen by the scout. Then s3 also owns orchestra/desktop/package.json, orchestra/desktop/package-lock.json and orchestra/desktop/vite.config.ts.",
+     "The CSP pin as a vitest test importing the JSON: runs on ubuntu on every push, but reaches outside src/ for tsc; rejected in favour of the Rust include_str."
+    ]
+   },
+   {
+    "id": "G12",
+    "title": "P3a follow-ups folded in",
+    "recommend": "Three, all in core s1. (a) host_key atomic (P3a medium; the goal). Write to a unique sibling temp host_key.tmp-<8 random hex>, created with create_new and mode 0600 on Unix, then write_all and sync_all. Publish with fs::hard_link(tmp, host_key): AlreadyExists -> another creator won, so read theirs (the no-clobber property create_new gives today is kept). Remove the temp in every case. A crash leaves at most a stray temp, never a short host_key. An existing short file stays BadFile and is never overwritten. (b) Cap and clean the pairing client name at the seam: conn.rs passes the name through the same clip used by ClientStore::add (128 bytes on a char boundary, trimmed) and also drops control characters, before the PendingEntry and the PendingPairing are built. H2's terminal prompt benefits too. (c) The confirm/timeout race. When await_confirmation's loop ends without a decision, it removes its pending entry. If the entry was already gone, the host took it: it then waits briefly (recv_timeout of about 1 s) for the decision already sent and honours it, so the stored client gets welcome, or Rejected closes. That removal is the single linearisation point, and 'stored but never welcomed' is gone. remove_pending returns whether it removed.",
+    "alternatives": [
+     "Only (a), the goal's item: leaves the UI showing names up to 4 MiB and a device listed that never got welcome.",
+     "Also stop() joining call workers, revoke-during-connect snapshot, pre-auth buffering, limiter IPv6 cap, KK timing, zeroize docs: none affects the desktop UI; NOT DOING."
+    ]
+   },
+   {
+    "id": "G13",
+    "title": "Shell lifecycle and threading rules (builder contract)",
+    "recommend": "LinkState is managed state holding: a lifecycle Mutex<()> that serialises start, stop, reconfigure and offline ClientStore edits; a slot Mutex holding Option<Arc<LinkHost>>, the loaded config, last_error and missing; and a leaf pending Mutex<Vec<PendingView>>. Every command that starts, stops or reconfigures is async with spawn_blocking (the commands.rs:42-47 pattern). No shell mutex other than lifecycle is held across LinkHost::stop. Callbacks only push to pending and emit; LinkLog lines go to eprintln (they carry ids and method names only by design). Reconfigure = stop the old host, build a new LinkHost::new(Arc::clone of sessions, LinkConfig{binds, host_name, link_dir, storage: status.clone()}, provider, callbacks), then start. host_name is COMPUTERNAME on Windows, HOSTNAME elsewhere, falling back to 'Orchestra', clipped to 64. With no app data dir (data_dir None at lib.rs:32) the link is unavailable and says so. Exit: RunEvent::Exit must not wait on a 30 s join. The hook signals stop on a spawned thread and waits at most 2 s, and the builder confirms whether managed state is dropped at exit (Drop for LinkHost calls stop). Emitted events: link-pairing-request, link-status-changed, link-devices-changed (after confirm, revoke and set_scopes, and on LinkLog::Paired/Revoked).",
+    "alternatives": [
+     "Add a core API that lets LinkHost be reconfigured or queried while stopped: cleaner for H2, but it widens a core seam P3a just closed; rejected for P3b."
+    ]
+   },
+   {
+    "id": "G14",
+    "title": "Owner hand test (human-read; the phone side is A1)",
+    "recommend": "Nothing can pair end to end until A1 (no phone Noise client). After s3, the owner runs 'cd orchestra/desktop && npm run tauri dev' on Windows and clicks through the following. (1) Header pill shows 'Link off'. Open Devices. (2) Tick 127.0.0.1 only, port 47800, enable, Save: no firewall notice, and the pill turns to 'Link on - 1 address'. (3) Pair a phone: a QR appears with the host name, 127.0.0.1:47800, the loopback hint and a countdown. The QR scans with any phone camera app to JSON with v, host_id, host_name, addrs, host_key, secret and expires_at, and the image renders under the CSP (no console CSP violation in devtools). (4) Close the dialog, reopen: a new code. (5) Tick a LAN or Tailscale address, Save: the firewall notice appears first; Continue, then Windows' own prompt may appear (choose Allow, Private). (6) The paired-devices list is empty, with an empty-state line. (7) Disable, Save: the pill turns to 'Link off' within a few seconds and the UI stays responsive. (8) Quit with the link on: the app exits in about 2 s or less. (9) Restart with the link left enabled: it auto-starts. (10) Windows Credential Manager > Windows Credentials shows 'com.telosrg.orchestra/link/host_key'. (11) Resize to 640 px: the Devices view is usable. The confirm dialog and device editing cannot be reached by hand without a client. They are covered by link.test.ts and core tests/link.rs, and the full click-through moves to A1.",
+    "alternatives": [
+     "A dev-only fake pairing request command (gated on debug_assertions) so the owner can see the confirm dialog before A1: no new files beyond link.rs and lib.rs; offer only if the owner wants it."
+    ]
+   }
+  ],
+  "plan": [
+   {
+    "slice": "s1",
+    "risk": "high",
+    "intent": "Core P3a follow-ups (G12), no desktop change. (a) FileKeyProvider::load_or_create writes a unique temp (create_new, mode 0600 on Unix), syncs it, publishes with fs::hard_link (AlreadyExists -> read the winner), and always removes the temp. Doc comment updated. (b) conn.rs clips and cleans the client name (128 bytes, trimmed, control characters dropped) before add_pending and on_pairing_request; clients.rs exposes that clip as pub(crate) and drops control characters there too, so stored and shown names agree. (c) The confirm/timeout race: remove_pending returns bool; await_confirmation, on a deadline or stop break, checks it; when the host had already taken the entry, it takes the decision already sent (bounded recv) and honours it. New tests: host_key_atomic_* (a leftover temp does not block creation; the second creator gets the first key; the temp is gone after success; 0600 on Unix), pairing_name_* (a 4 MiB name and a name with control and bidi characters reach on_pairing_request clipped and clean), confirm_race_* (a confirm landing at the deadline either gets welcome or leaves no stored client; deterministic, using a short confirm_timeout or a unit test of the settle step).",
+    "files": [
+     "orchestra/core/src/link/keys.rs",
+     "orchestra/core/src/link/conn.rs",
+     "orchestra/core/src/link/server.rs",
+     "orchestra/core/src/link/clients.rs",
+     "orchestra/core/tests/link.rs"
+    ],
+    "done_when": [
+     "cd orchestra && cargo test -p orchestra-core --locked -> exit 0, 0 failed (245 unit + 26 link + 4 wire_fixtures before; more after)",
+     "cd orchestra && cargo test -p orchestra-core --locked -- host_key_atomic_ pairing_name_ confirm_race_ -> at least 5 tests run across the unit and link test binaries, 0 failed",
+     "git -C orchestra diff --stat main -- core/Cargo.toml Cargo.lock -> empty (s1 adds no dependency)",
+     "ci: test.yml core job (ubuntu-24.04 and ubuntu-24.04-arm) green on the pushed branch -> the Unix 0600 temp path runs there"
+    ]
+   },
+   {
+    "slice": "s2",
+    "risk": "high",
+    "intent": "Shell Rust (G2-G7, G9, G11, G13). keyring.rs: CredentialKeyProvider (cfg windows; windows-sys CredReadW/CredWriteW/CredFree/CredDeleteW) and provider_for(link_dir), which picks FileKeyProvider elsewhere. link_config.rs: the config.json schema; load (missing -> defaults; unknown or bad -> off and read-only, file untouched); atomic save; validation (IPv4 parse, not unspecified incl. mapped, in the enumeration or 127.0.0.1, port 1024-65535, a first non-loopback enable needs firewall_notice_seen); if-addrs enumeration and classification (loopback, tailscale 100.64/10, lan RFC1918, other; 169.254 excluded); missing-bind filtering. qr.rs: offer JSON -> SVG with presentation attributes only. link.rs: LinkState and the commands in notes.ipc_contract; DTOs (DeviceView, PendingView, PairingView with no secret, LinkStatus, LinkInterface, ScopeArg with serde lowercase mapped to wire::Scope, args structs with deny_unknown_fields); callbacks that only push and emit; offline ClientStore use while stopped; auto-start on a background thread. lib.rs: the mod lines, manage(LinkState) after sessions, the auto-start, generate_handler entries, a bounded exit (2 s or less), the csp_pinned test. Cargo.toml: qrcode 0.14 (default-features=false, features=[svg]), if-addrs 0.15, and a cfg(windows) target dependency windows-sys 0.61 with features [Win32_Foundation, Win32_Security_Credentials]. Cargo.lock committed.",
+    "files": [
+     "orchestra/desktop/src-tauri/Cargo.toml",
+     "orchestra/Cargo.lock",
+     "orchestra/desktop/src-tauri/src/lib.rs",
+     "orchestra/desktop/src-tauri/src/link.rs",
+     "orchestra/desktop/src-tauri/src/link_config.rs",
+     "orchestra/desktop/src-tauri/src/keyring.rs",
+     "orchestra/desktop/src-tauri/src/qr.rs"
+    ],
+    "done_when": [
+     "cd orchestra && cargo test --workspace --locked -> exit 0, 0 failed; the shell's count rises from 10",
+     "cd orchestra && cargo test -p orchestra --locked -- csp_ link_config_ keyring_ qr_ link_ -> at least 15 tests run, 0 failed, including csp_pinned (exact string from tauri.conf.json:24), a PairingView-has-no-secret test, bind validation refusing 0.0.0.0, :: and ::ffff:0.0.0.0, and a Credential Manager round trip on a test target",
+     "git -C orchestra diff --stat main -- desktop/src-tauri/tauri.conf.json desktop/src-tauri/capabilities core/Cargo.toml -> empty",
+     "git -C orchestra status --porcelain -- Cargo.lock -> empty after the commit (lock committed); ci: test.yml windows-workspace green with --locked",
+     "cd orchestra && cargo tree -p orchestra-core --locked -e normal | grep -iE 'qrcode|if-addrs|keyring' -> no output (none of the new crates in core)"
+    ]
+   },
+   {
+    "slice": "s3",
+    "risk": "high",
+    "intent": "Frontend (G5, G8-G11). types.ts: LinkStatus, LinkInterface, PairingView, PendingPairing, Device, Scope. ipc.ts: invoke wrappers and decoders for every command in notes.ipc_contract, and listeners onLinkPairingRequest, onLinkStatusChanged and onLinkDevicesChanged with decoders and onError, matching the existing pattern. link.ts: the pure logic named in G11. components: Devices.tsx (the panel: settings, pair button, device list with scope edit and remove-with-confirm), LinkSettings.tsx (enable, address checkboxes, port, the firewall notice step), PairingDialog.tsx (QR img from qrDataUrl, countdown, expired state, close -> link_close_pairing, loopback hint), PairingRequest.tsx (the confirm dialog). App.tsx: the view state, the header Devices button and link pill, the three listeners subscribed and unsubscribed like the existing ones, PairingRequest rendered at App level. App.css: plain classes, no inline styles (style-src 'self'), usable at 640 px, dark-mode variants. No new npm dependency.",
+    "files": [
+     "orchestra/desktop/src/types.ts",
+     "orchestra/desktop/src/ipc.ts",
+     "orchestra/desktop/src/ipc.test.ts",
+     "orchestra/desktop/src/link.ts",
+     "orchestra/desktop/src/link.test.ts",
+     "orchestra/desktop/src/App.tsx",
+     "orchestra/desktop/src/App.css",
+     "orchestra/desktop/src/components/Devices.tsx",
+     "orchestra/desktop/src/components/LinkSettings.tsx",
+     "orchestra/desktop/src/components/PairingDialog.tsx",
+     "orchestra/desktop/src/components/PairingRequest.tsx"
+    ],
+    "done_when": [
+     "cd orchestra/desktop && npm test -> exit 0, more than 168 passed, 0 failed; link.test.ts covers default scopes [read, answer], the at-least-one-scope rule, needsFirewallNotice, the Tailscale and LAN labels, expiry and countdown, Accept-error text for UnknownPairing and Full, and qrDataUrl",
+     "cd orchestra/desktop && npm run build -> exit 0 (tsc and vite build)",
+     "git -C orchestra diff --stat main -- desktop/package.json desktop/package-lock.json desktop/vite.config.ts desktop/src-tauri/tauri.conf.json -> empty",
+     "grep -nE 'console[.](log|debug|info)|dangerouslySetInnerHTML|style=[{]' orchestra/desktop/src/components/Devices.tsx orchestra/desktop/src/components/LinkSettings.tsx orchestra/desktop/src/components/PairingDialog.tsx orchestra/desktop/src/components/PairingRequest.tsx orchestra/desktop/src/link.ts -> no output",
+     "human-read: the owner hand test G14 steps 1-11 in npm run tauri dev on Windows"
+    ]
+   },
+   {
+    "slice": "s4",
+    "risk": "low",
+    "intent": "Docs as built. orchestra/CLAUDE.md: the cargo test count line (the shell count), and under Desktop (Tauri 2) one bullet each for the Credential Manager host key (target name; FileKeyProvider off Windows), link/config.json with enabled persisting, and the CSP pin test. protocol/README.md 'What P3 decided': amend the 'Where things live' and 'Binding' bullets and 'Not in P3a' to record what P3b built (keyring as built, config.json, the firewall notice, name clipping, the confirm/timeout fix, the atomic host_key). No protocol behaviour changes.",
+    "files": [
+     "orchestra/CLAUDE.md",
+     "orchestra/protocol/README.md"
+    ],
+    "done_when": [
+     "grep -c 'Credential Manager' orchestra/CLAUDE.md -> 1 or more",
+     "grep -c 'link/config.json' orchestra/CLAUDE.md and orchestra/protocol/README.md -> 1 or more in each",
+     "grep -c '10 shell)' orchestra/CLAUDE.md -> 0, and the new shell count equals the one printed by cargo test --workspace --locked",
+     "grep -c 'add its origin' orchestra/CLAUDE.md -> 0 (unchanged; already true)",
+     "git -C orchestra diff --name-only <s3 commit>..HEAD -> only CLAUDE.md and protocol/README.md"
+    ]
+   }
+  ],
+  "edges": "s2 -> s3 (the IPC contract: command names, DTO and event shapes in notes.ipc_contract); s1, s2, s3 -> s4 (as-built behaviour and test counts). s1 and s2 have no artifact edge and are file-disjoint; they run in order only because the loop is single. Sequential, one branch.",
+  "not_doing": [
+   "ROADMAP.md (the orchestrator, at close)",
+   "Any protocol/ wire change, codec or fixture; the mobile app; the phone Noise client and end-to-end pairing (A1)",
+   "macOS Keychain or Linux Secret Service providers; a new CI OS job (unless G4's alternative is picked)",
+   "Last-seen or a 'connected now' indicator for devices (needs a core connect event or a live-clients API)",
+   "IPv6 bind choices; free-text addresses; 0.0.0.0 or ::, ever",
+   "Programmatic or installer firewall rules (R1, ops gate)",
+   "Component-test infrastructure (jsdom, testing-library) unless G11's alternative is picked",
+   "Any CSP or capabilities change; tauri.conf.json is read by the pin test, not edited",
+   "P3a follow-ups beyond G12: stop() joining call workers, revoke-during-connect snapshot, pre-auth buffering, limiter IPv6 cap, KK NoMatch timing, zeroize docs, dispatch success-path tests, expired-item mapping, README:356 pointer",
+   "The desktop as a client of a remote host (H3); orchestrad (H2)",
+   "Migrating any host_key file into the keyring (G3)",
+   "A router or settings framework in the frontend",
+   "The CI push permission (the orchestrator adds G-push)"
+  ],
+  "notes": {
+   "ipc_contract": {
+    "commands": {
+     "link_status": "() -> LinkStatus {available: bool, os: 'windows'|'macos'|'linux', enabled: bool, running: bool, addrs: string[] (bound ip:port), port: number, binds: string[] (saved IPs), missing: string[], error: string|null, config_readonly: string|null, firewall_notice_seen: bool}",
+     "link_interfaces": "async () -> LinkInterface[] {ip: string, kind: 'loopback'|'lan'|'tailscale'|'other', name: string}",
+     "link_set_config": "async {enabled: bool, binds: string[], port: number, firewall_notice_seen: bool} -> LinkStatus (validates, saves atomically, then stops, rebuilds and starts as needed on spawn_blocking)",
+     "link_open_pairing": "async () -> PairingView {qr_svg: string, host_name: string, addrs: string[], expires_at: number}",
+     "link_close_pairing": "() -> ()",
+     "link_pending": "() -> PendingPairing[] {id, client_name, fingerprint, expires_at}",
+     "link_confirm_pairing": "async {id: string, scopes: Scope[]} -> Device (scopes non-empty)",
+     "link_reject_pairing": "async {id: string} -> ()",
+     "link_list_devices": "async () -> Device[] {id, name, fingerprint, scopes: Scope[], paired_at: number}",
+     "link_set_scopes": "async {client_id: string, scopes: Scope[]} -> () (non-empty)",
+     "link_revoke": "async {client_id: string} -> ()"
+    },
+    "scope": "'read'|'answer'|'control'|'land'",
+    "events": {
+     "link-pairing-request": "PendingPairing",
+     "link-status-changed": "LinkStatus",
+     "link-devices-changed": "Device[]"
+    },
+    "errors": "short strings, no paths, never key material; UnknownPairing and StoreError::Full keep their core Display text so link.ts can map them"
+   },
+   "verified_by_architect": "server.rs:95-125,285-450; conn.rs:300-352; keys.rs:13-40,96-135,200-300; clients.rs:15-21,110-250; pairing.rs:60-125; link/mod.rs:1-100; wire/mod.rs:36-50; shell lib.rs and commands.rs:1-110; tauri.conf.json:24; capabilities/default.json; desktop package.json, vite.config.ts, tsconfig.json; test.yml; desktop-release.yml matrix; App.tsx:1-150; windows-sys-0.61.2 Credentials module and features (local registry); Cargo.lock windows-sys entries; registry ui = [native-desktop, native-mobile] (mobile-first convention not in force)",
+   "scout_corrections": [
+    "orchestra/CLAUDE.md:96-99 already says the link needs no connect-src origin (fixed in P3a s4); 'add its origin' greps 0.",
+    "PairingOffer.host_key is the PUBLIC key; the never-in-the-webview rule is about SecretKey."
+   ]
+  }
+ },
+ "approved_by_human": true,
+ "scope_exceptions": [
+  "ORCHESTRATOR-OWNED, normally empty. Paths a builder may write that the approved plan does not list. guard-builder-scope.py DENIES a builder's Write/Edit outside architect.plan[].files, and this is the only way through it. Adding one is a deliberate, recorded act: pair it with deviation_from_approved_plan on the slice that needed it, and say why the gate's file set was wrong. Never add a path to silence the guard on work the human did not approve."
+ ],
+ "builders": {
+  "s1": {
+   "written_by": "builder",
+   "status": "done",
+   "branch": "p3b-desktop-pairing",
+   "commits": [
+    "6680217"
+   ],
+   "changed": [
+    "core/src/link/keys.rs",
+    "core/src/link/conn.rs",
+    "core/src/link/server.rs",
+    "core/src/link/clients.rs",
+    "core/tests/link.rs"
+   ],
+   "notes": "Wire hello string cap is MAX_TEXT_BYTES (32 KiB), so the pairing_name integration test uses a 30000-byte name; the 4 MiB clip is covered by a clients.rs unit test.",
+   "gate_results": {
+    "cargo test -p orchestra-core --locked": "exit 0: 253 passed (unit), 30 passed (link), 4 passed (wire_fixtures), 0 failed (was 245/26/4)",
+    "cargo test -p orchestra-core --locked -- host_key_atomic_ pairing_name_ confirm_race_": "12 tests, 0 failed: unit 8 (host_key_atomic x4 on Windows plus the cfg(unix) 0600 one on Unix, confirm_race_settle x3, pairing_name_clip x1) + link 4 (pairing_name x2, confirm_race x2); the cfg(unix) host_key_atomic_is_mode_0600_from_the_start test is compiled and run on both ubuntu CI jobs",
+    "git diff --stat main -- core/Cargo.toml Cargo.lock": "(empty at the s1 commit)",
+    "cargo check -p orchestra-core --tests --target x86_64-unknown-linux-gnu --locked": "Finished dev profile, exit 0",
+    "cargo test --workspace --locked (after s1)": "exit 0: shell 10, core 253, link 30, wire_fixtures 4, 0 failed",
+    "ci": "run 39143560941 (push 1, HEAD 29fee42): core (ubuntu-24.04): success; core (ubuntu-24.04-arm): success; windows workspace: success; core check (macos-latest): success; desktop npm test: success; mobile npm test: success"
+   }
+  },
+  "s2": {
+   "written_by": "builder",
+   "status": "done",
+   "branch": "p3b-desktop-pairing",
+   "commits": [
+    "29fee42"
+   ],
+   "changed": [
+    "Cargo.lock",
+    "desktop/src-tauri/Cargo.toml",
+    "desktop/src-tauri/src/lib.rs",
+    "desktop/src-tauri/src/link.rs",
+    "desktop/src-tauri/src/link_config.rs",
+    "desktop/src-tauri/src/keyring.rs",
+    "desktop/src-tauri/src/qr.rs"
+   ],
+   "notes": "The Credential Manager round trip ran green locally and on windows-latest; the QR under the WebView2 CSP is still the owner hand test G14.",
+   "gate_results": {
+    "cargo test --workspace --locked": "exit 0: shell 41 passed (was 10), core 253, link 30, wire_fixtures 4, 0 failed",
+    "cargo test -p orchestra --locked -- csp_ link_config_ keyring_ qr_ link_": "31 passed, 0 failed (includes tests::csp_pinned, link_pairing_view_has_no_secret, link_config_validate_refuses_unspecified_and_mapped_addresses, keyring credential_manager round trip and wrong-length tests)",
+    "git diff --stat main -- desktop/src-tauri/tauri.conf.json desktop/src-tauri/capabilities core/Cargo.toml": "(empty)",
+    "Cargo.lock": "committed; the diff adds only if-addrs 0.15.0, qrcode 0.14.1 and edges on the orchestra package (incl. windows-sys 0.61.2, already in the lock); every later cargo run used --locked",
+    "cargo tree -p orchestra-core --locked -e normal,build, grep for qrcode, if-addrs, keyring, windows-sys 0.61": "no output (grep rc=1)",
+    "credential cleanup": "cmdkey /list shows no orchestra credential after the tests",
+    "ci": "run 39143560941 (push 1, HEAD 29fee42): core (ubuntu-24.04): success; core (ubuntu-24.04-arm): success; windows workspace: success; core check (macos-latest): success; desktop npm test: success; mobile npm test: success"
+   },
+   "pushes": "push 1 after s2 -> 29fee42",
+   "deviation_from_approved_plan": "link_close_pairing is async with spawn_blocking (the contract sketch said sync) so no LinkHost call can run on the main thread; commands that take arguments use an args struct as commands.rs does."
+  },
+  "s3": {
+   "written_by": "builder",
+   "status": "done",
+   "branch": "p3b-desktop-pairing",
+   "commits": [
+    "9d04aee"
+   ],
+   "changed": [
+    "desktop/src/types.ts",
+    "desktop/src/ipc.ts",
+    "desktop/src/ipc.test.ts",
+    "desktop/src/link.ts",
+    "desktop/src/link.test.ts",
+    "desktop/src/App.tsx",
+    "desktop/src/App.css",
+    "desktop/src/components/Devices.tsx",
+    "desktop/src/components/LinkSettings.tsx",
+    "desktop/src/components/PairingDialog.tsx",
+    "desktop/src/components/PairingRequest.tsx"
+   ],
+   "notes": "No component tests exist (G11), so the dialogs are checked by reading until the owner hand test G14.",
+   "gate_results": {
+    "npm test": "exit 0: 7 files, 206 passed (was 168), 0 failed",
+    "npm run build": "tsc and vite build exit 0: 38 modules, dist/assets/index-Djv_l5Om.js 271.19 kB",
+    "git diff --stat main -- desktop/package.json desktop/package-lock.json desktop/vite.config.ts desktop/src-tauri/tauri.conf.json": "(empty)",
+    "grep for console log/debug/info, dangerouslySetInnerHTML, style={ on the four components and link.ts": "no output (rc=1)",
+    "human-read G14 hand test": "not run by the builder; owner step"
+   },
+   "deviation_from_approved_plan": "LinkSettings drops a saved address that is no longer on this computer when the user saves (a note says so first), because the Rust validation requires every saved bind to be in the current enumeration; G6 and G7 are unchanged and start still never rewrites the config."
+  },
+  "s4": {
+   "written_by": "builder",
+   "status": "done",
+   "branch": "p3b-desktop-pairing",
+   "commits": [
+    "4075dbb"
+   ],
+   "changed": [
+    "CLAUDE.md",
+    "protocol/README.md"
+   ],
+   "notes": "",
+   "gate_results": {
+    "grep -c Credential Manager CLAUDE.md": "1",
+    "grep -c link/config.json": "CLAUDE.md 1, protocol/README.md 1",
+    "grep -c 10 shell) CLAUDE.md": "0 (line now: 253 core + 30 link + 4 wire fixtures + 41 shell, equal to cargo test --workspace --locked)",
+    "grep -c add its origin CLAUDE.md": "0",
+    "git diff --name-only 9d04aee..HEAD": "CLAUDE.md, protocol/README.md",
+    "ci": "run 39144068601 on final HEAD 4075dbb: core (ubuntu-24.04): success; core (ubuntu-24.04-arm): success; windows workspace: success; core check (macos-latest): success; desktop npm test: success; mobile npm test: success"
+   },
+   "pushes": "push 2 after s4 -> 4075dbb (2 of 4 used)"
+  }
+ },
+ "reviews": {
+  "s1": {
+   "written_by": "reviewer",
+   "verdict": "PASS",
+   "attempt": 1,
+   "summary": "PASS. Re-derived by hand from commit 6680217 (core is unchanged from 6680217 to HEAD 4075dbb). host_key: a random 0600 temp (create_new) is written, sync_all'd, closed, then hard_linked; AlreadyExists re-reads the winner, the temp is removed on every path after publish returns, so a crash leaves no key or a complete one plus at most a stray temp. Name: clip() runs once in await_confirmation before add_pending and on_pairing_request, and ClientStore::add re-clips idempotently, so shown == stored. Race: remove_pending is the single ordering point; walked before/at deadline, at deadline+grace and stop, and every path either welcomes or stores nothing, except a send landing in the microseconds between recv_timeout expiry and rx drop after a >1 s store.add: same outcome class as the existing welcome-send-failure path, user-approved key, revocable; non-blocking. Re-ran: cargo test -p orchestra-core --locked (253/30/4 ok; one run hit a timeout in the untouched oversize_message_closes, passed 3 reruns), filtered run 8 unit + 4 link ok, Linux cargo check ok, Cargo.toml/lock empty diff at s1, CI 39144068601 on 4075dbb green with all 13 new tests incl. 0600 seen in both ubuntu logs.",
+   "findings": [
+    {
+     "file": "orchestra/core/src/link/conn.rs",
+     "line": 344,
+     "severity": "low",
+     "origin": "",
+     "issue": "Residual confirm race (builder-admitted): if confirm_pairing's store.add takes longer than SETTLE_GRACE (1 s) after the conn's deadline and its tx.send lands between settle's recv_timeout returning Timeout and rx being dropped on return, send succeeds into the buffer, confirm_pairing returns Ok and the client stays stored, but the conn returns None and closes without welcome; the UI shows a paired device and no LinkLog::Paired fires. Needs a >1 s disk write plus a microsecond window; same outcome class as the pre-existing path where the welcome send itself fails (conn.rs ~402, client stored, no welcome). Key was user-approved and is revocable. Not blocking; a fix would be a shared 'settled' flag checked under the pending lock, or revoke-on-None in the conn."
+    },
+    {
+     "file": "orchestra/core/src/link/keys.rs",
+     "line": 313,
+     "severity": "low",
+     "origin": "",
+     "issue": "Stray temps from a crash are never swept. A crash after hard_link leaves host_key.tmp-XXXXXXXX as a second link to the live key inode (same 0600 on Unix, folder ACL on Windows); a crash before it leaves an orphan secret. Within G12's 'at most a stray temp', but key material lingers until deleted by hand. Also: if create_new(tmp) fails AlreadyExists on a 32-bit name collision, remove_file(&tmp) deletes the other file (2^-32, cosmetic)."
+    },
+    {
+     "file": "orchestra/core/src/link/keys.rs",
+     "line": 293,
+     "severity": "note",
+     "origin": "",
+     "issue": "fs::hard_link fails on filesystems without hard links (FAT/exFAT, some network shares), where the old create_new path worked: load_or_create now returns KeyError::Io there, with no fallback. The default link dirs (%APPDATA% on NTFS, ext4/APFS) are fine and Windows AlreadyExists mapping is proven by the local publish_never_replaces test. The parent directory is not fsynced after the link, so a power loss can lose a just-published key (never a short one); pre-existing behaviour."
+    },
+    {
+     "file": "orchestra/core/src/link/clients.rs",
+     "line": 243,
+     "severity": "note",
+     "origin": "",
+     "issue": "clip drops Cc (C0, DEL, C1) and the listed bidi formats, which is what the intent asked. Interior U+2028/U+2029 line/paragraph separators, zero-width U+200B-D, U+FEFF and tag characters pass through; harmless for the webview, but U+2028 could break a line in H2's terminal prompt."
+    },
+    {
+     "file": "orchestra/core/tests/link.rs",
+     "line": 364,
+     "severity": "note",
+     "origin": "",
+     "issue": "Untouched by s1: oversize_message_closes failed once with 'the connection stayed open' (expect_closed timeout) during my first full run on a loaded machine (unit tests took 54 s), then passed in 3 reruns and on CI. A pre-existing timing flake, not an s1 regression."
+    }
+   ],
+   "evidence": {
+    "cargo test -p orchestra-core --locked": "run 1: 253 unit ok, link 29/30 (oversize_message_closes timeout, untouched test); rerun --test link x2: 30/30; full rerun: 253/30/4, 0 failed",
+    "cargo test -p orchestra-core --locked -- host_key_atomic_ pairing_name_ confirm_race_": "unit 8 ok (host_key_atomic x4, confirm_race_settle x3, pairing_name_clip x1), link 4 ok (pairing_name x2, confirm_race x2) on Windows",
+    "cargo check -p orchestra-core --tests --target x86_64-unknown-linux-gnu --locked": "Finished dev profile, exit 0",
+    "git diff --stat main 6680217 -- core/Cargo.toml Cargo.lock": "empty (HEAD's Cargo.lock change belongs to s2)",
+    "git diff --stat 6680217 4075dbb -- core/": "empty: core identical at HEAD, so HEAD test runs cover s1",
+    "scope": "6680217 touches exactly keys.rs, conn.rs, server.rs, clients.rs, tests/link.rs; no cross-app import, no new dependency, no secret logged",
+    "ci": "gh run 39144068601 headSha 4075dbb: all 6 jobs success; core (ubuntu-24.04) job 117724216883 and (ubuntu-24.04-arm) 117724216816 logs both show the 9 new unit tests incl. host_key_atomic_is_mode_0600_from_the_start ok (255 passed, 1 ignored) and the 4 new link tests ok (30 passed)"
+   },
+   "$comment": "RE-REVIEWS NEST, and this is the rule every reader follows. The TOP LEVEL of reviews.<slice> IS attempt 1. A re-review writes attempt_2, then attempt_3, and so on, each with the same fields as the top level. Every attempt SURVIVES PERMANENTLY - history is never overwritten, flattened, or migrated up. The LATEST attempt supplies the verdict: that is what close-run.py, brief.py and verify-state.py resolve through, and what fleetview's finalVerdict() has always shown. `ever_rejected` - did ANY attempt REJECT - is DISPLAY ONLY, forever, so a rejection stays visible after it is fixed; it must never gate anything, or the fleet stops being able to loop. NO NODE MAY REWRITE AN EARLIER ATTEMPT: a second reviewer writes its own attempt_N and leaves the ones before it alone, top-level verdict included - relocating that verdict would destroy the history the board keeps and leave a key stamped written_by:reviewer with someone else as its real author. The KEY INDEX numbers an attempt, not the `attempt` field inside it; the field is display. An EMPTY attempt_N is not a re-review, it is a key nobody wrote - write the whole attempt or none of it. The walk STOPS AT THE FIRST GAP, so an attempt_3 with no attempt_2 is ignored and the earlier verdict stands: A GAP IS MALFORMED AND NO NODE MAY LEAVE ONE. Write the next UNUSED N and never skip - a mis-numbered re-review is not reported anywhere, it is simply unread, and a REJECT nobody reads is a REJECT nobody acts on. The cap is attempt_9, matching fleetview's `for (i = 2; i < 10; i++)` exactly so the two readers cannot disagree; attempt_10 and beyond is reported loudly and resolved by nobody."
+  },
+  "s4": {
+   "verdict": "PASS",
+   "attempt": 1,
+   "written_by": "reviewer",
+   "risk": "low",
+   "summary": "PASS. Diff at 4075dbb touches only CLAUDE.md and protocol/README.md (git diff --name-only 9d04aee..HEAD). Re-ran every done_when grep (Credential Manager 1; link/config.json 1 and 1; '10 shell)' 0; 'add its origin' 0) and cargo test --workspace --locked on Windows: 253 core + 30 link + 4 wire fixtures + 41 shell, matching the new line exactly; npm test in desktop/ 206 passed. Checked each factual claim against code rather than the builder's report: TARGET com.telosrg.orchestra/link/host_key and FileKeyProvider off Windows (keyring.rs), config.json fields schema/enabled/port/binds/firewall_notice_seen, DEFAULT_PORT 47800, 1024-65535, under app_data_dir/link, unreadable/newer -> off and not saved over, missing binds skipped (link_config.rs), 2 s shutdown (lib.rs:142), csp_pinned exact string equals tauri.conf.json, hard_link publish with unique 0600 temp (keys.rs), MAX_NAME_BYTES 128 with control/bidi filter applied before show and store, SETTLE_GRACE 1 s confirm race (conn.rs). No protocol behaviour change. Low risk tag stands. One note: the 41 shell count is the Windows count.",
+   "findings": [
+    {
+     "severity": "note",
+     "origin": "",
+     "title": "Shell test count is platform-dependent",
+     "detail": "keyring.rs has a #[cfg(windows)] credential_manager test module, so cargo test --workspace on Linux/macOS prints fewer than 41 shell tests. The CLAUDE.md line states 41 unqualified; true on the Windows dev box this repo is developed on, same convention as the prior '10 shell' line. Not a blocker."
+    }
+   ],
+   "evidence": {
+    "diff_files": "git diff --name-only 9d04aee..4075dbb -> CLAUDE.md, protocol/README.md",
+    "cargo_test": "cargo test --workspace --locked (Windows): orchestra_lib 41, orchestra_core 253, tests/link 30, tests/wire_fixtures 4; all pass",
+    "npm_test": "desktop npm test: 206 passed",
+    "greps": "Credential Manager=1; link/config.json CLAUDE.md=1 README=1; '10 shell)'=0; 'add its origin'=0",
+    "claims_checked": "keyring.rs:12 TARGET; keyring.rs:15-25 provider_for; link_config.rs:15-38,60-80,160-226; lib.rs:93,142,156-164; tauri.conf.json:24; keys.rs:280-301; clients.rs:21,183,240-257; conn.rs:327-372"
+   }
+  },
+  "s2": {
+   "written_by": "reviewer",
+   "verdict": "PASS",
+   "attempt": 1,
+   "summary": "PASS, 0 blockers, 4 notes. Read 29fee42 in full; no later commit touches s2's files. Re-ran cargo test --workspace --locked (shell 41, core 253, link 30, wire 4, 0 failed) and the filtered run (31 passed incl. csp_pinned, the PairingView-no-secret test, the 0.0.0.0/::/::ffff:0.0.0.0 refusal and both Credential Manager tests); conf/capabilities/core Cargo.toml diff empty; lock clean; the core cargo tree has none of the new crates; cmdkey shows no leftover credential. Both CI runs (29fee42, 4075dbb) show windows-workspace running and passing the two credential_manager tests under --locked. By hand: every CredReadW result is CredFree'd once, after use, with the blob wiped; ERROR_NOT_FOUND is the only create path; a wrong length is BadFile and never overwritten; LOCAL_MACHINE; the key is read back. No DTO or command return has a secret; the QR is an attribute-only SVG behind encodeURIComponent. No lock but lifecycle is held across stop(); callbacks only push/emit; exit waits 2 s at most. Notes: an on-disk port of 0 or under 1024 is not checked at load, the online-edit vs reconfigure seam, the CredWriteW first-start race, a stray temp on a failed save.",
+   "findings": [
+    {
+     "file": "orchestra/desktop/src-tauri/src/link_config.rs",
+     "line": 75,
+     "severity": "medium",
+     "origin": "builder",
+     "issue": "load() validates only the schema and the field types, so a config.json with port 0 or 22 (u16, below MIN_PORT) loads as valid, and apply() binds settings.port as it is: {\"schema\":1,\"enabled\":true,\"port\":0,\"binds\":[\"127.0.0.1\"],\"firewall_notice_seen\":false} auto-starts on an ephemeral port that changes every launch, against G7's 'never 0'. Likewise a hand-edited enabled file with a LAN bind and firewall_notice_seen:false auto-starts exposed with no notice. Only validate() writes the file, so this needs a hand edit; the fix is to treat port < 1024 as Unreadable at load, as port 70000 already is."
+    },
+    {
+     "file": "orchestra/desktop/src-tauri/src/link.rs",
+     "line": 514,
+     "severity": "low",
+     "origin": "",
+     "issue": "Online edits (revoke, set_scopes) run on a cloned Arc<LinkHost> outside lifecycle, by G13's design. If link_set_config's apply() stops that host and starts a new one between the core's shared() and its store lock inside LinkHost::revoke, the old store writes clients.json after the new host has loaded it. The new host keeps the revoked client in memory until its next restart. The window is a few instructions wide and would need a double action in the UI; noted for the core's revoke-during-reconfigure follow-up."
+    },
+    {
+     "file": "orchestra/desktop/src-tauri/src/keyring.rs",
+     "line": 136,
+     "severity": "low",
+     "origin": "",
+     "issue": "CredWriteW overwrites an existing credential, so if two processes start for the first time at once, both read None and both write. The read-back narrows this but does not close it, which is what G2 accepted. Recorded so nobody later reads 'read back' as no-clobber."
+    },
+    {
+     "file": "orchestra/desktop/src-tauri/src/link_config.rs",
+     "line": 87,
+     "severity": "low",
+     "origin": "builder",
+     "issue": "save() leaves config.json.tmp behind if write_all, sync_all or rename fails. It is harmless, because the next save truncates it and load never reads it, but the core's atomic writers remove their temp on every path."
+    }
+   ],
+   "evidence": {
+    "cargo test --workspace --locked": "exit 0; shell 41 passed (main had 10 #[test]: commands 7 + window 3), core 253, tests/link 30, wire_fixtures 4, 0 failed",
+    "cargo test -p orchestra --locked -- csp_ link_config_ keyring_ qr_ link_": "31 passed, 0 failed, 10 filtered; includes tests::csp_pinned, link::tests::link_pairing_view_has_no_secret, link_config_validate_refuses_unspecified_and_mapped_addresses, keyring::tests::credential_manager::{round_trip_returns_the_same_key, of_the_wrong_length_is_refused_and_kept}",
+    "git diff --stat main -- tauri.conf.json capabilities core/Cargo.toml": "empty",
+    "git status --porcelain -- Cargo.lock": "empty; lock diff adds only if-addrs 0.15.0 (MIT OR BSD-3-Clause; libc, windows-sys 0.61.2), qrcode 0.14.1 (MIT OR Apache-2.0; no deps) and three edges on the orchestra package",
+    "cargo tree -p orchestra-core --locked -e normal,build | grep qrcode|if-addrs|keyring|windows-sys v0.61": "no output (rc=1)",
+    "cmdkey /list | grep orchestra": "no output after the tests",
+    "csp": "tauri.conf.json:24 equals the string pinned in lib.rs csp_pinned; qrDataUrl in link.ts is 'data:image/svg+xml,' + encodeURIComponent(svg), allowed by img-src 'self' data:",
+    "ci": "run 39143560941 head 29fee42 and run 39144068601 head 4075dbb: all 6 jobs success; windows workspace job logs (117722706379, 117724216840) show cargo test --workspace --locked with both credential_manager tests ok and csp_pinned ok, shell 41 passed. Nothing rerun."
+   }
+  },
+  "s3": {
+   "written_by": "reviewer",
+   "verdict": "PASS",
+   "attempt": 1,
+   "summary": "PASS. Re-ran done_when in C:/Users/natha/wt/op3b at 4075dbb: npm test 206 passed / 7 files, npm run build exit 0, the hygiene grep empty (rc=1), the diff --stat on package.json/lock/vite.config/tauri.conf.json empty; CI 39144068601 desktop job 206 passed on 4075dbb. Re-derived by hand against link.rs, link_config.rs, qrcode 0.14 svg.rs and core server.rs/clients.rs: every command name, {args:...} shape, deny_unknown_fields struct and event payload matches; accept-error strings match core Display; bidi/control chars are stripped in core clip; PairingRequest is keyed by id, Escape and Close only reject, Enter cannot accept, read+answer default; the QR is an img data URL, view lives in dialog state only, close is serialised after open; no secret field in types. The deviation is a sound reading: G7 has Rust refuse any absent bind on save, G6's no-rewrite is about start and still holds, the note shows before Save, and dirty ignores vanished binds. Notes: a stale startup status can overwrite a fresher event; no focus trap in the modals; a save before link_interfaces resolves drops all binds silently.",
+   "findings": [
+    {
+     "severity": "medium",
+     "origin": "",
+     "title": "Initial link status can overwrite a newer link-status-changed event",
+     "detail": "App.tsx subscribes onLinkStatusChanged, then dispatches the linkStatus() snapshot after the whole Promise.all resolves. linkReducer 'status' overwrites unconditionally. If auto_start (lib.rs:100, background thread) finishes between linkStatus() returning and Promise.all resolving, the event (running:true) lands first and the stale snapshot (enabled:true, running:false) replaces it: pill reads 'Link off', Pair a phone is disabled, LinkSettings says 'on but not running' with no Retry and Save not dirty, until some later status event. Timing-dependent and narrow (start is usually done before the webview loads), so a note. Fix: ignore the snapshot if an event already arrived, or fetch link status after subscribing in its own step."
+    },
+    {
+     "severity": "medium",
+     "origin": "",
+     "title": "Modals do not keep keyboard focus inside",
+     "detail": "PairingRequest and PairingDialog focus the dialog div on mount and set aria-modal, but there is no Tab trap and the background is not inert: Shift+Tab from the confirm dialog reaches the header Devices button behind the overlay. Focus is not restored on close. The firewall notice and remove confirm are inline role=alertdialog blocks that do not receive focus, and at 640x480 the firewall notice can render below the fold after Save. No trust bypass: Enter on the dialog div does nothing, Escape only rejects, and the overlay blocks pointer input. Worth fixing before or at the G14 hand test."
+    },
+    {
+     "severity": "low",
+     "origin": "",
+     "title": "Save or Retry before link_interfaces resolves drops every saved bind without a note",
+     "detail": "LinkSettings.present() filters against interfaces, which is [] until linkInterfaces() resolves (or forever if it errored). gone is suppressed when interfaces is empty, so no note shows. Untick 'Turn the link on' and Save in that window -> link_set_config {enabled:false, binds:[]} is accepted by validate (empty binds allowed when disabled) and config.json loses its binds. Retry uses present(status.binds) the same way. Recoverable by re-ticking; no exposure. Fix: disable Save/Retry until interfaces have loaded."
+    },
+    {
+     "severity": "low",
+     "origin": "",
+     "title": "Link load is in the app's one Promise.all",
+     "detail": "linkStatus() and linkPending() join the initial Promise.all in App.tsx, so a link decode failure would also stop sessions, inbox, tasks and projects from loading. The contracts match today (checked field by field), so this is a robustness note only."
+    },
+    {
+     "severity": "low",
+     "origin": "",
+     "title": "pill-text-on/off/error classes are not defined",
+     "detail": "LinkSettings uses className pill-text-${tone} on the status line; App.css defines no such class. Cosmetic only."
+    },
+    {
+     "severity": "info",
+     "origin": "",
+     "title": "Deviation judged a sound reading, not a contradiction of G6",
+     "detail": "G6's 'skipped and reported, config not rewritten' governs start (apply/split_binds), which is unchanged. G7 (approved) has link_set_config refuse any bind not in the current enumeration, so a user save can only carry present binds. The alternative, refusing every save while an address is gone, would stop the user turning the link off while Tailscale is down. dirty compares present(binds) to present(status.binds), so no save happens without a user change, and the note 'a save removes it from the list' is shown before Save."
+    }
+   ],
+   "evidence": {
+    "npm test": "exit 0, 7 files, 206 passed, 0 failed (re-run locally)",
+    "npm run build": "exit 0 (tsc and vite build, 38 modules, index-Djv_l5Om.js 271.19 kB)",
+    "unchanged files diff --stat": "empty",
+    "hygiene grep": "no output (rc=1); App.tsx/ipc.ts/types.ts also clean",
+    "CI 39144068601": "all 6 jobs green on 4075dbb; desktop npm test 206 passed",
+    "contract check": "11 commands, 3 events, arg structs and DTOs compared to desktop/src-tauri/src/link.rs and link_config.rs",
+    "human-read G14": "not run; owner step"
+   }
+  }
+ },
+ "integrator": {
+  "written_by": "the node that wrote this key - here, always the string integrator",
+  "merged": [],
+  "conflicts": [],
+  "verification": "what command proved it works, and its output"
+ },
+ "ops": {
+  "written_by": "the node that wrote this key - here, always the string ops",
+  "gated": true,
+  "actions": []
+ },
+ "log": [
+  "orchestrator: opened run 2026-10-18 from the user's \"start P3b\"; orchestra main @ edaca7e clean, pushed (P3a merged). Spawning scout.",
+  "orchestrator: scout returned (54 facts, 12 unknowns, 16 risks); other keys checked intact after its concurrent-write warning. Seam is async-safe (conn thread waits <=300 s on a channel). Traps: stop() from the callback self-joins/deadlocks; stop() can join up to 30 s so must run off the main thread; host_key written in place. Spawning architect.",
+  "orchestrator: architect returned single-loop s1-s4 (core follow-ups, shell Rust, frontend, docs) with G1-G14; orchestrator adds G15 (branch push for CI, as P3a G14). Awaiting human gate.",
+  "orchestrator: human gate APPROVED 2026-10-18 (\"approve\"): G1-G14 as recommended (single-loop s1-s4; Credential Manager via windows-sys, no new keyring crate; no key-file migration; Windows-first, file provider elsewhere, no new CI job; QR SVG in Rust via qrcode 0.14 svg-only shown as data: img, secret never as IPC text; link/config.json schema 1 with persisted enabled and auto-start; if-addrs 0.15 IPv4 choices, fixed port default 47800, never 0.0.0.0/::; firewall notice enforced in Rust; confirm dialog one at a time; Devices view editable while off; pure TS + Rust shell tests, csp_pinned in lib.rs; fold in host_key atomic, name cap, confirm/timeout race; start/stop off main thread, exit waits <=2 s; owner hand test G14). G15: push only branch p3b-desktop-pairing to origin, max 4 pushes, no force-push/PR/tag/main. Worktree C:/Users/natha/wt/op3b.",
+  "orchestrator: builder returned s1-s4 on p3b-desktop-pairing (HEAD 4075dbb), 2 of 4 pushes; CI 39143560941 (29fee42) and 39144068601 (4075dbb) all 6 jobs green. Deviations: link_close_pairing async; LinkSettings drops vanished saved addresses on user save (with notice); 30000-byte name in integration test due to 32 KiB wire cap. Residual confirm race after 1 s grace left. Spawning fresh reviewers s1/s2/s3 high, s4 low.",
+  "orchestrator: all 4 slices PASS attempt 1 (s1,s2,s3 high; s4 low). Merged p3b-desktop-pairing --no-ff into orchestra main as 806c4c3 (not pushed); merged main: shell 41, core 253, link 30, wire_fixtures 4, desktop vitest 206, 0 failed. CLOSED 2026-10-18. Owner hand test G14 not yet run. Follow-ups: config.json port 0/below MIN_PORT accepted on load (medium); initial link status can overwrite a newer event (medium); modals lack focus trap (medium); Save before interfaces load drops binds silently; link load in the shared Promise.all; undefined pill-text classes; online edits on a cloned host across reconfigure; concurrent first-start CredWriteW; config.json.tmp left on failure; key-material temp files left after a crash; hard_link fails on FAT/exFAT; name clip passes U+2028/zero-width; residual confirm race after 1 s grace; oversize_message_closes timing flake under load. Remote branch p3b-desktop-pairing on origin pending owner decision."
+ ]
+}
