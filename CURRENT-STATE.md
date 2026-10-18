@@ -1,10 +1,10 @@
 # CURRENT-STATE — graph_agents
 
-> **Last verified: 2026-10-17**
+> **Last verified: 2026-10-18**
 >
-> **What the 2026-10-17 pass covers** (after runs `2026-10-17-orchestra-p2-protocol-v1`, `2026-10-17-orchestra-p2-followups`
+> **What the 2026-10-18 pass covers** (after runs `2026-10-17-orchestra-p2-protocol-v1`, `2026-10-17-orchestra-p2-followups`
 > `2026-10-17-orchestra-h1-linux`, `2026-10-17-orchestra-p3-host-link` and `2026-10-18-orchestra-p3b-desktop-pairing`, all **single-loop** against `orchestra`, sequential slices on one branch in a linked worktree, merged by the orchestrator;
-> no fleet definition file changed). Re-checked by `audit-fleet.py`: the status headline (29 runs, none in flight), the five
+> no fleet definition file changed; `HISTORY.md` gained only the appended P3a and P3b rows, read on 2026-10-18). Re-checked by `audit-fleet.py`: the status headline (29 runs, none in flight), the five
 > new Runs-table rows, and the roster's execution counts read from run state (scout 29 and architect 29 runs, builder 98
 > slices, reviewer 97 reviews, integrator 5 runs). **Not re-checked:** any narrative claim outside those rows. The two
 > `bash_write_targets.py` / `measure_bash_corpus.py` "registered" drifts are the long-standing false positives,
