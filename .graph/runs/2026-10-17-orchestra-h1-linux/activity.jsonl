@@ -1,0 +1,224 @@
+{"t":1792273301.5,"ev":"tool","agent":"orchestrator","tool":"Bash"}
+{"t":1792273319.8,"ev":"tool","agent":"orchestrator","tool":"Agent"}
+{"t":1792273319.8,"ev":"start","agent":"scout","id":"ae879fb056ef9f010"}
+{"t":1792273322.9,"ev":"tool","agent":"scout","id":"ae879fb056ef9f010","tool":"Bash","tokens":39558}
+{"t":1792273324.7,"ev":"tool","agent":"scout","id":"ae879fb056ef9f010","tool":"Bash","tokens":39558}
+{"t":1792273329.3,"ev":"tool","agent":"scout","id":"ae879fb056ef9f010","tool":"Bash","tokens":93276}
+{"t":1792273329.8,"ev":"tool","agent":"scout","id":"ae879fb056ef9f010","tool":"Bash","tokens":93276}
+{"t":1792273331.4,"ev":"stop","agent":"orchestrator","id":"a3820364480583991"}
+{"t":1792273331.7,"ev":"tool","agent":"scout","id":"ae879fb056ef9f010","tool":"Read","tokens":156666}
+{"t":1792273331.9,"ev":"tool","agent":"scout","id":"ae879fb056ef9f010","tool":"Read","tokens":188361}
+{"t":1792273333.4,"ev":"tool","agent":"scout","id":"ae879fb056ef9f010","tool":"Bash","tokens":220056}
+{"t":1792273340.8,"ev":"tool","agent":"scout","id":"ae879fb056ef9f010","tool":"Bash","tokens":470056}
+{"t":1792273340.8,"ev":"tool","agent":"scout","id":"ae879fb056ef9f010","tool":"Bash","tokens":470056}
+{"t":1792273340.8,"ev":"tool","agent":"scout","id":"ae879fb056ef9f010","tool":"Bash","tokens":470056}
+{"t":1792273341.9,"ev":"tool","agent":"scout","id":"ae879fb056ef9f010","tool":"Bash","tokens":470056}
+{"t":1792273350.7,"ev":"tool","agent":"scout","id":"ae879fb056ef9f010","tool":"Bash","tokens":596976}
+{"t":1792273351.5,"ev":"stop","agent":"orchestrator","id":"a3a5f1d6f835b962b"}
+{"t":1792273365.9,"ev":"tool","agent":"scout","id":"ae879fb056ef9f010","tool":"Bash","tokens":730130}
+{"t":1792273377.9,"ev":"tool","agent":"scout","id":"ae879fb056ef9f010","tool":"Bash","tokens":870454}
+{"t":1792273381.1,"ev":"tool","agent":"scout","id":"ae879fb056ef9f010","tool":"Bash","tokens":943164}
+{"t":1792273383.1,"ev":"stop","agent":"orchestrator","id":"a35a6dbdf3a56b236"}
+{"t":1792273419.0,"ev":"tool","agent":"scout","id":"ae879fb056ef9f010","tool":"Bash","tokens":1091358}
+{"t":1792273444.9,"ev":"stop","agent":"orchestrator","id":"a5e9a3f3a25a85a1d"}
+{"t":1792273456.0,"ev":"tool","agent":"scout","id":"ae879fb056ef9f010","tool":"Bash","tokens":1434192}
+{"t":1792273476.2,"ev":"stop","agent":"orchestrator","id":"a6b39549c744f019c"}
+{"t":1792273508.3,"ev":"stop","agent":"orchestrator","id":"ae7fb20275f643cc4"}
+{"t":1792273539.8,"ev":"stop","agent":"orchestrator","id":"a986ac3cf5550ccce"}
+{"t":1792273558.3,"ev":"tool","agent":"scout","id":"ae879fb056ef9f010","tool":"Bash","tokens":2479316}
+{"t":1792273566.0,"ev":"tool","agent":"scout","id":"ae879fb056ef9f010","tool":"Bash","tokens":2722146}
+{"t":1792273571.6,"ev":"stop","agent":"orchestrator","id":"a9d6d026617ed852f"}
+{"t":1792273575.6,"ev":"tool","agent":"scout","id":"ae879fb056ef9f010","tool":"Bash","tokens":2845790}
+{"t":1792273581.6,"ev":"tool","agent":"scout","id":"ae879fb056ef9f010","tool":"Bash","tokens":3098634}
+{"t":1792273585.1,"ev":"tool","agent":"scout","id":"ae879fb056ef9f010","tool":"SubagentHandback","tokens":3353598}
+{"t":1792273585.2,"ev":"stop","agent":"scout","id":"ae879fb056ef9f010","tokens":3353598}
+{"t":1792273589.5,"ev":"tool","agent":"orchestrator","tool":"Bash"}
+{"t":1792273607.5,"ev":"tool","agent":"orchestrator","tool":"Bash"}
+{"t":1792273607.7,"ev":"tool","agent":"orchestrator","tool":"Agent"}
+{"t":1792273607.7,"ev":"start","agent":"architect","id":"a9ba323376079261e"}
+{"t":1792273617.0,"ev":"stop","agent":"orchestrator","id":"a4f6f826e067ee9ab"}
+{"t":1792273622.2,"ev":"tool","agent":"architect","id":"a9ba323376079261e","tool":"Bash","tokens":26138}
+{"t":1792273626.3,"ev":"tool","agent":"architect","id":"a9ba323376079261e","tool":"Bash","tokens":65988}
+{"t":1792273630.3,"ev":"tool","agent":"architect","id":"a9ba323376079261e","tool":"Bash","tokens":87966}
+{"t":1792273636.5,"ev":"tool","agent":"architect","id":"a9ba323376079261e","tool":"Read","tokens":136442}
+{"t":1792273638.9,"ev":"tool","agent":"architect","id":"a9ba323376079261e","tool":"Bash","tokens":160680}
+{"t":1792273644.9,"ev":"stop","agent":"orchestrator","id":"a7cbb40a3cd9a7cc0"}
+{"t":1792273676.8,"ev":"stop","agent":"orchestrator","id":"a83a542c863abcfb6"}
+{"t":1792273693.2,"ev":"tool","agent":"architect","id":"a9ba323376079261e","tool":"Bash","tokens":231396}
+{"t":1792273708.1,"ev":"stop","agent":"orchestrator","id":"aa3a5772d7e8f6423"}
+{"t":1792273724.7,"ev":"tool","agent":"architect","id":"a9ba323376079261e","tool":"Bash","tokens":320266}
+{"t":1792273740.5,"ev":"stop","agent":"orchestrator","id":"a0363849e222cfe61"}
+{"t":1792273819.4,"ev":"tool","agent":"architect","id":"a9ba323376079261e","tool":"Bash","tokens":418230}
+{"t":1792273825.4,"ev":"tool","agent":"architect","id":"a9ba323376079261e","tool":"Bash","tokens":535416}
+{"t":1792273831.8,"ev":"stop","agent":"orchestrator","id":"ab4a8a536db1f0387"}
+{"t":1792273864.9,"ev":"stop","agent":"orchestrator","id":"a59675d14a9b673e3"}
+{"t":1792273926.2,"ev":"stop","agent":"orchestrator","id":"a4d86acfbd5078c72"}
+{"t":1792273928.5,"ev":"tool","agent":"architect","id":"a9ba323376079261e","tool":"Bash","tokens":797370}
+{"t":1792273940.6,"ev":"tool","agent":"architect","id":"a9ba323376079261e","tool":"Bash","tokens":941512}
+{"t":1792273946.7,"ev":"tool","agent":"architect","id":"a9ba323376079261e","tool":"Bash","tokens":1087244}
+{"t":1792273957.4,"ev":"stop","agent":"orchestrator","id":"a61055bbf793fa709"}
+{"t":1792273988.1,"ev":"tool","agent":"architect","id":"a9ba323376079261e","tool":"Bash","tokens":1307543}
+{"t":1792274004.9,"ev":"tool","agent":"architect","id":"a9ba323376079261e","tool":"Bash","tokens":1466513}
+{"t":1792274018.7,"ev":"stop","agent":"orchestrator","id":"a026a00e2077317f7"}
+{"t":1792274023.1,"ev":"tool","agent":"architect","id":"a9ba323376079261e","tool":"Bash","tokens":1711001}
+{"t":1792274023.4,"ev":"tool","agent":"architect","id":"a9ba323376079261e","tool":"Bash","tokens":1711001}
+{"t":1792274051.2,"ev":"stop","agent":"orchestrator","id":"a16591cd7f8957033"}
+{"t":1792274075.4,"ev":"tool","agent":"architect","id":"a9ba323376079261e","tool":"Bash","tokens":2055381}
+{"t":1792274086.2,"ev":"tool","agent":"architect","id":"a9ba323376079261e","tool":"Bash","tokens":2235035}
+{"t":1792274086.6,"ev":"tool","agent":"architect","id":"a9ba323376079261e","tool":"Bash","tokens":2235035}
+{"t":1792274087.1,"ev":"stop","agent":"orchestrator","id":"ac07669687c0bae6c"}
+{"t":1792274096.4,"ev":"tool","agent":"architect","id":"a9ba323376079261e","tool":"Bash","tokens":2417563}
+{"t":1792274117.1,"ev":"tool","agent":"architect","id":"a9ba323376079261e","tool":"Bash","tokens":2602011}
+{"t":1792274118.4,"ev":"stop","agent":"orchestrator","id":"a34609a3ca8825692"}
+{"t":1792274127.4,"ev":"tool","agent":"architect","id":"a9ba323376079261e","tool":"Bash","tokens":2696431}
+{"t":1792274133.6,"ev":"tool","agent":"architect","id":"a9ba323376079261e","tool":"Bash","tokens":2887273}
+{"t":1792274151.0,"ev":"stop","agent":"orchestrator","id":"aace5e778f007595a"}
+{"t":1792274163.1,"ev":"tool","agent":"architect","id":"a9ba323376079261e","tool":"SubagentHandback","tokens":2983117}
+{"t":1792274163.2,"ev":"stop","agent":"architect","id":"a9ba323376079261e","tokens":2983117}
+{"t":1792274170.1,"ev":"tool","agent":"orchestrator","tool":"Bash"}
+{"t":1792274192.7,"ev":"stop","agent":"orchestrator","id":"a8205da1a64bfbd21"}
+{"t":1792275945.4,"ev":"tool","agent":"orchestrator","tool":"Bash"}
+{"t":1792275959.6,"ev":"tool","agent":"orchestrator","tool":"Agent"}
+{"t":1792275959.6,"ev":"start","agent":"builder","id":"a76fdf5ca4a54fdcb"}
+{"t":1792275962.6,"ev":"tool","agent":"builder","id":"a76fdf5ca4a54fdcb","tool":"Bash","tokens":26354}
+{"t":1792275963.0,"ev":"tool","agent":"builder","id":"a76fdf5ca4a54fdcb","tool":"Bash","tokens":26354}
+{"t":1792275970.5,"ev":"stop","agent":"orchestrator","id":"a03ea15e8640afb4c"}
+{"t":1792275970.5,"ev":"tool","agent":"builder","id":"a76fdf5ca4a54fdcb","tool":"Bash","tokens":56468}
+{"t":1792275973.0,"ev":"tool","agent":"builder","id":"a76fdf5ca4a54fdcb","tool":"Bash","tokens":118120,"say":"Baseline test run (in background) while I read process.rs."}
+{"t":1792275991.0,"ev":"stop","agent":"orchestrator","id":"a01abfdb200287951"}
+{"t":1792275996.2,"ev":"tool","agent":"builder","id":"a76fdf5ca4a54fdcb","tool":"Bash","tokens":187602,"say":"Baseline test run (in background) while I read process.rs."}
+{"t":1792276003.1,"ev":"tool","agent":"builder","id":"a76fdf5ca4a54fdcb","tool":"Bash","tokens":310556,"say":"Baseline test run (in background) while I read process.rs."}
+{"t":1792276022.8,"ev":"stop","agent":"orchestrator","id":"a5d627dd64485a110"}
+{"t":1792276162.5,"ev":"tool","agent":"builder","id":"a76fdf5ca4a54fdcb","tool":"Bash","tokens":352056,"say":"Baseline test run (in background) while I read process.rs."}
+{"t":1792276174.0,"ev":"stop","agent":"orchestrator","id":"a43d936b5c0428f4a"}
+{"t":1792276180.9,"ev":"tool","agent":"builder","id":"a76fdf5ca4a54fdcb","tool":"Bash","tokens":436354,"say":"Baseline test run (in background) while I read process.rs."}
+{"t":1792276191.7,"ev":"tool","agent":"builder","id":"a76fdf5ca4a54fdcb","tool":"Bash","tokens":609148,"say":"Baseline test run (in background) while I read process.rs."}
+{"t":1792276197.7,"ev":"tool","agent":"builder","id":"a76fdf5ca4a54fdcb","tool":"Bash","tokens":697902,"say":"Baseline test run (in background) while I read process.rs."}
+{"t":1792276205.2,"ev":"stop","agent":"orchestrator","id":"ae8de85b15e0ecb43"}
+{"t":1792276215.2,"ev":"tool","agent":"builder","id":"a76fdf5ca4a54fdcb","tool":"Bash","tokens":788692,"say":"Baseline test run (in background) while I read process.rs."}
+{"t":1792276234.8,"ev":"tool","agent":"builder","id":"a76fdf5ca4a54fdcb","tool":"Bash","tokens":886032,"say":"Baseline test run (in background) while I read process.rs."}
+{"t":1792276236.4,"ev":"stop","agent":"orchestrator","id":"ac7a030a70f9421b3"}
+{"t":1792276243.0,"ev":"tool","agent":"builder","id":"a76fdf5ca4a54fdcb","tool":"Bash","tokens":992656,"say":"Baseline test run (in background) while I read process.rs."}
+{"t":1792276254.4,"ev":"tool","agent":"builder","id":"a76fdf5ca4a54fdcb","tool":"Bash","tokens":1103326,"say":"Baseline test run (in background) while I read process.rs."}
+{"t":1792276266.2,"ev":"tool","agent":"builder","id":"a76fdf5ca4a54fdcb","tool":"Bash","tokens":1215284,"say":"Baseline test run (in background) while I read process.rs."}
+{"t":1792276267.6,"ev":"stop","agent":"orchestrator","id":"a5b27fd667955c057"}
+{"t":1792276270.5,"ev":"tool","agent":"builder","id":"a76fdf5ca4a54fdcb","tool":"Bash","tokens":1328152,"say":"Baseline test run (in background) while I read process.rs."}
+{"t":1792276274.0,"ev":"tool","agent":"builder","id":"a76fdf5ca4a54fdcb","tool":"Bash","tokens":1442218,"say":"Baseline test run (in background) while I read process.rs."}
+{"t":1792276277.5,"ev":"tool","agent":"builder","id":"a76fdf5ca4a54fdcb","tool":"Bash","tokens":1560416,"say":"Baseline test run (in background) while I read process.rs."}
+{"t":1792276293.3,"ev":"tool","agent":"builder","id":"a76fdf5ca4a54fdcb","tool":"Bash","tokens":1683800,"say":"Baseline test run (in background) while I read process.rs."}
+{"t":1792276296.7,"ev":"tool","agent":"builder","id":"a76fdf5ca4a54fdcb","tool":"Bash","tokens":1814282,"say":"Baseline test run (in background) while I read process.rs."}
+{"t":1792276298.6,"ev":"stop","agent":"orchestrator","id":"af06d14ce54ba98ea"}
+{"t":1792276319.8,"ev":"tool","agent":"builder","id":"a76fdf5ca4a54fdcb","tool":"Bash","tokens":1946906,"say":"Baseline test run (in background) while I read process.rs."}
+{"t":1792276329.1,"ev":"tool","agent":"builder","id":"a76fdf5ca4a54fdcb","tool":"Bash","tokens":2080704,"say":"Now s3."}
+{"t":1792276335.7,"ev":"tool","agent":"builder","id":"a76fdf5ca4a54fdcb","tool":"Bash","tokens":2217514,"say":"Now s3."}
+{"t":1792276338.8,"ev":"tool","agent":"builder","id":"a76fdf5ca4a54fdcb","tool":"Bash","tokens":2356018,"say":"Now s3."}
+{"t":1792276343.8,"ev":"tool","agent":"builder","id":"a76fdf5ca4a54fdcb","tool":"Bash","tokens":2495062,"say":"Now s3."}
+{"t":1792276351.1,"ev":"tool","agent":"builder","id":"a76fdf5ca4a54fdcb","tool":"Bash","tokens":2635130,"say":"Now s3."}
+{"t":1792276358.5,"ev":"tool","agent":"builder","id":"a76fdf5ca4a54fdcb","tool":"Bash","tokens":2776606,"say":"Now s3."}
+{"t":1792276365.4,"ev":"tool","agent":"builder","id":"a76fdf5ca4a54fdcb","tool":"Bash","tokens":2919618,"say":"Now s3."}
+{"t":1792276367.0,"ev":"stop","agent":"orchestrator","id":"a09222fac70500f9d"}
+{"t":1792276381.5,"ev":"tool","agent":"builder","id":"a76fdf5ca4a54fdcb","tool":"Bash","tokens":3064220,"say":"Now s3."}
+{"t":1792276398.2,"ev":"stop","agent":"orchestrator","id":"a9d4851b3e5f1fa6e"}
+{"t":1792276508.6,"ev":"tool","agent":"builder","id":"a76fdf5ca4a54fdcb","tool":"Bash","tokens":3213094,"say":"Now s3."}
+{"t":1792276511.8,"ev":"tool","agent":"builder","id":"a76fdf5ca4a54fdcb","tool":"Bash","tokens":3363458,"say":"Now s3."}
+{"t":1792276520.4,"ev":"stop","agent":"orchestrator","id":"a908e81ec9ee526af"}
+{"t":1792276535.5,"ev":"tool","agent":"builder","id":"a76fdf5ca4a54fdcb","tool":"Bash","tokens":3514540,"say":"Now s3."}
+{"t":1792276538.8,"ev":"tool","agent":"builder","id":"a76fdf5ca4a54fdcb","tool":"Bash","tokens":3666260,"say":"Now s3."}
+{"t":1792276545.4,"ev":"tool","agent":"builder","id":"a76fdf5ca4a54fdcb","tool":"Bash","tokens":3818722,"say":"Now s3."}
+{"t":1792276549.1,"ev":"tool","agent":"builder","id":"a76fdf5ca4a54fdcb","tool":"Bash","tokens":3973622,"say":"Now s3."}
+{"t":1792276551.5,"ev":"stop","agent":"orchestrator","id":"a909c340f549f9fd3"}
+{"t":1792276583.2,"ev":"stop","agent":"orchestrator","id":"a6c14b7e54ec2249f"}
+{"t":1792276594.4,"ev":"tool","agent":"builder","id":"a76fdf5ca4a54fdcb","tool":"Bash","tokens":4129244,"say":"Now s3."}
+{"t":1792276608.6,"ev":"tool","agent":"builder","id":"a76fdf5ca4a54fdcb","tool":"Bash","tokens":4286888,"say":"Now write state.json safely."}
+{"t":1792276614.7,"ev":"stop","agent":"orchestrator","id":"ab887ec212d89a73c"}
+{"t":1792276616.7,"ev":"tool","agent":"builder","id":"a76fdf5ca4a54fdcb","tool":"SubagentHandback","tokens":4368376,"say":"Now write state.json safely."}
+{"t":1792276616.9,"ev":"stop","agent":"builder","id":"a76fdf5ca4a54fdcb","tokens":4368376,"say":"Now write state.json safely."}
+{"t":1792289488.3,"ev":"tool","agent":"orchestrator","tool":"Bash"}
+{"t":1792289526.5,"ev":"tool","agent":"orchestrator","tool":"Agent"}
+{"t":1792289526.5,"ev":"tool","agent":"orchestrator","tool":"Agent"}
+{"t":1792289526.5,"ev":"start","agent":"reviewer","id":"a1fe7cb8a3376d5f1"}
+{"t":1792289526.5,"ev":"tool","agent":"orchestrator","tool":"Agent"}
+{"t":1792289526.6,"ev":"start","agent":"reviewer","id":"a89cfcf5894bde97e"}
+{"t":1792289526.6,"ev":"start","agent":"reviewer","id":"a9a53904581666980"}
+{"t":1792289531.3,"ev":"tool","agent":"reviewer","id":"a1fe7cb8a3376d5f1","tool":"Bash","tokens":27202}
+{"t":1792289533.7,"ev":"tool","agent":"reviewer","id":"a9a53904581666980","tool":"Bash","tokens":13579}
+{"t":1792289536.1,"ev":"tool","agent":"reviewer","id":"a1fe7cb8a3376d5f1","tool":"Bash","tokens":62806}
+{"t":1792289536.8,"ev":"tool","agent":"reviewer","id":"a89cfcf5894bde97e","tool":"Bash","tokens":13541}
+{"t":1792289540.9,"ev":"tool","agent":"reviewer","id":"a9a53904581666980","tool":"Bash","tokens":46829}
+{"t":1792289541.7,"ev":"tool","agent":"reviewer","id":"a9a53904581666980","tool":"Bash","tokens":46829}
+{"t":1792289546.3,"ev":"tool","agent":"reviewer","id":"a1fe7cb8a3376d5f1","tool":"Bash","tokens":102908}
+{"t":1792289551.6,"ev":"tool","agent":"reviewer","id":"a1fe7cb8a3376d5f1","tool":"Bash","tokens":124237}
+{"t":1792289555.7,"ev":"tool","agent":"reviewer","id":"a1fe7cb8a3376d5f1","tool":"Read","tokens":182645}
+{"t":1792289561.6,"ev":"stop","agent":"orchestrator","id":"a044d08025b771282"}
+{"t":1792289561.8,"ev":"tool","agent":"reviewer","id":"a9a53904581666980","tool":"Bash","tokens":87361}
+{"t":1792289562.1,"ev":"stop","agent":"orchestrator","id":"a07b2a40b02b58194"}
+{"t":1792289562.4,"ev":"stop","agent":"orchestrator","id":"a2ed75a8212665021"}
+{"t":1792289568.4,"ev":"tool","agent":"reviewer","id":"a9a53904581666980","tool":"Bash","tokens":131249}
+{"t":1792289573.5,"ev":"tool","agent":"reviewer","id":"a89cfcf5894bde97e","tool":"Bash","tokens":45833}
+{"t":1792289574.9,"ev":"tool","agent":"reviewer","id":"a9a53904581666980","tool":"Bash","tokens":175891}
+{"t":1792289579.7,"ev":"tool","agent":"reviewer","id":"a89cfcf5894bde97e","tool":"Bash","tokens":84045}
+{"t":1792289584.0,"ev":"tool","agent":"reviewer","id":"a89cfcf5894bde97e","tool":"Bash","tokens":124463}
+{"t":1792289585.6,"ev":"tool","agent":"reviewer","id":"a9a53904581666980","tool":"Bash","tokens":222517}
+{"t":1792289591.7,"ev":"tool","agent":"reviewer","id":"a89cfcf5894bde97e","tool":"Bash","tokens":171939}
+{"t":1792289593.0,"ev":"stop","agent":"orchestrator","id":"a55bf03d9b4eb4dd5"}
+{"t":1792289596.5,"ev":"stop","agent":"orchestrator","id":"a1cd6a5bdfeddffd0"}
+{"t":1792289607.3,"ev":"tool","agent":"reviewer","id":"a9a53904581666980","tool":"Bash","tokens":246967}
+{"t":1792289614.1,"ev":"tool","agent":"reviewer","id":"a9a53904581666980","tool":"Bash","tokens":271823}
+{"t":1792289625.0,"ev":"stop","agent":"orchestrator","id":"a387fff16f42a267a"}
+{"t":1792289629.5,"ev":"tool","agent":"reviewer","id":"a9a53904581666980","tool":"Bash","tokens":342815}
+{"t":1792289631.0,"ev":"stop","agent":"orchestrator","id":"a71b263945e606a9a"}
+{"t":1792289638.5,"ev":"tool","agent":"reviewer","id":"a9a53904581666980","tool":"Bash","tokens":423079}
+{"t":1792289650.4,"ev":"tool","agent":"reviewer","id":"a9a53904581666980","tool":"Bash","tokens":464716}
+{"t":1792289656.7,"ev":"stop","agent":"orchestrator","id":"a8639b63deb555fb3"}
+{"t":1792289659.8,"ev":"stop","agent":"orchestrator","id":"accc55c222dc6ad67"}
+{"t":1792289668.7,"ev":"tool","agent":"reviewer","id":"a9a53904581666980","tool":"Bash","tokens":550480}
+{"t":1792289681.2,"ev":"tool","agent":"reviewer","id":"a9a53904581666980","tool":"Bash","tokens":593988}
+{"t":1792289696.0,"ev":"stop","agent":"orchestrator","id":"aef6ab962ee079dbb"}
+{"t":1792289709.2,"ev":"tool","agent":"reviewer","id":"a9a53904581666980","tool":"Bash","tokens":681714}
+{"t":1792289717.5,"ev":"tool","agent":"reviewer","id":"a1fe7cb8a3376d5f1","tool":"Bash","tokens":255601}
+{"t":1792289729.7,"ev":"stop","agent":"orchestrator","id":"abf7c3b97845e7fd9"}
+{"t":1792289733.0,"ev":"tool","agent":"reviewer","id":"a1fe7cb8a3376d5f1","tool":"Bash","tokens":343475}
+{"t":1792289734.0,"ev":"tool","agent":"reviewer","id":"a89cfcf5894bde97e","tool":"Bash","tokens":224519}
+{"t":1792289746.3,"ev":"tool","agent":"reviewer","id":"a89cfcf5894bde97e","tool":"Bash","tokens":306083,"say":"I ran a detaching checkout in the worktree by mistake; restoring the branch immediately."}
+{"t":1792289746.5,"ev":"tool","agent":"reviewer","id":"a1fe7cb8a3376d5f1","tool":"Bash","tokens":434373}
+{"t":1792289751.5,"ev":"stop","agent":"orchestrator","id":"a12561045fac13a90"}
+{"t":1792289753.2,"ev":"stop","agent":"orchestrator","id":"a73ba3ec3a673fb77"}
+{"t":1792289756.1,"ev":"tool","agent":"reviewer","id":"a1fe7cb8a3376d5f1","tool":"Bash","tokens":480181}
+{"t":1792289756.2,"ev":"tool","agent":"reviewer","id":"a89cfcf5894bde97e","tool":"Bash","tokens":361159,"say":"I ran a detaching checkout in the worktree by mistake; restoring the branch immediately."}
+{"t":1792289756.8,"ev":"tool","agent":"reviewer","id":"a9a53904581666980","tool":"Bash","tokens":868469}
+{"t":1792289760.4,"ev":"tool","agent":"reviewer","id":"a1fe7cb8a3376d5f1","tool":"Bash","tokens":526179}
+{"t":1792289761.6,"ev":"stop","agent":"orchestrator","id":"ade08e5fc0da8240a"}
+{"t":1792289765.0,"ev":"tool","agent":"reviewer","id":"a9a53904581666980","tool":"SubagentHandback","tokens":918750}
+{"t":1792289765.5,"ev":"stop","agent":"reviewer","id":"a9a53904581666980","tokens":918750}
+{"t":1792289768.2,"ev":"tool","agent":"reviewer","id":"a1fe7cb8a3376d5f1","tool":"Bash","tokens":618577}
+{"t":1792289768.8,"ev":"tool","agent":"reviewer","id":"a89cfcf5894bde97e","tool":"Bash","tokens":417745,"say":"I ran a detaching checkout in the worktree by mistake; restoring the branch immediately."}
+{"t":1792289769.5,"ev":"tool","agent":"orchestrator","tool":"Bash"}
+{"t":1792289783.7,"ev":"stop","agent":"orchestrator","id":"ab9607f5767fea4a1"}
+{"t":1792289786.0,"ev":"stop","agent":"orchestrator","id":"a1f4a751eb076a8b5"}
+{"t":1792289788.7,"ev":"tool","agent":"reviewer","id":"a1fe7cb8a3376d5f1","tool":"Bash","tokens":712139}
+{"t":1792289789.0,"ev":"tool","agent":"reviewer","id":"a89cfcf5894bde97e","tool":"Bash","tokens":477331,"say":"I ran a detaching checkout in the worktree by mistake; restoring the branch immediately."}
+{"t":1792289814.0,"ev":"tool","agent":"reviewer","id":"a1fe7cb8a3376d5f1","tool":"Bash","tokens":761339}
+{"t":1792289815.6,"ev":"stop","agent":"orchestrator","id":"a228b0d8e6d745294"}
+{"t":1792289819.9,"ev":"stop","agent":"orchestrator","id":"a78b52515e391e9ca"}
+{"t":1792289820.2,"ev":"tool","agent":"reviewer","id":"a1fe7cb8a3376d5f1","tool":"Bash","tokens":864359}
+{"t":1792289823.0,"ev":"tool","agent":"reviewer","id":"a89cfcf5894bde97e","tool":"Bash","tokens":569374,"say":"All checks are green. Writing the three review keys."}
+{"t":1792289831.4,"ev":"tool","agent":"reviewer","id":"a1fe7cb8a3376d5f1","tool":"Bash","tokens":971179}
+{"t":1792289834.9,"ev":"tool","agent":"reviewer","id":"a89cfcf5894bde97e","tool":"SubagentHandback","tokens":637076,"say":"All checks are green. Writing the three review keys."}
+{"t":1792289835.4,"ev":"stop","agent":"reviewer","id":"a89cfcf5894bde97e","tokens":637076,"say":"All checks are green. Writing the three review keys."}
+{"t":1792289842.1,"ev":"tool","agent":"orchestrator","tool":"Bash"}
+{"t":1792289850.6,"ev":"stop","agent":"orchestrator","id":"a443104ac3d69498b"}
+{"t":1792289867.6,"ev":"tool","agent":"reviewer","id":"a1fe7cb8a3376d5f1","tool":"Bash","tokens":1081579}
+{"t":1792289873.4,"ev":"tool","agent":"reviewer","id":"a1fe7cb8a3376d5f1","tool":"Read","tokens":1198046}
+{"t":1792289882.7,"ev":"stop","agent":"orchestrator","id":"ab5b45e0c55fe271f"}
+{"t":1792289889.8,"ev":"tool","agent":"reviewer","id":"a1fe7cb8a3376d5f1","tool":"Bash","tokens":1315316}
+{"t":1792289915.0,"ev":"stop","agent":"orchestrator","id":"a7197f245b7a7219d"}
+{"t":1792289917.2,"ev":"tool","agent":"reviewer","id":"a1fe7cb8a3376d5f1","tool":"Bash","tokens":1434640,"say":"Now I'll write the review with the safe procedure."}
+{"t":1792289925.7,"ev":"tool","agent":"reviewer","id":"a1fe7cb8a3376d5f1","tool":"Bash","tokens":1559892,"say":"Now I'll write the review with the safe procedure."}
+{"t":1792289932.9,"ev":"tool","agent":"reviewer","id":"a1fe7cb8a3376d5f1","tool":"Bash","tokens":1623170,"say":"Now I'll write the review with the safe procedure."}
+{"t":1792289942.8,"ev":"tool","agent":"reviewer","id":"a1fe7cb8a3376d5f1","tool":"Bash","tokens":1751004,"say":"Now I'll write the review with the safe procedure."}
+{"t":1792289947.8,"ev":"stop","agent":"orchestrator","id":"a2d585d977e3bf71a"}
+{"t":1792289952.1,"ev":"tool","agent":"reviewer","id":"a1fe7cb8a3376d5f1","tool":"SubagentHandback","tokens":1815381,"say":"Now I'll write the review with the safe procedure."}
+{"t":1792289952.5,"ev":"stop","agent":"reviewer","id":"a1fe7cb8a3376d5f1","tokens":1815381,"say":"Now I'll write the review with the safe procedure."}
+{"t":1792289958.7,"ev":"tool","agent":"orchestrator","tool":"Bash"}
+{"t":1792289967.7,"ev":"tool","agent":"orchestrator","tool":"Bash"}
+{"t":1792290126.5,"ev":"tool","agent":"orchestrator","tool":"Bash"}
