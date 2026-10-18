@@ -1,0 +1,855 @@
+{
+ "$comment": "Shared state for ONE work-graph run. Lives at .graph/runs/<run-id>/state.json. Every node reads this on start and appends to its OWN key on finish - the builder writes its own builders.<slice> key, including the branch it worked on. Never rewrite another node's key. Every node key carries written_by, naming the node that wrote it: that is the ONLY record of authorship this file has, and without it 'never rewrite another node's key' is unverifiable - an orchestrator hand-writing all six keys is indistinguishable from six nodes doing their jobs. verify-state.py --audit checks it. This file is the edge: it is how context crosses between agents that cannot see each other.",
+ "run_id": "2026-10-17-orchestra-p3-host-link",
+ "goal": "start P3 (orchestra/ROADMAP.md P3 - Host side of the link: Rust server in the core crate, not the Tauri shell, so orchestrad serves the same link: listen, pair, authenticate, stream snapshot and events, accept answers; pairing UI on the desktop (QR, paired devices list, revoke); CSP connect-src updated to the link origin explicitly; off by default, listens only once enabled, binds only to needed interfaces)",
+ "app": "orchestra",
+ "status": "done",
+ "scout": {
+  "written_by": "scout",
+  "facts": [
+   "orchestra main at e84d179, clean (scout-facts collector). Registry ui = native-desktop plus native-mobile; observed stack rust plus github actions only (collector).",
+   "PROTOCOL_VERSION 1, SUPPORTED_VERSIONS [1], MAX_MESSAGE_BYTES 4194304, MAX_ID_BYTES 128, MAX_TEXT_BYTES = session::MAX_TEXT_BYTES; EVENT_NAMES has 5 entries incl. reserved notice: core/src/wire/mod.rs:22-34.",
+   "Module doc says Nothing here opens a socket (P3) or enforces a scope: core/src/wire/mod.rs:3. The Method::scope() table is data only, not enforced: mod.rs:120-138.",
+   "Decode and encode exist in both directions: decode_client/encode_client (core/src/wire/codec.rs:145,192), decode_host/encode_host (codec.rs:198,244), handshake frames decode_handshake_request/reply and encode_* (codec.rs:269-301). Re-exported at mod.rs:13-20.",
+   "Client to host: hello, ping, call. 15 methods parsed in parse_call (codec.rs:148-169, 121-143); Method enum with as_str/parse at mod.rs:58-118. Host input is strict via exact(), which returns bad_request on an unknown field (codec.rs:68-73).",
+   "Host to client: welcome, snapshot, event (4 typed variants plus Unknown), result (exactly one of ok or error, codec.rs:218-226), error, pong (codec.rs:198-231; message.rs:92-175). Host output is read tolerantly.",
+   "Error codes: closed ErrorCode enum of 7 (unsupported_version, unknown_type, bad_request, forbidden, revoked, already_answered, failed) at core/src/wire/mod.rs:143-180. WireError at mod.rs:184-198.",
+   "Size caps: envelope rejects text over MAX_MESSAGE_BYTES before JSON parse (codec.rs:35-38). finish() re-checks on encode (codec.rs:86-92). Client-sent strings are capped on decode only, via cap_strings (codec.rs:107-119, 172); encode_client does not cap (codec.rs:192-194). call.id length 1..=128 (codec.rs:158-161).",
+   "No Noise framing, no 65535-byte chunking, no seq ordering, no socket, no key or crypto code in core/src. Core threads are std::thread only (session/process.rs:142,314; session/mod.rs:912,994,1264; git.rs:136). No tokio, async fn or await in core.",
+   "P2 leaves to P3, quoted: protocol/README.md:233 \"Splitting a message across Noise frames (65535 bytes each) is P3s.\" Also README:235 \"seq is a non-negative integer; the codec does not check its order (P3).\" Also README:255 \"Still for P3: the choice between the two JS crypto options and the scope UI.\"",
+   "Core public surface: core/src/lib.rs:1-6 exports git, notify, paths, projects, session, wire. Sessions (session/mod.rs:378-395) keeps private emit (Emit) and notify (Notify), set once in with_writer(emit, spawner, notify, writer, transcripts, worktree_base) at mod.rs:397-405.",
+   "Event enum has 4 variants and no seq: SessionUpdated, InboxUpdated, TranscriptAppended, TaskUpdated (session/mod.rs:59-64). Emit = Box<dyn Fn(Event)+Send+Sync> (mod.rs:66). Notify is also a single Box (mod.rs:70). No subscriber list exists in core.",
+   "The emit callback runs while the emit_order mutex is held (mod.rs:378-383, 550-556, 610-614) and must not call back into Sessions (mod.rs:380-382). Any link sink must be non-blocking.",
+   "Read methods on Sessions: list_projects (mod.rs:589), list_sessions (593), list_inbox (598), list_tasks (602), transcript(session_id) (1088). Each takes the inner lock separately, so there is no atomic snapshot API. The wire Snapshot (wire/message.rs:119-127) is composed by the caller.",
+   "The revision counter (session/mod.rs:138, bumped in next_snapshot at 572) is private and persisted. It moves only on saved changes; text-only stdout lines skip it (publish_line near mod.rs:1181; comment at 611-613). It is not a per-event seq.",
+   "Commands in core: start(self Arc, project_id, prompt, SessionSettings) (mod.rs:1095); answer_permission (1273); answer_question (1285); reply (1308); stop (1442); create_task (621); cancel_task (661); get_task_diff (735); land_task (761); discard_task (862); retry_cleanup (879). Lifecycle: restore(Snapshot) (420), pump_in_background (992), retry_pending_in_background (910), shutdown (1505).",
+   "Process output type: Output::Line(String) or Exit(Option<i32>) (core/src/session/process.rs:80-84). SpawnArgs at process.rs:51.",
+   "Shell wiring: desktop/src-tauri/src/lib.rs:47-56 builds Sessions with a closure mapping Event to handle.emit with names session-updated, inbox-updated, transcript-appended, task-updated. Notify closure with focus check at lib.rs:58-70. store::open(app_data_dir/state.json) at lib.rs:32-34; restore at 75-77; app.manage(sessions) and app.manage(status) at 82-83.",
+   "Shell-only logic: dispatch_answer maps Answer to answer_permission, answer_question or reply (desktop/src-tauri/src/commands.rs:72-80). pick_project uses the dialog (commands.rs:24-34). storage_status reads the managed StorageStatus (commands.rs:91-95, lib.rs:83). None of these live in core.",
+   "Wire method to core op: list_projects, list_sessions, list_inbox, list_tasks, get_transcript, get_task_diff, stop_session, create_task, cancel_task, land_task, discard_task, retry_cleanup, start_session and answer each have a core method. storage_status has no core accessor: StorageStatus is produced by store::open (core/src/session/store.rs:95-158) and held by the shell.",
+   "Core Cargo.toml [dependencies]: serde and serde_json only. windows-sys 0.60 (cfg windows) and libc 0.2 (cfg unix). No async, crypto, socket, keyring or QR crate is a direct dep of core (core/Cargo.toml).",
+   "cargo tree -p orchestra-core -e normal shows serde 1.0.229, serde_json 1.0.151, windows-sys 0.60.2 and transitives only. tokio 1.53.2 is in Cargo.lock:3870, but its only dependents are tauri and tauri plugins (cargo tree -i tokio --workspace), not core.",
+   "Cargo.lock (470 packages). ABSENT: snow, tungstenite, tokio-tungstenite, x25519-dalek, curve25519-dalek, chacha20poly1305, chacha20, keyring, qrcode, ring, aws-lc-rs, rustls. PRESENT transitively only: rand 0.9.5 (Cargo.lock:2718, via tauri-plugin-notification), base64 0.21/0.22/0.23 (Cargo.lock:217-230; 0.22.1 via tauri-codegen), getrandom 0.3.4 and 0.4.3 (Cargo.lock:1228,1240), sha2 0.10.9 (Cargo.lock:3167, via tauri-codegen), mio 1.2.4 (Cargo.lock:2030), socket2, hyper, tower (via tauri).",
+   "CI guard: .github/workflows/test.yml:34 greps the core tree for gtk, webkit, tauri or wry and fails the job if found. test.yml:39 runs cargo test -p orchestra-core --locked; :51 cargo test --workspace --locked; :64 cargo check -p orchestra-core --tests --locked.",
+   "Build: cargo test -p orchestra-core --offline ran green today (scout): 185 unit tests passed, wire_fixtures 4 passed. Compile about 29s. The desktop shell and the frontend were NOT built.",
+   "No keyring crate and no secret storage in core or desktop (grep for keyring, secret, password, credential found no implementation). windows-sys is a direct core dep (core/Cargo.toml) but the Win32_Security_Credentials feature is not enabled.",
+   "Host key location per decision: protocol/README.md:72-73 says the phone keeps keys in expo-secure-store and the desktop as client uses the OS keyring; the host private key is the OS keyring (desktop) or a 0600 file in the orchestrad state directory (H2). No 0600 file code exists in Rust. core/src/paths.rs:12 state_dir_from is the only H1 helper.",
+   "Desktop CSP, exact: desktop/src-tauri/tauri.conf.json:24 is default-src self; script-src self; style-src self; img-src self data:; font-src self; connect-src ipc: http://ipc.localhost. Not null. No unsafe-eval, no unsafe-inline.",
+   "Capabilities: desktop/src-tauri/capabilities/default.json grants windows [main] and permissions [core:default] only. dialog, notification and window-state plugins are registered in lib.rs:15-20 with no capability grant (comment at lib.rs:17-18).",
+   "Contradiction source: protocol/README.md:46-49 says for the client role the Rust process owns the socket and the keys, so the webview never holds a key and CSP connect-src needs no new origin for the client role. CLAUDE.md:96-97 says add its origin explicitly when the desktop-phone link lands. ROADMAP.md:337 P3 bullet says CSP connect-src updated to the link origin explicitly.",
+   "Desktop UI is a single page with no router. desktop/src/App.tsx:29 useReducer(reducer, initialState). Header buttons Open project and NewSession at App.tsx:92-98. Columns SessionList, TaskList, and a detail pane (TaskDetail, SessionDetail or Inbox) at App.tsx:116-149. Banners for storage (App.tsx:99-107) and error (108-115). Components in desktop/src/components: Inbox, InboxItemView, NewSession, SessionDetail, SessionList, TaskDetail, TaskList, DiffView. Reducer in desktop/src/state.ts:63.",
+   "Desktop IPC: desktop/src/ipc.ts invoke wrappers pickProject (:276), listProjects (:280), startSession (:284), storageStatus (:298), listSessions and listInbox (:301, :304), answer (:307), stopSession (:313), createTask (:317), listTasks (:331), cancelTask, getTaskDiff, landTask, discardTask, retryCleanup (:334-346). Event listeners onSessionUpdated (:351), onInboxUpdated (:363), onTranscriptAppended (:375), onTaskUpdated (:387). App.tsx subscribes at App.tsx:40-44. Rust emits via handle.emit at desktop/src-tauri/src/lib.rs:48-56.",
+   "Desktop deps (desktop/package.json:13-17): @tauri-apps/api, react and react-dom only. No router, no QR library. No settings or devices view exists.",
+   "Mobile: no Noise, noble or secure-store code in mobile/src. mobile/package-lock.json has no @noble or noise entry. expo-secure-store is declared (mobile/package.json:16) but unused in mobile/src. The only protocol test is mobile/src/__tests__/protocol.test.ts (fixtures).",
+   "Persistence: SCHEMA = 2 (core/src/session/store.rs:18); OLDEST_SCHEMA = 1 (store.rs:20); StoredSession, StoredTask and Snapshot (store.rs:24-86) use serde default on additive fields. load() migrates in memory (store.rs:123-139; migration at 135-136). Unknown schema gives LoadError::UnknownSchema and saving is off for the run (store.rs:4-5, 112-118; open at 157-165). File: app_data_dir/state.json (desktop/src-tauri/src/lib.rs:32-34). Projects keep absolute paths (core/src/projects.rs:24-29); the wire Project is {id, name} only (projects.rs:7-11).",
+   "Schema history: schema 1 came in commit 126d194 (Persist sessions and inbox under app data, D2). Schema 2 came in commit 874750e (tasks: Task entity, schema 2, D4, 2026-10-14). Both were additive with serde defaults. Schema-1 load test at store.rs:284.",
+   "Desktop banner for a newer schema (App.tsx:102-103) says saved history was written by a newer version and nothing will be saved this run.",
+   "P2 open item \"v: 1.0 accepted by TS, rejected by Rust\" is WRONG for Rust. Verified with a scratch crate outside orchestra (C:/Users/natha/AppData/Local/Temp/scout_v10): decode_client(v:1.0 ping) = Ok(Ping); decode_host(v:1.0 pong) = Ok(Pong); v:2 = unsupported_version; event seq:1.0 = bad_request. Cause: codec.rs:28-33 integer() accepts integral floats; envelope at codec.rs:48-53.",
+   "The P2 encodeHostMessage replacer open item is TS-only (ROADMAP.md:329; the encoder is test-only). Rust encode_host (codec.rs:244-265) has no replacer and never rewrites payloads. Null vs absent: a Rust unknown event with a missing payload becomes payload null (codec.rs:208, 239, 253). Typed Option fields serialise as null."
+  ],
+  "unknowns": [
+   "Whether snow and a blocking WebSocket crate (tungstenite) can be added without pulling tokio or ring/aws-lc into orchestra-core: not tested. The CI tree guard (test.yml:34) would need rechecking.",
+   "snow transport message length limit (65535) and its default crypto resolver are external facts, not verified on disk. Verify after adding the crate.",
+   "Whether a Rust test client using snow as a dev-dependency is acceptable. No Noise test vectors or harness exist in the repo.",
+   "QR generation: no crate present. Undecided whether the QR is rendered in Rust (as a data URI, allowed by img-src data:) or in the webview. The README does not say.",
+   "Host key storage on Windows: no Credential Manager code, and windows-sys feature Win32_Security_Credentials is not enabled. Linux secret-service availability on headless hosts is unknown (H2 concern).",
+   "Whether the listener needs any CSP change. A Rust-side listener does not touch the webview CSP. The README role split suggests no connect-src change for the host role; the P3 bullet is ambiguous.",
+   "Where the enabled flag, bind config and paired-clients store live (state.json schema 3 or a separate file). No doc decides this.",
+   "Snapshot consistency: five separate reads (session/mod.rs:589-602) with no shared seq. Whether a race between snapshot and events matters is not established.",
+   "Windows firewall prompt on first listen: not checked.",
+   "Desktop frontend build (npm run build, vitest) and the Tauri shell cargo build were not run. Only orchestra-core tests were run today.",
+   "ROADMAP P2 note \"v: 1.0 rejected by Rust\" appears inverted (see the P2 open item fact). The README says v is integer 1; the Rust behaviour is lenient. Which is intended is for the human or architect.",
+   "The H2 notice payload is untyped. The core decides notices (core/src/notify.rs:32 decide) but delivery is a shell closure (desktop/src-tauri/src/lib.rs:58-70). P3 does not say whether the link forwards notices."
+  ],
+  "risks": [
+   "NO ASYNC RUNTIME IN CORE (suspicion partly confirmed). Core is std::thread plus mutex and mpsc only. A WebSocket and Noise server either adds tokio (not a core dep today; present in the lock only via tauri) or uses blocking tungstenite with a thread per connection and bounded per-client queues. Either way it is new code and new crates, and no such crate is in Cargo.lock.",
+   "EMIT IS SINGLE-CONSUMER AND RUNS UNDER A LOCK (confirmed). Sessions emit and notify are fixed Box<dyn Fn> set once at construction (session/mod.rs:384, 397-408). A link server needs a fan-out subscriber list in core, or a shell-built registry, and its sink must never block (mod.rs:550-556). Otherwise a slow phone could stall every publisher.",
+   "NO PER-EVENT SEQ (confirmed). The wire needs seq on every event and on snapshot (wire/message.rs:121, 170). Core has no event counter. revision (mod.rs:138, 572) is private and does not move for text-only lines (mod.rs:611-613).",
+   "SHELL-ONLY LOGIC MUST MOVE OR BE DUPLICATED. dispatch_answer (desktop/src-tauri/src/commands.rs:72-80) and storage_status (commands.rs:91-95, lib.rs:83) live in the shell, so orchestrad would get no answer dispatch and no storage status. Duplicating breaks the no-second-implementation rule in P3 (ROADMAP.md:333-335). Moving them is core code.",
+   "P3 CSP BULLET CONTRADICTS THE DECISION. protocol/README.md:46-49 says the client role needs no connect-src origin and the webview never holds a key. The host role is a Rust listener, so the webview has no socket to allow. ROADMAP.md:337 and CLAUDE.md:96-97 still say to add the origin. Needs a human decision. The likely answer is no connect-src change, plus a test pinning the CSP string.",
+   "PERSISTENCE: paired clients in state.json means schema 3. store.rs:112-118 makes an older build refuse to save and show the banner (App.tsx:99-107), so a downgrade would silently stop saving. A separate file avoids the bump. Not decided.",
+   "SIZE: P3 is greenfield in core (no crypto, sockets, pairing, client store or QR) plus a desktop Devices view that does not exist (no router, no settings UI, no QR library). Evidence supports splitting: core link (server, Noise, pairing, client store, Rust test client) first; desktop Devices UI and its Tauri commands second, after the core API is fixed. The desktop side is small; the core side is the bulk.",
+   "CI TREE GUARD: any new core dependency that pulls tauri, wry, webkit or gtk fails test.yml:34. Check with cargo tree.",
+   "P2 OPEN ITEM INVERTED: Rust accepts v:1.0 (verified by scratch crate). A host would accept a client v:1.0 while the README says v is integer 1 and the ROADMAP says Rust rejects it. Fix or record the decision before P3 relies on it (codec.rs:28-33, 48-53).",
+   "encodeHostMessage replacer: not hit by a Rust host, which encodes host output with encode_host (codec.rs:244). Null vs absent: hit only if a host forwards an Unknown event (H3 relay). The P3 host does not.",
+   "LISTEN SURFACE: default-off and bind-to-named-interface need a config store that does not exist (see unknowns). Without it the off-by-default bullet has no implementation point.",
+   "BUILD STATUS: core green today (185 unit plus 4 wire fixtures). Shell and desktop frontend not built, so a Tauri-side compile failure would be unseen by this scout."
+  ]
+ },
+ "architect": {
+  "written_by": "architect",
+  "shape": "single-loop",
+  "parallel_safe": false,
+  "run_scope": "P3a only: the core-side link (Sessions prerequisites; Noise, framing, keys and client store; the server; a Rust loopback test client; protocol doc). P3b is a separate run: desktop Devices UI with QR, paired list, revoke, scope grants and confirm dialog; enable toggle and persisted link config; keyring KeyProvider in the shell; Tauri commands; CSP pin test; Windows Firewall copy.",
+  "rationale": "Single-loop, four sequential slices on one branch. One app (orchestra), almost all in one crate (orchestra-core), and the slices are not 3+ disjoint: s2 and s3 both own core/src/link/mod.rs, and s3 consumes s1's subscribe/dispatch API and s2's noise/frame/store API, so it is a sequence, not a diamond. s1 and s2 have no artifact edge and are file-disjoint, but two parallel slices do not earn a fan-out. Verified on disk at e84d179: Emit/Notify are single Box closures fixed in with_writer (session/mod.rs:384-405); the only two (self.emit) sites are publish_saving (mod.rs:550-554) and publish_task (610-614), both taking emit_order while inner is held (lock order inner then emit_order), which makes an atomic snapshot+subscribe possible: take inner, read projects/sessions/inbox/tasks, take emit_order, read the seq counter, register, release. No seq exists; revision is private and skips text-only lines. dispatch_answer and the StartArgs->SessionSettings mapping are shell-only (desktop/src-tauri/src/commands.rs:46,72-80,102); storage_status returns the shell's managed StorageStatus (commands.rs:91-95). Core deps are serde, serde_json, windows-sys, libc only; snow, tungstenite, keyring, ring, aws-lc are absent from Cargo.lock; rand 0.9.5, getrandom 0.3.4/0.4.3, sha2 0.10.9, http 1.5.0, httparse, thiserror 2, log are present. integer() in codec.rs:28-33 accepts integral floats, so Rust accepts v:1.0 (ROADMAP note inverted, confirmed). The CI guard (test.yml:34) is cargo tree -e normal,build for gtk|webkit|tauri|wry; dev-deps are never checked. core/tests/*.rs run automatically under cargo test -p orchestra-core on ubuntu-24.04 and ubuntu-24.04-arm and under cargo test --workspace on windows-latest; macOS compiles them only (cargo check --tests). test.yml needs no change. Proc, Output, Sink and Spawner are pub, so an integration test can drive Sessions with its own fake process. Two scout gaps found while verifying, raised as G10 and G11: the plaintext {proto,v} frame carries no pairing-vs-reconnect mode, and Noise KK needs the responder to know the initiator's static key before reading message 1, which a host with N paired clients does not. Risk tags: s1 HIGH, it changes lock-ordered publish paths in a 3415-line file where the snapshot/event race is not fully visible to a test, and it touches the shell's commands.rs. s2 HIGH, it handles secret material (host private key, pairing psk) whose leakage through Debug, logs, serialization, a non-random RNG or the file mode a green test cannot fully rule out. s3 HIGH, it shares core/src/link/mod.rs with s2, and its authorization, revocation and unknown-key silence is a security boundary a test only samples. s4 LOW: prose only, no sensitive data, no file shared with another slice; the greps plus a human read are sufficient.",
+  "decisions_for_gate": [
+   {
+    "id": "G1",
+    "title": "Run split",
+    "recommend": "This run is P3a, the core link only (s1-s4). P3b follows: desktop Devices view (QR rendered from the core's PairingOffer, paired list, revoke, scope grants, confirm dialog on the G7 seam), the enable toggle with a persisted link/config.json, a keyring KeyProvider in desktop/src-tauri, the Tauri commands, the CSP pin test and the Firewall copy. No shell hook in P3a beyond moving answer dispatch: nothing calls LinkHost::start, so the desktop cannot listen and off-by-default holds trivially.",
+    "alternatives": [
+     "Whole P3 in one run: roughly doubles the diff and builds the desktop UI on a core API still moving; rejected.",
+     "P3a plus a minimal shell hook (env-var start for manual testing): a listen path with no UI or confirm; rejected, the loopback test client covers it."
+    ]
+   },
+   {
+    "id": "G2",
+    "title": "Blocking vs async",
+    "recommend": "Blocking tungstenite on std threads, matching the core (no async anywhere in it). One accept thread per bound address (non-blocking listener polled ~100 ms against a stop flag); one thread per connection owning the WebSocket, reading with a short timeout (~25 ms) and draining its outgoing queue between reads; one short-lived worker per in-flight call (cap 8 per connection, then result error failed 'busy'), results back through the outgoing queue. Caps: 16 connections; 30 s write timeout then drop. On Windows a timed-out read is TimedOut (os error 10060), not WouldBlock; both mean no data and must be handled alike; the windows-latest workspace job proves it. CI guard: tungstenite with default-features=false, features=[handshake] pulls bytes, log, rand 0.10, thiserror 2, data-encoding, http, httparse, sha1; none matches gtk|webkit|tauri|wry, and no tokio.",
+    "alternatives": [
+     "tokio + tokio-tungstenite in core: passes the GUI guard, but brings a runtime into a thread-based core and into orchestrad, a second concurrency model beside emit_order; rejected.",
+     "Hand-rolled mio poll loop: fewer threads, much more code; reopen only if thread count becomes a problem."
+    ]
+   },
+   {
+    "id": "G3",
+    "title": "Crates and versions (the builder adds them in s2; the architect added nothing)",
+    "recommend": "snow = { version = '0.10', default-features = false, features = ['std', 'use-curve25519', 'use-chacha20poly1305', 'use-sha2', 'use-getrandom'] }: 0.10.0 (2025-07-19), Apache-2.0 OR MIT, MSRV 1.85, pure-Rust resolver (curve25519-dalek 4, chacha20poly1305 0.10, sha2 0.10 already in lock, getrandom 0.3 already in lock); no ring, aes-gcm or blake2. tungstenite = { version = '0.30', default-features = false, features = ['handshake'] }: 0.30.0 (2026-07-11), MIT OR Apache-2.0, MSRV 1.85, no TLS. getrandom = '0.3' direct for the pairing secret (same major as snow; no rand of our own). Hex hand-written, no base64/data-encoding dep of ours. No dev-dependencies: integration tests use the crate's normal deps. Suites: Noise_IKpsk2_25519_ChaChaPoly_SHA256 (pairing), Noise_KK_25519_ChaChaPoly_SHA256 (reconnect). All pure Rust; builds on Windows, Linux x64/arm64, macOS. Maintenance: tungstenite active; snow slow cadence (15 months since last release) but the de-facto Rust Noise crate and named by P1.",
+    "alternatives": [
+     "BLAKE2s instead of SHA256 (WireGuard precedent): adds blake2 for no gain; @noble/hashes ships both.",
+     "tungstenite 0.26/0.27 to reuse rand 0.9 from the lock: older line; rejected, a duplicate rand is acceptable.",
+     "snow ring-resolver: C/asm build of ring on every OS; rejected."
+    ]
+   },
+   {
+    "id": "G4",
+    "title": "Where host keys and the paired-client store live in P3a",
+    "recommend": "Everything in a caller-supplied link directory (desktop in P3b: app_data_dir/link; orchestrad in H2: state_dir/link). Host key behind a KeyProvider trait in core with one implementation, FileKeyProvider: link/host_key, 32 raw bytes, create_new, mode 0600 on Unix, per-user APPDATA ACL on Windows. P3b adds a keyring KeyProvider in the shell crate (keyring never enters core, so orchestrad stays free of dbus/secret-service), matching README:73 for the desktop; FileKeyProvider is the permanent H2 provider. Paired clients in a separate link/clients.json {schema:1, clients:[{id, name, public_key hex, scopes, paired_at}]}, atomic temp+fsync+rename like store::save; an unknown schema refuses to start the link (fail closed, never overwritten). state.json stays schema 2. Cap 32 paired clients (bounds G11).",
+    "alternatives": [
+     "Paired clients in state.json schema 3: a downgraded build then refuses to save sessions at all (store.rs:112-118); rejected.",
+     "keyring now in core: pulls secret-service/dbus into the headless core and cannot run on CI runners; rejected.",
+     "Windows Credential Manager via windows-sys in core: a desktop concern in the shared crate; P3b, in the shell."
+    ]
+   },
+   {
+    "id": "G5",
+    "title": "Bind policy and the start/stop surface",
+    "recommend": "LinkConfig { binds: Vec<SocketAddr>, host_name, link_dir, storage: StorageStatus, limits }. Empty binds = off: start() opens nothing. Every address explicit; unspecified addresses (0.0.0.0, ::) refused by a pure validator before any socket call (BindError::Unspecified), no override in v1. start() returns the actually bound addresses (port 0 resolves for tests); stop() closes listeners and every connection and joins the threads. Also open_pairing() -> PairingOffer, confirm_pairing, reject_pairing, list_clients, set_scopes, revoke. Windows Firewall: listening on 127.0.0.1 or ::1 never prompts; the first listen on a LAN or Tailscale address by an exe with no inbound rule shows Windows Security Alert in an interactive session, and Cancel creates a block rule. P3a binds only loopback in tests, so no prompt locally or on windows-latest; P3b must warn before enabling a non-loopback address.",
+    "alternatives": [
+     "Allow 0.0.0.0 when literally named (README's never-by-default permits it): reopen if a user needs it.",
+     "Interface names instead of addresses: per-OS interface enumeration; rejected for v1."
+    ]
+   },
+   {
+    "id": "G6",
+    "title": "The CSP bullet",
+    "recommend": "Drop it as moot. Both roles keep the socket in Rust (host: the core listener; client: README:46-49), so the webview opens no connection and connect-src stays ipc: http://ipc.localhost. s4 rewrites orchestra/CLAUDE.md:96-97 to say so; P3b adds a shell test pinning the exact CSP string; the orchestrator strikes ROADMAP.md:337 at close.",
+    "alternatives": [
+     "Add ws://127.0.0.1:* to connect-src: widens the CSP for a connection the webview never makes; rejected."
+    ]
+   },
+   {
+    "id": "G7",
+    "title": "Confirm-on-host seam",
+    "recommend": "Yes, the seam lands now; its UI in P3b. After IKpsk2 completes and the client's hello decrypts (proving the psk and consuming the single-use window), the core holds the connection pending and calls on_pairing_request(PendingPairing{id, client_name, fingerprint}); the host answers confirm_pairing(id, scopes) or reject_pairing(id). Reject, window expiry or stop() closes the socket with no message (indistinguishable from an unknown key). Only on confirm is the client stored and sent welcome + snapshot. Default scopes on confirm: read + answer. Tests confirm programmatically; P3b wires a dialog, H2 a terminal prompt. Fingerprint: first 8 bytes of SHA-256(client static key), lowercase hex in 4-char groups.",
+    "alternatives": [
+     "Auto-confirm in P3a, seam in P3b: changes the pairing state machine twice and leaves a host that stores any QR holder; rejected."
+    ]
+   },
+   {
+    "id": "G8",
+    "title": "Scope set and enforcement point",
+    "recommend": "README Authorisation table as is (read, answer, control, land) via wire::Method::scope() (already data, mod.rs:120-138). One enforcement function in the connection path, after decode_client and before wire::dispatch: missing scope -> result{id, error{code: forbidden}} plus one LinkLog line with method and client id, never args. snapshot and events only to a client holding read. Scopes re-read from the store per call, so set_scopes and revoke act on live connections. Unknown scope strings in clients.json grant nothing. pick_project stays host-local. Idempotency: per-client in-memory cache of the last 256 call ids -> result, so a resent answer applies once.",
+    "alternatives": [
+     "Two trust levels (viewer/operator), the README's own reopen condition: simpler P3b UI, coarser grants; the owner's call."
+    ]
+   },
+   {
+    "id": "G9",
+    "title": "Protocol doc correction: v:1.0",
+    "recommend": "Fix it in this run (s4), doc only: an integral JSON number such as 1.0 is the integer it denotes for v, in both copies. JS cannot tell 1.0 from 1 after JSON.parse, so Rust's existing leniency (codec.rs:28-33) is the only consistent rule; no code change. Record the remaining asymmetry: Rust decode_host reads seq with as_u64 and rejects seq:1.0 where TS accepts it; harmless until H3 (a Rust client), since a Rust host never emits 1.0. The orchestrator corrects the inverted ROADMAP P2 note at close.",
+    "alternatives": [
+     "Make Rust strict on v: diverges from a TS copy that cannot be strict; rejected.",
+     "Make Rust seq lenient now: codec change plus fixtures in three suites for an H3 concern; defer to H3."
+    ]
+   },
+   {
+    "id": "G10",
+    "title": "Handshake mode selection (new; scout gap)",
+    "recommend": "Two WebSocket paths: /pair (IKpsk2, only while a pairing window is open, otherwise closed with no message) and /link (KK). The path is bound into the Noise prologue with both plaintext frames, so it cannot be swapped. No change to the {proto,v} frames, the TS/Rust codecs or the fixtures.",
+    "alternatives": [
+     "A mode field in the plaintext handshake request: a protocol/ change that must ship in both decoders and the fixtures in desktop and mobile together; rejected for P3a.",
+     "Infer from message-1 length (IK vs KK): deterministic but brittle; rejected."
+    ]
+   },
+   {
+    "id": "G11",
+    "title": "KK responder lookup (new; scout gap)",
+    "recommend": "Keep KK (the P1 decision) and trial-decrypt message 1 against each paired client key (at most 32; KK message 1 carries a tag after es, ss even with an empty payload). No match -> close with no message. The per-source handshake rate limit (default 10 per minute per IP, configurable for tests) bounds the DH cost.",
+    "alternatives": [
+     "Reconnect with Noise IK (client static key sent encrypted in message 1, host looks it up): one handshake state, the WireGuard shape; requires amending README Pairing (Later connections use Noise KK). Take it if the owner prefers it to trial decryption.",
+     "Client-id hint in plaintext: leaks which device connects and changes the frames; rejected."
+    ]
+   },
+   {
+    "id": "G12",
+    "title": "Framing, pairing secret and offer encoding (P2 left framing to P3)",
+    "recommend": "Plaintext {proto,v} frames are WebSocket text messages; each Noise handshake message is one WebSocket binary message. After the handshake one application message = one WebSocket binary message = a sequence of [u16 big-endian length][Noise ciphertext], each ciphertext at most 65535 bytes (plaintext chunk at most 65519). Reassembled plaintext over MAX_MESSAGE_BYTES closes the connection; tungstenite max_message_size is set to the matching ciphertext bound so memory is capped before decryption. Pairing secret: 32 random bytes used directly as the IKpsk2 psk (README's 128-bit becomes 256-bit, a strengthening, no KDF to mirror in JS). PairingOffer JSON {v:1, host_id, host_name, addrs:[ip:port], host_key hex, secret hex, expires_at ms}; host_id = hex of the first 16 bytes of SHA-256(host public key). Read-idle timeout 120 s (clients ping within 60 s).",
+    "alternatives": [
+     "A more/last flag byte per Noise frame instead of WebSocket message boundaries: only needed on a non-message transport.",
+     "Keep a 128-bit secret and derive the psk with SHA-256(domain || secret): smaller QR, a KDF on both sides."
+    ]
+   },
+   {
+    "id": "G13",
+    "title": "Command error mapping",
+    "recommend": "s1 gives Sessions::answer a typed error: an unknown-or-resolved inbox item (mod.rs:1302) maps to already_answered; every other command error is failed with the core's message (already path-free per the IPC rule). By enum, never string matching.",
+    "alternatives": [
+     "Everything failed: the phone cannot show already-answered after the A2 offline queue; rejected."
+    ]
+   }
+  ],
+  "plan": [
+   {
+    "slice": "s1",
+    "risk": "high",
+    "intent": "Core prerequisites, no desktop behaviour change. (a) Fan-out: Sessions keeps the shell's emit closure and gains an internal subscriber hub; at both emit sites, under emit_order, it assigns a process-wide u64 seq per event and try_sends Arc<(seq, Event)> into each subscriber's bounded queue; a full queue drops that subscriber (its receiver disconnects; the link closes it; the client reconnects for a fresh snapshot); the publisher never blocks. (b) Sessions::subscribe(capacity) -> (SnapshotView{seq, projects, sessions, inbox, tasks}, Subscription), atomic: take inner, then emit_order, read seq, register, release; Subscription unsubscribes on drop. (c) Sessions::answer(Answer) moved from the shell, with the G13 typed error. (d) wire::dispatch: one table from (Method, args JSON) to the core op, returning serde_json::Value or a coded error; storage_status from a passed StorageStatus; StartArgs/CreateTaskArgs -> SessionSettings helpers; From<Event> for wire HostEvent. (e) commands.rs calls Sessions::answer and the helpers; dispatch_answer deleted. Update the wire module doc (mod.rs:3).",
+    "files": [
+     "orchestra/core/src/session/mod.rs",
+     "orchestra/core/src/wire/mod.rs",
+     "orchestra/core/src/wire/args.rs",
+     "orchestra/core/src/wire/dispatch.rs",
+     "orchestra/desktop/src-tauri/src/commands.rs"
+    ],
+    "done_when": [
+     "cd orchestra && cargo test -p orchestra-core --locked -> exit 0; 185 existing unit + 4 wire_fixtures + new, 0 failed",
+     "cd orchestra && cargo test -p orchestra-core --locked -- fanout_ subscribe_ dispatch:: -> at least 8 tests run, 0 failed; including fanout_reaches_emit_and_every_subscriber, fanout_full_queue_drops_subscriber_without_blocking, fanout_seq_strictly_increasing, subscribe_snapshot_then_events_converge (concurrent publishers; snapshot plus every event with seq > snapshot.seq equals the final list_* state), a dispatch test per Method, the already_answered mapping, storage_status passthrough",
+     "cd orchestra && cargo test --workspace --locked -> exit 0 (shell compiles; its 10 tests pass)",
+     "grep -c 'answer_permission' orchestra/desktop/src-tauri/src/commands.rs -> 0",
+     "git -C orchestra diff --stat main -- core/Cargo.toml Cargo.lock -> empty (s1 adds no dependency)"
+    ]
+   },
+   {
+    "slice": "s2",
+    "risk": "high",
+    "intent": "Link building blocks, no network. Add snow, tungstenite and getrandom per G3 (every dependency edit of the run happens here). link/mod.rs declares the submodules and LinkConfig/limits. noise.rs: IKpsk2 initiator/responder and KK builders with the trial-decryption responder (G11), prologue construction from path + both plaintext frames (G10). frame.rs: split/reassemble per G12 with the MAX_MESSAGE_BYTES cap. keys.rs: KeyProvider trait, FileKeyProvider (create_new, 0600 on Unix), key types with redacted Debug and no Serialize. clients.rs: link/clients.json schema 1, atomic write, unknown-schema refusal, 32-client cap, scopes as wire::Scope with unknown strings ignored, fingerprint. pairing.rs: PairingWindow (32-byte secret from getrandom, 5-minute expiry, single use, consumed on proven psk), PairingOffer JSON, host_id. pub mod link in lib.rs.",
+    "files": [
+     "orchestra/core/Cargo.toml",
+     "orchestra/Cargo.lock",
+     "orchestra/core/src/lib.rs",
+     "orchestra/core/src/link/mod.rs",
+     "orchestra/core/src/link/noise.rs",
+     "orchestra/core/src/link/frame.rs",
+     "orchestra/core/src/link/keys.rs",
+     "orchestra/core/src/link/clients.rs",
+     "orchestra/core/src/link/pairing.rs"
+    ],
+    "done_when": [
+     "cd orchestra && cargo test -p orchestra-core --locked -- link:: -> at least 14 tests, 0 failed; including ikpsk2 round trip, wrong psk fails on the first transport message, kk trial decryption picks the right key among several, kk unknown key fails, frame split at the 65519/65520 boundary and a ~4 MiB round trip, over-cap reassembly refused, clients.json round trip, unknown clients schema refused with the file untouched, pairing window expiry, pairing single use, key Debug output does not contain the key hex, file key reused across loads, and a cfg(unix) test that host_key is mode 0600 (runs on the Linux CI jobs)",
+     "cd orchestra && cargo tree -p orchestra-core --locked -e normal,build | grep -iE 'gtk|web.?kit|tauri|wry|tokio|aws-lc| ring v' -> no output (grep exit 1)",
+     "grep -cE '^(snow|tungstenite|getrandom) *=' orchestra/core/Cargo.toml -> 3",
+     "grep -cE '^(tokio|keyring|ring|rand|base64) *=' orchestra/core/Cargo.toml -> 0",
+     "cd orchestra && cargo test --workspace --locked -> exit 0"
+    ]
+   },
+   {
+    "slice": "s3",
+    "risk": "high",
+    "intent": "The server and its loopback tests. server.rs: LinkHost::new(Arc<Sessions>, LinkConfig, Box<dyn KeyProvider>, callbacks{on_pairing_request, log}); start()/stop(); bind validator (G5); accept threads; per-source handshake rate limit; WebSocket accept on /pair and /link; version handshake (text frames; unsupported_version then close); Noise handshake; connection cap; a newer connection from the same client replaces the old. conn.rs: per-connection loop (G2): hello first, pending confirm (G7), welcome{host_id, host_name, scopes, features: []}, subscribe and send snapshot (with storage) then events in seq order, ping/pong, call -> scope check (G8) -> wire::dispatch on a worker -> result, idempotency cache, revoke -> error{revoked} then close with queued calls dropped, lagging subscriber -> close, read-idle timeout; no frame or payload ever logged. Integration tests with a Rust test client (snow + tungstenite over 127.0.0.1 port 0) and a fake Proc driving Sessions.",
+    "files": [
+     "orchestra/core/src/link/mod.rs",
+     "orchestra/core/src/link/server.rs",
+     "orchestra/core/src/link/conn.rs",
+     "orchestra/core/tests/link.rs",
+     "orchestra/core/tests/link_support/mod.rs"
+    ],
+    "done_when": [
+     "cd orchestra && cargo test -p orchestra-core --locked --test link -> at least 16 tests, 0 failed; including pair_confirm_then_kk_reconnect, pairing_reject_closes_silently, pairing_window_expired_or_used_refused, wrong_psk_closes_silently, unknown_key_closes_silently, unsupported_version_error_then_close, hello_must_be_first, snapshot_then_events_in_seq_order, call_outside_scope_forbidden_and_logged_without_payload, answer_resend_applies_once, revoke_live_connection_gets_revoked, large_message_chunked_round_trip, oversize_message_closes, handshake_rate_limited, stop_closes_listener_and_connections, empty_binds_listens_on_nothing",
+     "cd orchestra && cargo test -p orchestra-core --locked -- link::server link::conn -> 0 failed; includes the pure-validator test that 0.0.0.0 and :: are refused before any socket call",
+     "grep -rnE '0[.]0[.]0[.]0|[[]::|::1|Ipv6Addr|UNSPECIFIED|localhost' orchestra/core/tests/link.rs orchestra/core/tests/link_support -> no output (integration tests bind 127.0.0.1 only)",
+     "grep -rnoE '[0-9]{1,3}([.][0-9]{1,3}){3}' orchestra/core/tests/link.rs orchestra/core/tests/link_support | grep -v '127[.]0[.]0[.]1' -> no output",
+     "cd orchestra && cargo tree -p orchestra-core --locked -e normal,build | grep -iE 'gtk|web.?kit|tauri|wry|tokio|aws-lc| ring v' -> no output (grep exit 1)",
+     "cd orchestra && cargo check -p orchestra-core --tests --locked -> exit 0 (macOS job parity)",
+     "cd orchestra && cargo test --workspace --locked -> exit 0",
+     "git -C orchestra diff --stat main -- .github desktop/src-tauri/tauri.conf.json desktop/src-tauri/capabilities desktop/src desktop/src-tauri/src/lib.rs -> empty",
+     "ci: test.yml jobs core (ubuntu-24.04), core (ubuntu-24.04-arm) and windows workspace run tests/link.rs with no workflow change; green on the branch push"
+    ]
+   },
+   {
+    "slice": "s4",
+    "risk": "low",
+    "intent": "Docs. protocol/README.md: a 'What P3 decided' section recording G5, G7, G8, G10, G11, G12, G13 as built (suite names, /pair and /link, the exact prologue bytes, framing, 256-bit secret, PairingOffer fields, fingerprint format, host_id, idle timeout, already_answered mapping, link/clients.json and host_key, keyring for the desktop deferred to P3b); amend Pairing's 128-bit line; the v:1.0 note per G9 with the seq:1.0 asymmetry; mark the two P3 leftovers in 'What P2 decided' (framing, seq order) as done. orchestra/CLAUDE.md: rewrite lines 96-97 (no connect-src origin; Rust owns the socket in both roles), name the link module in Layout, update the Rust test count on line 41.",
+    "files": [
+     "orchestra/protocol/README.md",
+     "orchestra/CLAUDE.md"
+    ],
+    "done_when": [
+     "grep -c 'Noise_IKpsk2_25519_ChaChaPoly_SHA256' orchestra/protocol/README.md -> >= 1",
+     "grep -c 'Noise_KK_25519_ChaChaPoly_SHA256' orchestra/protocol/README.md -> >= 1",
+     "grep -c '## What P3 decided' orchestra/protocol/README.md -> 1",
+     "grep -cE '/pair|/link' orchestra/protocol/README.md -> >= 2",
+     "grep -c '1[.]0' orchestra/protocol/README.md -> >= 1",
+     "grep -c 'add its origin explicitly' orchestra/CLAUDE.md -> 0",
+     "grep -c '185 core + 4 wire fixtures + 10 shell' orchestra/CLAUDE.md -> 0 (replaced by the real counts from s3's run)",
+     "human-read: the owner reads 'What P3 decided' against the approved G-items and core/src/link (suite names, paths, prologue and framing must match what s2/s3 built)"
+    ]
+   }
+  ],
+  "edges": "s1 -> s3 (Sessions::subscribe, the seq'd hub, Sessions::answer, wire::dispatch); s2 -> s3 (link::noise, frame, keys, clients, pairing, the Cargo deps, and link/mod.rs which s3 extends); s3 -> s4 (the exact prologue, paths, framing and test counts the doc records). s1 and s2 have no artifact edge and are file-disjoint; they run in order only because the loop is single. Sequential, one branch.",
+  "not_doing": [
+   "Desktop Devices UI: QR rendering, paired list, revoke button, scope grants, confirm dialog (P3b)",
+   "Tauri commands for the link, or any LinkHost wiring in desktop/src-tauri/src/lib.rs (P3b); the desktop never listens in P3a",
+   "Persisted enable flag and link config file; keyring or Credential Manager KeyProvider (P3b, shell crate)",
+   "Any CSP or capability change; the CSP pin test (P3b)",
+   "Phone client; the JS Noise library choice and its test vectors (A1; README:255's choice between the two JS crypto options moves there)",
+   "A production Rust client / desktop-as-client (H3); orchestrad and the terminal QR (H2)",
+   "The notice event payload and forwarding; register_push (H2/A3)",
+   "Replay or resume after reconnect (v1 sends a fresh snapshot per connect)",
+   "Any protocol/ TS code, codec, types or fixture change; Rust seq:1.0 leniency (H3)",
+   "state.json schema bump",
+   "test.yml changes (none needed; adding tokio/ring to the CI guard regex is a later call)",
+   "TLS, relay, mDNS discovery, IPv6 tests, binding 0.0.0.0 or ::",
+   "ROADMAP.md edits (the orchestrator updates it at close, incl. the inverted v:1.0 note and the CSP bullet)"
+  ],
+  "notes": [
+   "files are relative to repos/ (orchestra/ prefix), as in the P2 run's architect key; strip orchestra/ for orchestra-repo-relative paths.",
+   "s2's builder runs one networked cargo build to update Cargo.lock; every done_when then uses --locked.",
+   "No test may bind anything but 127.0.0.1 (port 0). Loopback binds never raise the Windows Firewall prompt, so local runs and windows-latest stay non-interactive."
+  ]
+ },
+ "approved_by_human": true,
+ "scope_exceptions": [
+  "ORCHESTRATOR-OWNED, normally empty. Paths a builder may write that the approved plan does not list. guard-builder-scope.py DENIES a builder's Write/Edit outside architect.plan[].files, and this is the only way through it. Adding one is a deliberate, recorded act: pair it with deviation_from_approved_plan on the slice that needed it, and say why the gate's file set was wrong. Never add a path to silence the guard on work the human did not approve."
+ ],
+ "builders": {
+  "s1": {
+   "written_by": "builder",
+   "status": "done",
+   "branch": "p3-host-link",
+   "commit": "7801106",
+   "changed": [
+    "core/src/session/mod.rs",
+    "core/src/wire/mod.rs",
+    "core/src/wire/args.rs",
+    "core/src/wire/dispatch.rs",
+    "desktop/src-tauri/src/commands.rs"
+   ],
+   "notes": "",
+   "gate_results": [
+    {
+     "cmd": "cargo test -p orchestra-core --locked",
+     "out": "exit 0; unit: ok. 203 passed; 0 failed (185 existing + 18 new); wire_fixtures: ok. 4 passed"
+    },
+    {
+     "cmd": "cargo test -p orchestra-core --locked -- fanout_ subscribe_ dispatch::",
+     "out": "ok. 17 passed; 0 failed (fanout_reaches_emit_and_every_subscriber, fanout_full_queue_drops_subscriber_without_blocking, fanout_seq_strictly_increasing, fanout_dropping_a_subscription_unsubscribes_it, subscribe_snapshot_has_current_state_and_seq, subscribe_snapshot_then_events_converge (4 concurrent publishers plus a watcher taking many snapshots; run 7 times, stable), 10 dispatch:: tests covering every Method, the already_answered mapping and storage_status passthrough)"
+    },
+    {
+     "cmd": "cargo test --workspace --locked",
+     "out": "exit 0; shell ok. 10 passed; core ok. 203 passed; wire_fixtures ok. 4 passed"
+    },
+    {
+     "cmd": "grep -c answer_permission desktop/src-tauri/src/commands.rs",
+     "out": "0"
+    },
+    {
+     "cmd": "git diff --stat main -- core/Cargo.toml Cargo.lock (at the s1 commit)",
+     "out": "(empty)"
+    },
+    {
+     "cmd": "cargo check -p orchestra-core --tests --target x86_64-unknown-linux-gnu --locked",
+     "out": "Finished dev profile, 0 warnings"
+    }
+   ],
+   "deviation_from_approved_plan": "None to files or intent. wire::dispatch takes the decoded Call (codec::parse_call is private and codec.rs is outside the file set); dispatch_json(method, args) is provided on top and goes through decode_client."
+  },
+  "s2": {
+   "written_by": "builder",
+   "status": "done",
+   "branch": "p3-host-link",
+   "commit": "71948d6",
+   "changed": [
+    "core/Cargo.toml",
+    "Cargo.lock",
+    "core/src/lib.rs",
+    "core/src/link/mod.rs",
+    "core/src/link/noise.rs",
+    "core/src/link/frame.rs",
+    "core/src/link/keys.rs",
+    "core/src/link/clients.rs",
+    "core/src/link/pairing.rs"
+   ],
+   "notes": "snow 0.10 feature std pulls in ring (ring/std), so it was left out of the G3 feature list; see deviation.",
+   "gate_results": [
+    {
+     "cmd": "cargo test -p orchestra-core --locked -- link::",
+     "out": "ok. 33 passed; 0 failed (ikpsk2 round trip, wrong psk, wrong host key and prologue, kk round trip, kk trial decryption among 5 keys, kk unknown key, frame boundary 65519/65520, 4 MiB round trip, over-cap refused, clients.json round trip, unknown schema refused with the file untouched, window expiry, single use, key Debug redacted, file key reused, malformed key file refused; the cfg(unix) 0600 test compiles for the Linux target and runs on the Linux CI jobs)"
+    },
+    {
+     "cmd": "cargo tree -p orchestra-core --locked -e normal,build | grep -iE gtk|web.?kit|tauri|wry|tokio|aws-lc|ring v",
+     "out": "(no output; grep exit 1), also with --target x86_64-unknown-linux-gnu"
+    },
+    {
+     "cmd": "grep -cE ^(snow|tungstenite|getrandom) *= core/Cargo.toml",
+     "out": "3"
+    },
+    {
+     "cmd": "grep -cE ^(tokio|keyring|ring|rand|base64) *= core/Cargo.toml",
+     "out": "0"
+    },
+    {
+     "cmd": "cargo test --workspace --locked",
+     "out": "exit 0; core ok. 236 passed; wire_fixtures ok. 4; shell ok. 10"
+    },
+    {
+     "cmd": "cargo check -p orchestra-core --tests --target x86_64-unknown-linux-gnu --locked",
+     "out": "Finished dev profile"
+    }
+   ],
+   "deviation_from_approved_plan": "G3 feature list minus std: snow 0.10 std = [getrandom/std, subtle/std, ring/std, blake2/std, sha2/std] and ring/std activates the ring dependency, which G3 and the s2 done_when forbid. Dropping std keeps the substance of G3 (pure Rust, no ring, no aes-gcm, no blake2) and the build works without it. The ikpsk2 wrong-psk test asserts the initiator cannot open message 2 (the psk is mixed in message 2) rather than a failed first transport message."
+  },
+  "s3": {
+   "written_by": "builder",
+   "status": "done",
+   "branch": "p3-host-link",
+   "commit": "f21f615",
+   "ci_run_ids": [
+    "39097911874"
+   ],
+   "changed": [
+    "core/src/link/mod.rs",
+    "core/src/link/server.rs",
+    "core/src/link/conn.rs",
+    "core/tests/link.rs",
+    "core/tests/link_support/mod.rs"
+   ],
+   "notes": "The test client reuses the core link::noise and frame wrappers over snow, so the A1 JS vectors remain the independent check.",
+   "gate_results": [
+    {
+     "cmd": "cargo test -p orchestra-core --locked --test link",
+     "out": "ok. 26 passed; 0 failed (the 16 named tests plus second hello, only /pair and /link upgrade, calls round trip, scope change on a live connection, resend after reconnect, newer connection replaces older, connection cap, idle timeout, restart keeps clients, offer address); 3 runs in a row, stable"
+    },
+    {
+     "cmd": "cargo test -p orchestra-core --locked -- link::server link::conn",
+     "out": "ok. 9 passed; 0 failed (includes unspecified_addresses_are_refused_before_any_socket_call, start_refuses_an_unspecified_bind_and_opens_nothing, empty_binds_start_reads_and_creates_nothing)"
+    },
+    {
+     "cmd": "grep -rnE 0.0.0.0|[[]::|::1|Ipv6Addr|UNSPECIFIED|localhost core/tests/link.rs core/tests/link_support",
+     "out": "(no output; exit 1)"
+    },
+    {
+     "cmd": "grep -rnoE dotted-quad core/tests/link.rs core/tests/link_support | grep -v 127.0.0.1",
+     "out": "(no output; exit 1)"
+    },
+    {
+     "cmd": "cargo tree guard (gtk|webkit|tauri|wry|tokio|aws-lc|ring)",
+     "out": "(no output; exit 1)"
+    },
+    {
+     "cmd": "cargo check -p orchestra-core --tests --locked, and --target x86_64-unknown-linux-gnu",
+     "out": "both Finished, 0 warnings"
+    },
+    {
+     "cmd": "cargo test --workspace --locked (Windows)",
+     "out": "exit 0; shell ok. 10; core ok. 245; link ok. 26; wire_fixtures ok. 4"
+    },
+    {
+     "cmd": "git diff --stat main -- .github desktop/src-tauri/tauri.conf.json desktop/src-tauri/capabilities desktop/src desktop/src-tauri/src/lib.rs",
+     "out": "(empty)"
+    },
+    {
+     "cmd": "ci: push 1 of 2 to origin p3-host-link, head f21f615, run 39097911874",
+     "out": "success: core (ubuntu-24.04) success, core (ubuntu-24.04-arm) success, windows workspace success, core check (macos-latest) success, desktop npm test success, mobile npm test success"
+    }
+   ],
+   "deviation_from_approved_plan": "One fix inside the approved files after the first test run: the live loop re-reads the client from the store when a call arrives, not only at the top of the pass, so a scope change applies to the very next call. No G-item changed.",
+   "attempt_2": {
+    "written_by": "builder",
+    "status": "done",
+    "branch": "p3-host-link",
+    "commit": "1a441b4",
+    "ci_run_ids": [
+     "39100144945"
+    ],
+    "changed": [
+     "core/src/link/server.rs"
+    ],
+    "notes": "Fixes the review blocker: validate_binds canonicalised with to_canonical() so [::ffff:0.0.0.0] is refused; no other unspecified check exists in link/. Pushed by the orchestrator (push 3 of 4) after the builder push hung on the credential prompt.",
+    "gate_results": [
+     {
+      "cmd": "cargo test -p orchestra-core --locked -- link::server link::conn",
+      "out": "ok. 9 passed; 0 failed (unspecified_addresses_are_refused_before_any_socket_call now covers 0.0.0.0, ::, [::ffff:0.0.0.0] with port 0 and a fixed port, and accepts [::ffff:127.0.0.1])"
+     },
+     {
+      "cmd": "cargo test -p orchestra-core --locked --test link",
+      "out": "ok. 26 passed; 0 failed"
+     },
+     {
+      "cmd": "grep guard over core/tests/link.rs and link_support",
+      "out": "(no output; exit 1)"
+     },
+     {
+      "cmd": "cargo test --workspace --locked",
+      "out": "exit 0; shell 10, core 245, link 26, wire_fixtures 4 all passed"
+     },
+     {
+      "cmd": "cargo check -p orchestra-core --tests --target x86_64-unknown-linux-gnu --locked",
+      "out": "Finished dev profile"
+     },
+     {
+      "cmd": "ci: run 39100144945 at 1a441b4",
+      "out": "success: core ubuntu-24.04 success, core ubuntu-24.04-arm success, windows workspace success, core check macos-latest success, desktop npm test success, mobile npm test success; the validator test ran ok on both Linux jobs"
+     }
+    ]
+   }
+  },
+  "s4": {
+   "written_by": "builder",
+   "status": "done",
+   "branch": "p3-host-link",
+   "commit": "30a4f20",
+   "ci_run_ids": [
+    "39098103742"
+   ],
+   "changed": [
+    "protocol/README.md",
+    "CLAUDE.md"
+   ],
+   "notes": "protocol/README.md already mixes CRLF and LF in the working copy (autocrlf); not normalised.",
+   "gate_results": [
+    {
+     "cmd": "grep -c Noise_IKpsk2_25519_ChaChaPoly_SHA256 protocol/README.md",
+     "out": "1"
+    },
+    {
+     "cmd": "grep -c Noise_KK_25519_ChaChaPoly_SHA256 protocol/README.md",
+     "out": "1"
+    },
+    {
+     "cmd": "grep -c ## What P3 decided protocol/README.md",
+     "out": "1"
+    },
+    {
+     "cmd": "grep -cE /pair|/link protocol/README.md",
+     "out": "4"
+    },
+    {
+     "cmd": "grep -c 1[.]0 protocol/README.md",
+     "out": "6"
+    },
+    {
+     "cmd": "grep -c add its origin explicitly CLAUDE.md",
+     "out": "0"
+    },
+    {
+     "cmd": "grep -c 185 core + 4 wire fixtures + 10 shell CLAUDE.md",
+     "out": "0 (now: 245 core + 26 link + 4 wire fixtures + 10 shell)"
+    },
+    {
+     "cmd": "ci: push 2 of 2 to origin p3-host-link, head 30a4f20, run 39098103742",
+     "out": "success: all 6 jobs (core ubuntu-24.04, core ubuntu-24.04-arm, windows workspace, core check macos-latest, desktop npm test, mobile npm test)"
+    },
+    {
+     "cmd": "human-read item",
+     "out": "left to the owner: read What P3 decided against the G-items and core/src/link"
+    }
+   ],
+   "deviation_from_approved_plan": "None."
+  }
+ },
+ "reviews": {
+  "s1": {
+   "$comment": "RE-REVIEWS NEST, and this is the rule every reader follows. The TOP LEVEL of reviews.<slice> IS attempt 1. A re-review writes attempt_2, then attempt_3, and so on, each with the same fields as the top level. Every attempt SURVIVES PERMANENTLY - history is never overwritten, flattened, or migrated up. The LATEST attempt supplies the verdict: that is what close-run.py, brief.py and verify-state.py resolve through, and what fleetview's finalVerdict() has always shown. `ever_rejected` - did ANY attempt REJECT - is DISPLAY ONLY, forever, so a rejection stays visible after it is fixed; it must never gate anything, or the fleet stops being able to loop. NO NODE MAY REWRITE AN EARLIER ATTEMPT: a second reviewer writes its own attempt_N and leaves the ones before it alone, top-level verdict included - relocating that verdict would destroy the history the board keeps and leave a key stamped written_by:reviewer with someone else as its real author. The KEY INDEX numbers an attempt, not the `attempt` field inside it; the field is display. An EMPTY attempt_N is not a re-review, it is a key nobody wrote - write the whole attempt or none of it. The walk STOPS AT THE FIRST GAP, so an attempt_3 with no attempt_2 is ignored and the earlier verdict stands: A GAP IS MALFORMED AND NO NODE MAY LEAVE ONE. Write the next UNUSED N and never skip - a mis-numbered re-review is not reported anywhere, it is simply unread, and a REJECT nobody reads is a REJECT nobody acts on. The cap is attempt_9, matching fleetview's `for (i = 2; i < 10; i++)` exactly so the two readers cannot disagree; attempt_10 and beyond is reported loudly and resolved by nobody.",
+   "written_by": "reviewer",
+   "verdict": "PASS",
+   "attempt": 1,
+   "summary": "PASS, no blockers. I re-ran every done_when twice: on HEAD 30a4f20 and on a git-archive export of 7801106 in scratch, so s1 stands without s2-s4. At s1: core 203+4, filter 17, workspace shell 10+203+4, all exit 0. Cargo.toml/Cargo.lock diff empty, answer_permission grep 0, the linux-target check is clean, and CI run 39098103742 (headSha 30a4f20) is green on 6 jobs. Later commits do not touch s1's files. I walked the lock orders by hand. Publishers and subscribe both take inner, then emit_order, then the leaf hub. Subscription::drop takes only hub. The Tauri closure only calls handle.emit, so there is no cycle. In subscribe, a publisher that computed before it is in the snapshot and in view.seq. One that computed after it waits on emit_order until registration, so its seq is > view.seq: no loss, no duplicate. try_send+retain cuts a full subscriber without blocking, so a feed has no gap. answer() matches the old dispatch_answer, with the same error strings. G13 is decided by enum, including the race between lookup and write. All 15 dispatch arms match the shell's core calls. 3 notes.",
+   "findings": [
+    {
+     "file": "orchestra/core/src/wire/dispatch.rs",
+     "line": 0,
+     "severity": "note",
+     "origin": "",
+     "issue": "'A dispatch test per Method' is only partly met. CreateTask, GetTaskDiff, CancelTask, LandTask, DiscardTask and RetryCleanup are tested only on their refusal path (unknown id or project -> failed); no test asserts a successful result shape through dispatch. dispatch_covers_every_method only asserts Method::ALL.len()==15. The arms are one-line pass-throughs that I checked by hand against commands.rs, and the exhaustive match catches a new Method, so this is a coverage gap and not a defect."
+    },
+    {
+     "file": "orchestra/core/src/session/mod.rs",
+     "line": 693,
+     "severity": "note",
+     "origin": "",
+     "issue": "subscribe(capacity) calls sync_channel(capacity.max(1)), which allocates the bounded buffer up front, so a caller passing an unbounded capacity would allocate it all at once. Today the only caller is link::conn, with limits.event_queue. Keep that limit bounded, or clamp it in subscribe."
+    },
+    {
+     "file": "orchestra/core/src/session/mod.rs",
+     "line": 1439,
+     "severity": "note",
+     "origin": "",
+     "issue": "An expired item (closed by a restart) maps to Failed, not AlreadyAnswered. That matches G13's wording (unknown-or-resolved only) and keeps the old message. Worth knowing for A2: a phone's queued answer to an item expired by a restart gets 'failed', not 'already_answered'."
+    }
+   ],
+   "evidence": [
+    {
+     "cmd": "git archive 7801106 | tar -x (scratch); cargo test -p orchestra-core --locked",
+     "out": "unit ok. 203 passed; 0 failed; wire_fixtures ok. 4 passed; EXIT 0"
+    },
+    {
+     "cmd": "(s1 export) cargo test -p orchestra-core --locked -- fanout_ subscribe_ dispatch::",
+     "out": "ok. 17 passed; 0 failed; 186 filtered out; EXIT 0"
+    },
+    {
+     "cmd": "(s1 export) cargo test --workspace --locked",
+     "out": "shell ok. 10 passed; core ok. 203 passed; wire_fixtures ok. 4 passed; EXIT 0"
+    },
+    {
+     "cmd": "(worktree HEAD 30a4f20) cargo test --workspace --locked",
+     "out": "shell 10 passed; core 245 passed; tests/link.rs 26 passed; wire_fixtures 4 passed; EXIT 0"
+    },
+    {
+     "cmd": "(HEAD) cargo test -p orchestra-core --locked -- fanout_ subscribe_ dispatch::",
+     "out": "ok. 17 passed; 0 failed; 228 filtered out"
+    },
+    {
+     "cmd": "cargo check -p orchestra-core --tests --target x86_64-unknown-linux-gnu --locked",
+     "out": "Finished dev profile, no warnings"
+    },
+    {
+     "cmd": "git diff --stat main 7801106 -- core/Cargo.toml Cargo.lock",
+     "out": "(empty)"
+    },
+    {
+     "cmd": "grep -c answer_permission desktop/src-tauri/src/commands.rs",
+     "out": "0"
+    },
+    {
+     "cmd": "git log 7801106..HEAD -- <s1 files>",
+     "out": "(none) - s2-s4 do not touch s1's files"
+    },
+    {
+     "cmd": "gh run view 39098103742 --repo njcurtis3/Orchestra --json headSha,conclusion",
+     "out": "success, headSha 30a4f20; mobile, desktop, core ubuntu x64/arm64, macOS check, windows workspace all green; ubuntu log shows fanout_/subscribe_ tests ok, 246 passed 1 ignored"
+    }
+   ]
+  },
+  "s4": {
+   "written_by": "reviewer",
+   "verdict": "PASS",
+   "attempt": 1,
+   "risk_retag": null,
+   "summary": "PASS. Re-ran every done_when grep in the worktree at 30a4f20 (IKpsk2 1, KK 1, heading 1, /pair|/link 4, 1[.]0 6, old origin line 0, old count 0) and cargo test --workspace --locked: 245 core + 26 link + 4 wire_fixtures + 10 shell, all passing, matching the new CLAUDE.md line exactly. git diff f21f615..30a4f20 touches only CLAUDE.md and protocol/README.md. Checked each claim in 'What P3 decided' against core/src/link: suite strings (noise.rs:19-20), prologue tag 'orchestra-link v1' plus 4-byte BE length-prefixed path/request/reply (noise.rs:79-85), 404 for unknown path and closed /pair (conn.rs:201-217), MAX_CHUNK 65519 and wire cap 65537 (frame.rs), 32-byte secret, offer fields, host_id 16 bytes, fingerprint 8 bytes in 4-char groups, 300 s TTL, limits 16/10/8/1024/120/30/10, 256-id cache, AlreadyAnswered by enum (dispatch.rs:29), seq starting at 1, clients.json schema 1 written atomically, 0o600 host_key. The old 128-bit line and the P2 framing and seq leftovers are explicitly superseded. Two notes only. Low risk tag stands.",
+   "findings": [
+    {
+     "severity": "note",
+     "origin": "",
+     "title": "/pair with no open window: G10 text vs built behaviour",
+     "detail": "G10 says /pair outside a window is 'closed with no message'. The code (conn.rs:211-217) returns HTTP 404, and the README correctly records the 404, so the doc matches the code. The difference between G10's text and what was built comes from s3, not s4. Worth the owner knowing, since the README now states the 404 as the contract."
+    },
+    {
+     "severity": "note",
+     "origin": "",
+     "title": "The 'P2 open items' parenthetical points at a note the README does not contain",
+     "detail": "README:356-357 says 'The note in the P2 open items that Rust rejects 1.0 was wrong.' That inverted note is in orchestra/ROADMAP.md, which G9 leaves for the orchestrator to fix at close, not in this README. A README reader cannot find it. Either name ROADMAP.md or drop the sentence once the ROADMAP fix lands. Also, a few possessives lost their apostrophes ('the client first transport message', 'the core own message', 'Rust codec existing leniency'). That is cosmetic."
+    }
+   ],
+   "evidence": {
+    "done_when_rerun": {
+     "Noise_IKpsk2": 1,
+     "Noise_KK": 1,
+     "## What P3 decided": 1,
+     "/pair|/link": 4,
+     "1[.]0": 6,
+     "add its origin explicitly": 0,
+     "185 core + 4 wire fixtures + 10 shell": 0
+    },
+    "cargo_test_workspace_locked": "orchestra_core lib 245 passed; tests/link.rs 26 passed; tests/wire_fixtures.rs 4 passed; orchestra_lib (shell) 10 passed; 0 failed",
+    "scope": "git diff --name-only f21f615 30a4f20 -> CLAUDE.md, protocol/README.md",
+    "claims_checked": "noise.rs:19-25,79-85; conn.rs:36-40,201-217,296-300,507-546; frame.rs:11,45-46,115-169; keys.rs:188-198,247,272; pairing.rs:14,70-105; mod.rs:47-61; clients.rs:17,212-224; server.rs:44,142-160,404-407; session/mod.rs:668-672; wire/dispatch.rs:29"
+   }
+  },
+  "s2": {
+   "written_by": "reviewer",
+   "verdict": "PASS",
+   "attempt": 1,
+   "summary": "PASS. I read the code at HEAD with git show (s3 only added mod/use lines to mod.rs). The suite strings are exact, the psk is at location 2, and the roles are right. The prologue is tag + u32-length-prefixed path, request frame and reply frame. KK trial decryption uses a fresh HandshakeState per candidate. I confirmed in snow-0.10.0/Cargo.toml that std = [... ring/std ...] turns on ring, and that use-getrandom resolves OsRng = getrandom::fill, with no fallback. Frame open is overflow-safe and refuses truncated input; the 4 MiB encode cap is in codec finish(). host_key is opened 0600 with create_new in a 0700 directory. Debug is redacted on SecretKey, Psk, PairingWindow and PairingOffer, and none of them derives Serialize. The window is consumed after the hello decrypts. I re-ran these locally: link:: 42 passed, workspace exit 0, the cargo tree guard printed nothing (also for the Linux target), the greps returned 3 and 0. CI run 39098103742 at 30a4f20: host_key_is_mode_0600 passed on both Linux jobs. Notes: the host_key write is not atomic, so a crash can leave a short file and BadFile (fail-closed); the wrong-psk host-side assert is vacuous; zeroization is best-effort.",
+   "findings": [
+    {
+     "file": "orchestra/core/src/link/keys.rs",
+     "line": 288,
+     "severity": "medium",
+     "origin": "",
+     "issue": "host_key's contents are not written atomically. create_new is followed by write_all and sync_all on the real path, with no temp file and rename. A crash, kill or ENOSPC between the open and the sync leaves a 0 to 31 byte host_key, and from then on every load_or_create returns BadFile until someone deletes the file by hand. Likewise, a second process that loses the create_new race can read the half-written file and get BadFile. This fails closed: the mode is 0600 from open(2) on, so the key is never exposed and never silently replaced. A temp file created 0600 with create_new and then hard-linked or renamed into place would close the gap. Not a blocker: G4 asks for create_new with 0600, and in P3a one host loads the key once."
+    },
+    {
+     "file": "orchestra/core/src/link/noise.rs",
+     "line": 126,
+     "severity": "low",
+     "origin": "",
+     "issue": "KK trial decryption builds a fresh HandshakeState for every candidate and drops it after a failed read, so no state carries over from one trial to the next. It returns early on a match, though, so a NoMatch takes time proportional to the number of paired clients. That leaks the count (at most 32), not any key, and only a holder of the matching private key can trigger the match path. The per-IP handshake rate limit bounds the DH cost. Acceptable; noted."
+    },
+    {
+     "file": "orchestra/core/src/link/noise.rs",
+     "line": 296,
+     "severity": "low",
+     "origin": "",
+     "issue": "The host-side half of ikpsk2_wrong_psk_never_reaches_a_transport_message decrypts 40 zero bytes, which would fail under any key, so it proves nothing about the psk. The real property holds and is tested: in IKpsk2 the psk is mixed at the end of message 2, so an initiator with the wrong psk fails to read message 2 (asserted) and can never produce a valid first transport message. core/tests/link.rs:95 wrong_psk_closes_silently covers the end-to-end case. The documented deviation is inherent to the pattern."
+    },
+    {
+     "file": "orchestra/core/src/link/keys.rs",
+     "line": 44,
+     "severity": "low",
+     "origin": "",
+     "issue": "Zeroization is best-effort, and the docs claim more. random_bytes leaves the array it returns on the stack, Psk::from_bytes(*expose()) in pairing.rs:50 makes unwiped temporaries, and PairingOffer.secret is a plain String (by design, since it is the QR payload) that is Clone and never wiped. Also, sha256() and SecretKey::public() fall back to all-zero output if the resolver lacks the primitive. That cannot happen with use-sha2 and use-curve25519 enabled, but it would fail silently rather than loudly."
+    },
+    {
+     "file": "orchestra/core/src/link/frame.rs",
+     "line": 50,
+     "severity": "note",
+     "origin": "",
+     "issue": "seal() does not enforce the 4 MiB cap itself. It is enforced before seal by wire::codec finish() (codec.rs:88, MAX_MESSAGE_BYTES), and encode_host is the only producer (conn.rs:108). open() checks the cap before decrypting or growing each chunk, with no overflow (out.len() <= max_plain and len - 16 <= 65519), and refuses a truncated length, a length below the tag size and trailing bytes. conn.rs:205-208 sets tungstenite's max_message_size to max_wire_bytes(4 MiB), so memory is capped before decryption."
+    },
+    {
+     "file": "orchestra/core/src/link/clients.rs",
+     "line": 219,
+     "severity": "note",
+     "origin": "",
+     "issue": "The clients.json write is temp file + fsync + rename (atomic), but the parent directory is not fsynced after the rename, and the temp file gets the default mode. The contents are public keys, names and scopes only, so no secret is exposed. A corrupt file, a bad entry, a duplicate id or key, more than 32 clients, or an unknown schema all refuse to open and are never written, because a store is never built for them."
+    },
+    {
+     "file": "orchestra/Cargo.lock",
+     "line": 0,
+     "severity": "note",
+     "origin": "",
+     "issue": "Lock diff checked. It adds snow 0.10.0, tungstenite 0.30.0 and their pure-Rust dependencies (curve25519-dalek 4.1.3, chacha20poly1305 0.10.1, poly1305, rand 0.10.3, sha1 0.11, data-encoding, zeroize, subtle, among others). The only removals are name-to-name+version disambiguations. No existing version changed. Licenses are MIT/Apache, except curve25519-dalek and subtle, which are BSD-3-Clause (permissive)."
+    }
+   ],
+   "evidence": [
+    "cargo test -p orchestra-core --locked -- link:: -> 42 passed, 0 failed (local Windows)",
+    "cargo test --workspace --locked -> exit 0 (core 245, link 26, wire_fixtures 4, shell 10)",
+    "cargo tree guard -> no output, grep exit 1; same with --target x86_64-unknown-linux-gnu",
+    "grep counts -> 3 and 0",
+    "snow-0.10.0/Cargo.toml: std includes ring/std; src/resolvers/default.rs:51-76 OsRng -> getrandom::fill",
+    "gh run 39098103742 headSha 30a4f20; jobs 117588628194 and 117588628160: link::keys::tests::host_key_is_mode_0600_and_its_folder_0700 ... ok"
+   ]
+  },
+  "s3": {
+   "written_by": "reviewer",
+   "verdict": "REJECT",
+   "attempt": 1,
+   "summary": "REJECT on one concrete bind-validator bypass: validate_binds uses IpAddr::is_unspecified, which is false for the IPv4-mapped any address, so [::ffff:0.0.0.0]:7000 passes; on Linux (std never sets IPV6_V6ONLY, bindv6only=0) the kernel binds that to INADDR_ANY, i.e. every IPv4 interface, which G5 forbids with no override. Probed in a scratch crate: is_unspecified=false, to_canonical()=0.0.0.0 (Windows bind fails 10049, so only Linux/orchestrad is exposed). Fix is one line plus test cases. Everything else held: I re-ran every done_when (link 26/26 three times, stable; link::server/conn 9/9; both 127.0.0.1 greps empty; tree guard exit 1; check --tests ok; workspace 10+245+26+4; desktop/.github diff empty; LinkHost only in tests), confirmed 26 link tests on x86_64 and arm64 in both CI runs, and paired, KK-reconnected and called through a raw-snow client written only from the README spec, so the shared-wrapper test client hides no interop bug. Scope check per call, revocation, idempotency keying, pre-auth caps and logging re-derived by hand; notes are in findings.",
+   "findings": [
+    {
+     "file": "orchestra/core/src/link/server.rs",
+     "line": 44,
+     "severity": "blocker",
+     "origin": "builder",
+     "issue": "validate_binds checks a.ip().is_unspecified(), which is false for IPv4-mapped forms. Input binds=[[::ffff:0.0.0.0]:7000] (or [::ffff:0:0]) -> validate_binds returns Ok and start() calls TcpListener::bind. On Linux, Rust std leaves IPV6_V6ONLY at the kernel default (0) and __inet6_bind accepts a mapped INADDR_ANY, so the host listens on every IPv4 interface. G5 says unspecified addresses are refused before any socket call with no override; the review brief named mapped forms explicitly. Probe (scratch crate, Windows): is_unspecified=false, to_canonical()=0.0.0.0; on Windows the bind fails (os error 10049) only because V6ONLY defaults to 1 there, so desktop-on-Linux and orchestrad (H2) are the exposed hosts. Fix: a.ip().to_canonical().is_unspecified() (or refuse any v4-mapped bind), and add [::ffff:0.0.0.0]:0 to unspecified_addresses_are_refused_before_any_socket_call. The Linux bind result comes from reading the kernel source, not from a run (no Linux host here)."
+    },
+    {
+     "file": "orchestra/core/src/link/conn.rs",
+     "line": 529,
+     "severity": "note",
+     "origin": "",
+     "issue": "link-call workers are detached: stop() joins the accept and connection threads but not the up to 8 per-connection dispatch workers, so stop() can return while a remote land/answer/start_session is still running in wire::dispatch and changing Sessions. It was accepted before stop, so it is not a privilege bypass, but G5 says stop joins the threads. Before the P3b disable toggle, consider holding the JoinHandles in the connection and joining them on exit."
+    },
+    {
+     "file": "orchestra/core/src/link/conn.rs",
+     "line": 364,
+     "severity": "note",
+     "origin": "",
+     "issue": "Revoke-during-connect window: handshake() checks client_by_key and then run() sends welcome and the full snapshot before the first per-pass revocation check. A revoke landing in those microseconds still sends one snapshot, then error revoked. Events can also go out up to one ~25 ms pass after a revoke or a read-scope removal, because current is read before poll(). Both are bounded and need no change now."
+    },
+    {
+     "file": "orchestra/core/src/link/conn.rs",
+     "line": 332,
+     "severity": "note",
+     "origin": "",
+     "issue": "PendingPairing.client_name is the raw hello string, which can be up to MAX_MESSAGE_BYTES (4 MiB) and is passed to on_pairing_request unclipped; the store clips it on add. Only a psk holder can reach this. The P3b dialog should get the clipped name."
+    },
+    {
+     "file": "orchestra/core/src/link/conn.rs",
+     "line": 206,
+     "severity": "note",
+     "origin": "",
+     "issue": "Pre-auth memory: tungstenite max_message_size is max_wire_bytes(4 MiB) from the upgrade on, so before Noise each socket can make the host buffer about 4 MiB for a version frame that is then refused for being over 1 KiB. That is bounded at about 16 x 4 MiB by the connection cap. A small cap until the handshake completes would tighten it. Also, upgrade and handshake each get their own handshake_timeout, so a pre-auth socket can hold a slot for about 2 x 10 s, and two IPs at 10 per minute can fill all 16 slots (an inherent DoS on an exposed bind)."
+    },
+    {
+     "file": "orchestra/core/src/link/server.rs",
+     "line": 146,
+     "severity": "note",
+     "origin": "",
+     "issue": "RateLimiter refuses every new source once 1024 sources have hit within the window. That is fine on IPv4 LAN or loopback, but on an IPv6 bind (P3b) one attacker rotating /64 addresses locks out legitimate new sources for up to a minute. Consider keying IPv6 by /64."
+    },
+    {
+     "file": "orchestra/core/src/link/server.rs",
+     "line": 404,
+     "severity": "note",
+     "origin": "",
+     "issue": "confirm_pairing/await_confirmation race: if the confirm deadline fires and confirm_pairing removes the pending entry before the receiver is dropped, the sync_channel(1) send succeeds, so the client is stored but never gets a welcome. The host did confirm it, so this is benign, but it contradicts the comment at line 410. Also, a panic inside conn::serve would skip connection_closed and leak a connection slot; a drop guard would make that robust (no reachable panic found)."
+    }
+   ],
+   "evidence": {
+    "head": "30a4f20 (s3 = f21f615); worktree status clean, untouched",
+    "done_when_rerun": [
+     "cargo test -p orchestra-core --locked --test link: 26 passed, 0 failed, run 3 times, all 16 named tests present",
+     "cargo test -p orchestra-core --locked -- link::server link::conn: 9 passed incl. unspecified_addresses_are_refused_before_any_socket_call",
+     "both test-bind greps on tests/link.rs and link_support: no output, exit 1",
+     "cargo tree -e normal,build guard grep: exit 1",
+     "cargo check -p orchestra-core --tests --locked: Finished",
+     "cargo test --workspace --locked: exit 0 (shell 10, core 245, link 26, wire_fixtures 4)",
+     "git diff --stat main on .github, tauri.conf.json, capabilities, desktop/src, lib.rs: empty",
+     "LinkHost referenced only in the link/mod.rs re-export, tests/link.rs and tests/link_support"
+    ],
+    "ci": "gh run view 39097911874 (f21f615) and 39098103742 (30a4f20): all 6 jobs success. The --log --job output for core ubuntu-24.04 (x86_64) and ubuntu-24.04-arm (aarch64) in both runs shows 26 passed, 0 failed for tests/link.rs, and the validator unit test ok. Not rerun.",
+    "independent_interop": "Scratch crate C:/Users/natha/AppData/Local/Temp/rev_p3_s3_interop, outside the worktree, a path dep on core for LinkHost only. The client used raw snow 0.10 and tungstenite, with the prologue and framing written from protocol/README.md and not from core: IKpsk2 pair on /pair, confirm through the callback, welcome and snapshot, then a KK reconnect on /link, storage_status ok and stop_session forbidden plus a Forbidden log. All passed.",
+    "bind_probe": "Scratch crate C:/Users/natha/AppData/Local/Temp/rev_p3_s3_bind: for [::ffff:0.0.0.0]:0, is_unspecified=false and to_canonical=0.0.0.0, and the Windows bind fails with 10049. [::]:0 and 0.0.0.0:0 have is_unspecified=true.",
+    "rederived": "Pre-auth limits: the tungstenite AttackCheck caps HTTP headers at 64 KiB or 512 packets; the version text is refused above 1 KiB; message1 is refused above 65535 before any trial; KK trial is at most 32 builds; the rate limit is 10 per minute per IP at accept; a closed /pair gets 404; failures drop the socket with no message. G7: the window is consumed only when hello decrypts, an already-paired key is refused without consuming it, the client is stored only on confirm, and the default scopes are read+answer. G8: the client is re-read on every binary message before handle_call, the scope is checked before the cache and dispatch, the cache is keyed by the authenticated client_id and holds non-read calls only, and a replay is re-scope-checked. Events: snapshot first, then seq order; Disconnected logs Lagging and closes. Idle is 120 s, reset only by a binary message. On Windows, TimedOut is mapped to WouldBlock. Logging: only LinkLog through the callback, carrying ids, method, addr and ip; no println, eprintln or log crate in link/."
+   },
+   "attempt_2": {
+    "verdict": "PASS",
+    "attempt": 2,
+    "written_by": "reviewer",
+    "summary": "PASS. The attempt-1 blocker is fixed: validate_binds now tests a.ip().to_canonical().is_unspecified(), which refuses 0.0.0.0, :: and the mapped [::ffff:0.0.0.0] (also written [::ffff:0:0]). Loopback, LAN, [::1] and mapped loopback still pass. The only other IPv6 spelling of 'any' is the IPv4-compatible ::0.0.0.0, which is :: itself, so nothing else canonicalises to unspecified. I went through every bind in core/src. The only non-test TcpListener::bind is server.rs:316, inside start(), after validate_binds runs on the same immutable config.binds. conn.rs:590 is a test that binds 127.0.0.1. Desktop does not reference LinkHost. The 30a4f20..1a441b4 diff touches server.rs only (+6/-3: a predicate, a comment, and test cases). On HEAD I re-ran: link 26/26; link::server/conn 9/9, unspecified test included; both 127.0.0.1 greps, the tree guard and the main diff, all empty; workspace 10+245+26+4, exit 0; check --tests native and x86_64-linux, ok. CI run 39100144945 is at headSha 1a441b4 and green. Both Linux core jobs ran the validator test (ok), 246 passed with 1 ignored, and link 26/26. Attempt 1's six notes stand as follow-ups, none worse than described.",
+    "findings": [
+     {
+      "severity": "note",
+      "file": "orchestra/core/src/link/server.rs:45",
+      "origin": "",
+      "detail": "The fix is correct. Ipv6Addr::to_canonical maps only ::ffff:a.b.c.d, but the only other v6 spelling that means 'any' (IPv4-compatible ::0.0.0.0) is :: itself, so this test covers it. No further change needed."
+     },
+     {
+      "severity": "note",
+      "file": "orchestra/core/src/link/server.rs:308-316",
+      "origin": "",
+      "detail": "Bind-path audit: the only production TcpListener::bind is start() line 316. It iterates the same self.config.binds that validate_binds checked at line 308 while holding the running lock, and config cannot be changed after new(), so a check-then-bind race is impossible. conn.rs:590 is in mod tests and binds 127.0.0.1. desktop/src-tauri/src does not reference link."
+     },
+     {
+      "severity": "note",
+      "file": "",
+      "origin": "",
+      "detail": "Attempt-1 notes (detached dispatch workers on stop, revoke-during-connect window, unclipped pending client_name, 4 MiB pre-auth buffer, IPv6 /64 rate-limit keying, confirm-deadline race, panic slot leak): I re-read them against HEAD. They are unchanged by the fix and none is worse than described. They remain non-blocking follow-ups."
+     }
+    ],
+    "evidence": [
+     "git diff --stat 30a4f20 1a441b4: core/src/link/server.rs | 9 ++++++--- only",
+     "cargo test -p orchestra-core --locked --test link: ok. 26 passed; 0 failed",
+     "cargo test -p orchestra-core --locked -- link::server link::conn: ok. 9 passed; 0 failed (unspecified_addresses_are_refused_before_any_socket_call ok)",
+     "grep guards (unspecified/v6 tokens; non-127.0.0.1 dotted quads): no output, exit 1",
+     "cargo tree gui/dep guard: no output, exit 1",
+     "cargo test --workspace --locked: exit 0 (10, 245, 26, 4)",
+     "cargo check -p orchestra-core --tests --locked (native and --target x86_64-unknown-linux-gnu): Finished",
+     "git diff --stat main -- .github desktop/...: empty",
+     "CI 39100144945 headSha 1a441b431d73: all 6 jobs success; core ubuntu-24.04 and ubuntu-24.04-arm logs: validator test ok, lib 246 passed 1 ignored, link 26 passed, wire_fixtures 4 passed"
+    ]
+   }
+  }
+ },
+ "integrator": {
+  "written_by": "the node that wrote this key - here, always the string integrator",
+  "merged": [],
+  "conflicts": [],
+  "verification": "what command proved it works, and its output"
+ },
+ "ops": {
+  "written_by": "the node that wrote this key - here, always the string ops",
+  "gated": true,
+  "actions": []
+ },
+ "log": [
+  "orchestrator: opened run 2026-10-17 from the user's \"start P3\"; orchestra main @ e84d179 clean, pushed (H1 merged). Environment: Windows only, no WSL/Docker; CI test.yml covers Linux. Spawning scout.",
+  "orchestrator: scout returned (39 facts, 12 unknowns, 12 risks). Core is greenfield for the link: no socket/Noise/pairing/client store; Emit/Notify single-consumer; no per-event seq; answer dispatch and storage status live in the shell. No tokio in core (threads suffice). CSP bullet contradicts README (Rust owns the socket). Split supported: core link first, Devices UI second. Spawning architect.",
+  "orchestrator: architect returned single-loop s1-s4 (P3a, core-side link only) with gate items G1-G13; orchestrator adds G14 (branch push for CI evidence, as H1 G7). Awaiting human gate.",
+  "orchestrator: human gate APPROVED 2026-10-17 (\"approve\"): G1-G13 as recommended (P3a core-side only; blocking tungstenite on threads; snow 0.10/tungstenite 0.30/getrandom 0.3; FileKeyProvider + link/clients.json, state.json stays schema 2; empty bind list = off, 0.0.0.0/:: refused; drop CSP bullet; confirm-on-host seam; README scope table; v:1.0 doc fix; /pair and /link paths in prologue; KK trial decryption over <=32 keys; 256-bit secret (amends P1's 128-bit), 65535-byte frames, 120s idle; already_answered by enum). G14: push only branch p3-host-link to origin, max 4 pushes, no force-push/PR/tag/main. Worktree C:/Users/natha/wt/op3.",
+  "orchestrator: builder returned s1-s4 committed on p3-host-link (HEAD 30a4f20), 2 of 4 pushes; CI 39097911874 (f21f615) and 39098103742 (30a4f20) all 6 jobs green. Deviations: snow std feature dropped (it pulls ring); dispatch takes decoded Call plus dispatch_json; live loop re-reads client per call. Spawning fresh reviewers s1/s2/s3 high, s4 low.",
+  "orchestrator: reviews s4 PASS, s2 PASS (1 medium: host_key not written atomically), s3 REJECT attempt 1: validate_binds (server.rs:44) accepts IPv4-mapped unspecified [::ffff:0.0.0.0] which binds INADDR_ANY on Linux, violating G5. Independent raw-snow client interop confirmed. Holding the fix until the s1 reviewer finishes in the same worktree.",
+  "orchestrator: builder fix 1a441b4 (validate_binds canonicalises before the unspecified check); push hung on GCM credential prompt for the builder, owner then said \"push\" and the orchestrator pushed (3 of 4 pushes total); CI 39100144945 all 6 green. Fresh reviewer s3 attempt_2 PASS. Merged p3-host-link --no-ff into orchestra main as edaca7e (not pushed); cargo test --workspace --locked on merged main: shell 10, core 245, link 26, wire_fixtures 4, 0 failed. close-run.py closeable. CLOSED 2026-10-18. Follow-ups recorded in ROADMAP P3: host_key non-atomic write (medium), stop() not joining call workers, revoke-during-connect snapshot, unbounded client name in on_pairing_request, ~4 MiB pre-auth buffering per socket, rate limiter 1024-source cap on IPv6, confirm/timeout race, KK NoMatch timing ~ client count, overstated zeroize docs, a vacuous wrong-psk host-side assertion, dispatch refusal-only tests for six methods, expired-on-restart item maps to failed, G10 says closed silently but /pair returns 404, README:356 points at a ROADMAP note. Remote branch p3-host-link left on origin pending owner decision."
+ ]
+}
