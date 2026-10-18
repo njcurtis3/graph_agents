@@ -1,0 +1,344 @@
+{
+  "$comment": "Shared state for ONE work-graph run. Lives at .graph/runs/<run-id>/state.json. Every node reads this on start and appends to its OWN key on finish - the builder writes its own builders.<slice> key, including the branch it worked on. Never rewrite another node's key. Every node key carries written_by, naming the node that wrote it: that is the ONLY record of authorship this file has, and without it 'never rewrite another node's key' is unverifiable - an orchestrator hand-writing all six keys is indistinguishable from six nodes doing their jobs. verify-state.py --audit checks it. This file is the edge: it is how context crosses between agents that cannot see each other.",
+  "run_id": "2026-10-18-orchestra-p3b-followups",
+  "goal": "fix the three medium findings (from run 2026-10-18-orchestra-p3b-desktop-pairing review: (1) link_config::load accepts any port, so a hand-edited config.json with port 0 or below MIN_PORT auto-starts on a random/low port, against G7; (2) the initial link status snapshot can overwrite a newer link-status-changed event at startup; (3) the modals (PairingRequest, PairingDialog) do not keep keyboard focus inside - no Tab trap, background not inert)",
+  "app": "orchestra",
+  "status": "done",
+  "scout": {
+    "written_by": "scout",
+    "facts": [
+      "Q1 DEFAULT_PORT: u16 = 47800 is defined at orchestra/desktop/src-tauri/src/link_config.rs:15; MIN_PORT: u32 = 1024 at link_config.rs:16 (u32 so validate can take an out-of-range u32 from IPC). Settings::default() uses DEFAULT_PORT at link_config.rs:36. The UI has its own copies at orchestra/desktop/src/link.ts:7 (MIN_PORT 1024) and link.ts:9 (DEFAULT_PORT 47800).",
+      "Q1 load() is orchestra/desktop/src-tauri/src/link_config.rs:61-79. The port is parsed only by serde: Settings.port is u16 (link_config.rs:25, struct deny_unknown_fields at :21), decoded at link_config.rs:75 via serde_json::from_value::<Settings>; a decode error maps to ReadOnly::Unreadable (link_config.rs:77). There is NO range check in load(): port 0 and port 22 decode as valid and return (settings, None) at link_config.rs:76. Port 70000 is refused only because it overflows u16 at decode, not by any range rule.",
+      "Q1 the only range check is validate(): link_config.rs:198-200 (if the port is not in MIN_PORT..=65535) returns the message the port must be between 1024 and 65535. validate is reached only from set_config (link.rs:413-420), i.e. user input, never from disk.",
+      "Q1 set_config path: link_set_config command at link.rs:570-573 (async, spawn_blocking). SetConfigArgs.port is u32 (link.rs:127, deny_unknown_fields at :124). LinkRef::set_config is link.rs:401-427: read-only refusal at link.rs:406-408; validate() at :413-420 (so the port range is enforced here); save at :425; slot.settings replaced at :426; apply() at :427. Early return at :421-423 when nothing changed.",
+      "Q1 the disk path to bind: LinkHost::new loads settings with link_config::load (link.rs:242) into Slot.settings. apply() at link.rs:340-388 reads slot.settings, gates on settings.enabled and read_only being None at link.rs:343, then socket_addrs(&present, settings.port) at link.rs:362 (no clamp; socket_addrs takes u16 at link_config.rs:178-180), then LinkHost::start at link.rs:369. Start errors are mapped by start_error_text at link.rs:374 and link.rs:195-200: AddrInUse gives Port N is already in use, PermissionDenied gives Not allowed to listen on port N. Port 0 binds an ephemeral port: the reported addrs (link.rs:370, from the core bound list) carry the real port while LinkStatus.port (link.rs:272, from settings.port) still says 0.",
+      "Q1 auto-start: auto_start() link.rs:390-400 checks only settings.enabled (link.rs:391-393), then spawns the link-start thread that takes lifecycle and calls apply() (link.rs:394-399). Nothing between load and bind checks the port, so an enabled file with port 0 starts on a random port on every launch. On Windows a low port like 22 is not refused by this code; on Unix a non-root bind gets PermissionDenied and shows the Not allowed text (link.rs:199-200). Windows behaviour was not checked on a machine.",
+      "Q1 G7 (desktop-pairing state.json:162, approved): port default 47800, range 1024-65535, Never 0 (ephemeral). G6 (state.json:153): An unknown schema or a file that does not parse -> link off, the file left alone, the settings read-only; A start error leaves the link off, keeps enabled as saved. The literal phrase unknown or unreadable file is left alone and the link stays off is NOT in G6; the nearest wording is orchestra/CLAUDE.md:125 (a file this build does not know, or a file that does not parse, turns the link off and is left alone) and protocol/README.md:346 and :355. G6 says nothing explicit about an out-of-range but parseable port.",
+      "Q1 existing load tests (orchestra/desktop/src-tauri/src/link_config.rs, mod tests at :229): link_config_missing_file_is_off_with_defaults (:255), link_config_round_trips_and_leaves_no_temp (:266), link_config_unknown_schema_and_garbage_are_off_and_left_alone (:280; the bad-list at :288-289 includes port 70000 but NOT port 0 or 22). Validate tests: link_config_validate_checks_port_range_and_current_addresses (:345-362; ports 0, 1, 80, 1023, 65536, 70000 refused). Shell-level tests in link.rs mod tests (:625): link_unreadable_config_is_off_read_only_and_refuses_changes (:802), link_saved_binds_missing_now_are_skipped_and_the_file_is_kept (:782, auto-start path), link_a_busy_port_is_a_start_error_and_keeps_enabled (:771), link_enable_disable_and_exit_stop_the_host (:744), link_status_starts_off_with_defaults (:698). No test loads a config with port 0 or below MIN_PORT.",
+      "Q1 fail-closed fit: making load() return ReadOnly::Unreadable for a port outside MIN_PORT..=65535 (one check after link_config.rs:75-76) matches G6, matches CLAUDE.md:125, and matches what 70000 already does today. Caveat: read-only means the UI cannot fix the port, since set_config refuses while read_only is Some (link.rs:406-408); the owner must hand-edit or delete config.json. Clamping to the default would contradict the fail-closed rule.",
+      "Q2 App.tsx startup: subscribe comment at App.tsx:48 (Subscribe first so nothing emitted during the initial load is missed.); onLinkStatusChanged at App.tsx:54: const u4 = await onLinkStatusChanged((status) => linkDispatch({ type: \"status\", status }), fail); onLinkPairingRequest at :55; cancel guard at :56-63; the Promise.all at App.tsx:65-73: const [sessions, items, tasks, projs, store, linkNow, waiting] = await Promise.all([ listSessions(), listInbox(), listTasks(fail), listProjects(), storageStatus(), linkStatus(), linkPending() ]); the snapshot dispatch at App.tsx:75: linkDispatch({ type: \"status\", status: linkNow }); then requests-loaded at :76. The status dispatch is unconditional and runs after the whole Promise.all resolves, so an event delivered during that await lands first and the stale snapshot overwrites it.",
+      "Q2 linkReducer status case, orchestra/desktop/src/link.ts:196-200: case \"status\": with a comment (A link that stopped has no request left to answer.), then const requests = action.status.running ? state.requests : []; and return { ...state, status: action.status, requests, pairing: action.status.running ? state.pairing : false }. No sequence check; it overwrites status unconditionally. link.test.ts:268-274 pins only the stopped-drops-requests behaviour.",
+      "Q2 the status payload is the Rust struct LinkStatus, link.rs:44-61: available, os, enabled, running, addrs, port, binds, missing, error, config_readonly, firewall_notice_seen. There is NO seq, revision, generation, timestamp or any orderable field. The only SystemTime use in link.rs is link.rs:179 (millis, used for pending expires_at), not status.",
+      "Q2 the event is emitted by emit_status() at link.rs:281-285: if let Ok(v) = serde_json::to_value(self.status()) then (self.emit)(EV_STATUS, v); with EV_STATUS = link-status-changed (link.rs:38). It is called as the last statement of apply() (link.rs:386). The link_status command at link.rs:558-561 is pub fn link_status(link: State<LinkRef>) -> LinkStatus { link.status() }, sync, returning the same struct. status() at link.rs:258-272 takes lock(&self.slot) and copies fields; no counter is read.",
+      "Q2 ordering facts that matter for the fix: apply() runs under the lifecycle mutex (auto_start thread link.rs:394-398; set_config holds the guard at link.rs:402), so status emits from apply are serialized in state order. Every status change in this module goes through apply() (set_config link.rs:426-427, auto_start link.rs:398). set_config early return (link.rs:421-423) changes nothing and emits nothing. So each state change emits one event after it mutates the slot, and emission order equals state order.",
+      "Q2 answer for the plan: a reducer rule (ignore the snapshot if any link-status-changed event has arrived) is sufficient for the race at App.tsx:75, under the facts above (every change emits after mutating; emit order equals state order; App.tsx:54 subscribes before App.tsx:71 reads). A snapshot that loses to a delivered event is older than that event, and any change after the read emits its own later event. Rust does not need a counter for this race. A LinkStatus generation or seq (bumped under the slot lock in apply, carried in the event and the command) would remove the reliance on delivery order, but Tauri cross-thread event delivery order is NOT verified in this tree (unknown).",
+      "Q3 PairingRequest.tsx: role=\"alertdialog\" aria-modal=\"true\" tabIndex={-1} at orchestra/desktop/src/components/PairingRequest.tsx:84-88; overlay wrapper div className=\"overlay\" at :81. Mount focus: useEffect at :71-78 runs dialog.current?.focus(); (:72) and adds a window keydown listener (:73-77) whose only handled key is Escape, which calls escape.current() -> reject() (:74; reject defined at :51-65). There is no Tab handling, no keydown on the dialog, no inert on the background, and no focus restore on unmount (the cleanup at :77 only removes the listener). Enter cannot accept: Accept is a button (:131-135) and there is no form.",
+      "Q3 PairingDialog.tsx: role=\"dialog\" aria-modal=\"true\" tabIndex={-1} at orchestra/desktop/src/components/PairingDialog.tsx:59 inside overlay div at :58. Mount focus: useEffect at :46-53 runs dialog.current?.focus(); (:47) and a window keydown listener (:48-52) where Escape calls onClose (:49). Cleanup at :52 removes the listener. No Tab trap, no inert, no focus restore. Its close path also sends linkClosePairing through serial (:33-37).",
+      "Q3 both overlays are rendered at App.tsx:196 (PairingDialog) and App.tsx:197-205 (PairingRequest, keyed by request id). The header Devices button is at App.tsx:121-124, behind the overlay and reachable by Shift+Tab from the request dialog (reviewer finding, desktop-pairing state.json s3). The overlay class App.css:537-546 is position fixed, inset 0, z-index 10, with an rgba background: it covers the page visually and blocks pointer input but does not set inert or aria-hidden on siblings.",
+      "Q3 no shared Modal component and no focus utility: components/ holds DiffView, Devices, Inbox, InboxItemView, LinkSettings, NewSession, PairingDialog, PairingRequest, SessionDetail, SessionList, TaskDetail, TaskList (no Modal.tsx, no focus.ts). A grep of desktop/src for inert, showModal, the dialog tag, aria-modal and focus() (excluding tests) finds only PairingDialog.tsx:47,59 and PairingRequest.tsx:72,85,88. No inert attribute is used anywhere in src.",
+      "Q3 native dialog element: not used anywhere in desktop/src (grep for the dialog tag and showModal returns nothing). Both pairing modals are plain divs with role and aria-modal.",
+      "Q3 other confirm UIs are NOT overlays: Devices.tsx:134-136 (remove confirm, role=alertdialog, inline inside the device row, no overlay wrapper); LinkSettings.tsx:199-201 (firewall notice, role=alertdialog, inline card, no aria-modal; Continue and Cancel at :205-215); TaskDetail.tsx:136-138 (Land this task?, inline, role=alertdialog, no aria-modal, no overlay) and :151-153 (Discard this task?, same shape). They have no background-blocking layer, no focus move on mount and no Escape handler. Their only CSS is the confirm class at App.css:399-402 (margin and border colour). So the same-pattern claim holds only for missing focus-on-mount, not for a background trap: those cards are not modal in layout.",
+      "Q3 WebView2 and Tauri versions: Tauri 2.12.2 (orchestra/Cargo.lock:3689), wry 0.57.0 (Cargo.lock:5045), webview2-com 0.39.1 (Cargo.lock:4655). tauri.conf.json has no webview install mode set (bundle block at tauri.conf.json:27-37 has none), so the runtime is whatever evergreen WebView2 the machine has; the repo pins no WebView2 runtime version. External knowledge, not verified in this run: WebView2 is Chromium-based and Chromium has supported dialog showModal() and the inert attribute for years (dialog since about Chromium 37, inert since about 102). The owner installed version was not checked.",
+      "Q3 React 19 typings: package.json:15 react ^19.1.0; lock @types/react 19.3.0 (package-lock.json:577-579); the installed node_modules/@types/react/index.d.ts:2946-2948 declares inert?: boolean | undefined on the HTML attributes, so inert typechecks with no cast. tsconfig.json:5 lib is ES2020 plus DOM, so HTMLDialogElement and showModal are typed by the DOM lib; JSX attribute typing comes from @types/react, not the lib setting. TypeScript is about 6.0.3 (package.json:23).",
+      "Q4 no component test infra: orchestra/desktop/vite.config.ts has no test block and no environment key (grep finds none); no jsdom, happy-dom or @testing-library in package.json (deps at :14-16, devDeps :19-25, vitest ^5.0.3 at :25). Test files are src/{detail,ipc,link,protocol,reply,state,tasks}.test.ts (7). npx vitest run in desktop ran during this scout: 206 passed (206), exit clean.",
+      "Q4 pure TS candidates in orchestra/desktop/src/link.ts: toggleScope (:26-31), needsFirewallNotice (:36-38), firewallText (:40-53), interfaceLabel (:57-68), parsePort (:71-75), sameSet (:77-79), missingText (:81-83), loopbackOnly (:85-87), statusPill (:93-102), secondsLeft/isExpired/formatCountdown (:106-118), truncateName (:123-126), acceptErrorText (:131-138), qrDataUrl (:144-146), makeSerial (:152-159), linkReducer (:192-211). Already covered in link.test.ts by describe blocks: scopes (:41), needsFirewallNotice (:65), addresses and the port (:87), statusPill (:122), time (:139), truncateName (:163), acceptErrorText (:178), qrDataUrl (:193), makeSerial (:204), linkReducer (:231). link.test.ts is 282 lines.",
+      "Q4 testable in plain TS for the two fixes: the status race can be a new reducer action or flag in linkReducer (link.ts:192-211) with a pure test; the focus cycle can be a pure helper (next index for Tab and Shift+Tab, given count and shift) with a pure test. Mount focus, aria-modal wiring, the actual Tab trap and inert are DOM behaviour: not testable under vitest node default (no document), so they need a hand check or new devDependencies (lock churn).",
+      "Q4 Rust candidates: orchestra/desktop/src-tauri/src/link_config.rs mod tests at :229 uses the scratch() temp dir helper (:236) and load(&dir) directly, so a port-on-disk test (ports 0, 22, 1023 refused; 1024 and 65535 accepted) fits the existing pattern. Other shell test modules: link.rs:625, keyring.rs:148, qr.rs:21, commands.rs:151, window.rs:88, lib.rs:152 (csp_pinned at lib.rs:156)."
+    ],
+    "unknowns": [
+      "Q1: the owner intent for an out-of-range port on disk is not recorded in any doc read (G6 and G7 do not name it). The scout read is fail-closed (ReadOnly::Unreadable at load), matching CLAUDE.md:125 and the current treatment of port 70000; owner or architect must confirm.",
+      "Q1: Windows behaviour for binding ports below 1024 (e.g. 22) was not tested; the code does not refuse them at start on Windows (link.rs:362-374).",
+      "Q2: whether Tauri delivers events from different emitter threads to the webview in emission order was not verified in this tree; the reducer-only fix relies on it. A generation counter removes that reliance.",
+      "Q2: the race itself was not reproduced here (timing-dependent; the reviewer calls it narrow).",
+      "Q3: WebView2 runtime version on the owner machine was not checked. dialog showModal() and inert support in WebView2 is external knowledge (Chromium), not verified against a live WebView2 in this run.",
+      "Q3: whether to make the inline confirms (Devices.tsx:134, LinkSettings.tsx:199, TaskDetail.tsx:136 and :151) focus-on-mount is a product call; they are not modal and have no Escape handling. Not decided in any doc read.",
+      "Q4: whether to add jsdom or happy-dom plus @testing-library for focus behaviour was not decided; that adds devDependencies and changes desktop/package-lock.json (desktop-npm uses npm ci).",
+      "Build: the desktop shell (cargo) was not built or tested in this scout run; the desktop vitest suite was run and passed 206. npm run build (tsc and vite) was not run."
+    ],
+    "risks": [
+      "PLAN-SHAPE RISK (Q3): the suspicion is half right. Devices.tsx:134, LinkSettings.tsx:199 and TaskDetail.tsx:136 and :151 are inline role=alertdialog cards with no overlay (App.css:537 applies only to .overlay). A Tab trap or inert on the background would not fit them; they need focus-on-mount and Escape handling, if anything. A shared fix should be scoped to the two overlays (a Modal wrapper with overlay, focus-in, Tab cycle, focus restore and inert on siblings), with the inline cards handled as a separate small item. Fixing only the two pairing modals is not inconsistent in layout terms, but leaves the inline cards without focus-on-mount.",
+      "PORT RISK (Q1): load() accepts port 0 and port 22 today (link_config.rs:75-76), and apply() binds settings.port directly (link.rs:362). A hand-edited enabled config with port 0 starts on a random port every launch and reports port 0 in LinkStatus (link.rs:272). The only range guard, validate() (link_config.rs:198-200), never runs on disk input.",
+      "READ-ONLY TRAP (Q1): if load() marks a bad port ReadOnly::Unreadable, set_config refuses every change (link.rs:406-408) and the UI cannot fix the port; the owner must edit or delete config.json. Decide whether that is acceptable (it is the G6 rule) or whether a port-only error should be fixable in the UI.",
+      "STALE SNAPSHOT RISK (Q2): App.tsx:75 dispatches the snapshot unconditionally after the Promise.all (App.tsx:65-73), and link.ts:196-200 overwrites status with no ordering. The reducer-only fix is correct only under the ordering invariants in the facts; a test must pin the event-arrived-first then snapshot order, which link.test.ts does not do today.",
+      "SAME-KEY RISK (Q2/Q3): PairingRequest and PairingDialog both listen for window keydown Escape (PairingRequest.tsx:73-77, PairingDialog.tsx:48-52). The reducer closes the QR dialog on request (link.ts:203). A focus fix must not change which one Escape reaches.",
+      "FOCUS RESTORE RISK (Q3): neither overlay restores focus on close; the trigger (header Devices button App.tsx:121-124, or the pairing button inside Devices) loses focus. A new Modal must record document.activeElement on open.",
+      "NO DOM TEST RISK (Q4): no way to unit-test the Tab trap or mount focus under vitest node environment. Any focus work is pure-helper testing plus a hand test unless devDependencies are added."
+    ]
+  },
+  "architect": {
+    "written_by": "architect",
+    "shape": "single-loop",
+    "parallel_safe": false,
+    "branch": "p3b-followups (off orchestra main 806c4c3)",
+    "run_scope": "orchestra only. Exactly the three medium findings. ROADMAP.md is in no slice (orchestrator, at close). No change to core/, protocol/, tauri.conf.json, capabilities/**, Cargo.toml, Cargo.lock, package.json, package-lock.json, vite.config.ts or App.css. No new dependencies.",
+    "rationale": "Single-loop, one branch, two slices built in order s1 then s2 by one builder loop. Only two pieces, so a diamond is not available (it needs 3+). The file sets are disjoint (s1: two Rust files plus CLAUDE.md; s2: TypeScript only) and no artifact flows between them, so there is no real edge; the order only keeps one loop. CLAUDE.md is in s1 alone: only the shell test count at orchestra/CLAUDE.md:41 ('41 shell') changes, and no vitest count is written in CLAUDE.md (grep '206' finds none), so s2 needs no doc edit. Risk: s1 LOW - no secret or sensitive data, no file shared with s2, and every behaviour it adds (refused at start, file untouched, fixable by a save) is visible to the new shell test; done_when plus a scope check is enough evidence. s2 HIGH - the Tab trap, inert background and focus restore are DOM behaviour that no test in this tree can see (no jsdom, G11), and PairingRequest is the user's trust decision whose Escape-means-reject rule must not move; only a reader and the owner's hand test can check those. Verified against 806c4c3, not trusted: load() has no range check (link_config.rs:61-79; port is u16, so 70000 fails only at decode); validate() is the only range check (link_config.rs:198-200) and runs only from set_config; apply() binds settings.port as is (link.rs:362) and is gated only on enabled and read_only (link.rs:343); set_config refuses everything while read_only is Some (link.rs:406-408); LinkSettings shows status.error with Retry and an editable port field locked only by config_readonly or !available (LinkSettings.tsx:51, :148-151, :185-189). emit_status has exactly one caller, the last line of apply() (link.rs:386); apply's callers hold lifecycle (auto_start link.rs:394-398, set_config link.rs:402); status() takes only the slot lock (link.rs:258). App.tsx:54 subscribes before the Promise.all at :65-73 and dispatches the snapshot at :75 as an ordinary 'status' action; App.tsx:106 also dispatches set_config results as 'status'. The reducer keeps the two overlays mutually exclusive (link.ts:203 'request' clears pairing; :209 'pairing' opens only with no requests); App.tsx:196-205 renders both as children of div.app beside the header and main. Both components focus the dialog on mount and handle Escape on a window keydown listener (PairingRequest.tsx:71-78, PairingDialog.tsx:46-53). No disagreement with the scout's facts.",
+    "decisions_for_gate": [
+      {
+        "id": "F1",
+        "title": "A port outside 1024-65535 in config.json",
+        "recommend": "(b), implemented as a start error, not a new read-only kind. load() is unchanged and still returns the parsed settings with read_only None. A new pure helper link_config::port_error(port: u32) -> Option<String> holds the 1024..=65535 rule; validate() calls it (same message as today) and apply() calls it before split_binds when settings.enabled && read_only.is_none(): an out-of-range port sets slot.error to 'Port N is not allowed. Pick a port from 1024 to 65535 and Save.' and starts nothing. So an enabled file with port 0, 22 or 1023 auto-starts into: link off, enabled kept as saved, the file left byte-for-byte alone, settings editable, the error shown next to the port field (which already shows the bad value with aria-invalid via parsePort). Saving a valid port goes through validate and overwrites the file. Why this keeps G6 and G7: G6's read-only rule protects a file this build cannot fully understand (newer schema, unparseable), where a save would destroy data; a low port is a fully understood file with one bad value, and nothing is rewritten without the user's own Save. G6 already says 'A start error leaves the link off, keeps enabled as saved, and shows the error with Retry', and G7 already treats a busy port as 'a start error naming the port, with the port field next to it'; a forbidden port is the same case. G7's 'never 0' holds because nothing binds it. No UI code changes: the message is status.error, which LinkSettings.tsx:185-189 already renders. Retry with the bad port is refused by validate with 'the port must be between 1024 and 65535'; the user edits the field instead.",
+        "alternatives": [
+          "(a) Fail closed as ReadOnly::Unreadable in load(), as port 70000 does today: one line and the strictest reading, but the settings become read-only (link.rs:406-408) and the only way out is a hand edit or delete of config.json, for a file whose every other field is valid. It would also need a UI message naming the file, since 'could not be read' is misleading for a readable file. Rejected as a worse user outcome for no safety gain: under (b) nothing binds either.",
+          "(c) Clamp to 47800 at load: contradicts fail-closed and silently starts the link on a port the user did not choose (and the QR then advertises it). Rejected."
+        ],
+        "known_inconsistency": "Port 70000 (any value over 65535) still fails at serde decode as Unreadable, read-only, because Settings.port is u16. Making it editable means decoding port as u32, a struct change beyond this finding. Left as is and named in NOT DOING."
+      },
+      {
+        "id": "F2",
+        "title": "The startup snapshot must not overwrite a newer status event",
+        "recommend": "Pure reducer rule. LinkUi gains statusSeen: boolean (initialLinkUi false). Every existing 'status' action (the link-status-changed event at App.tsx:54 and set_config results at App.tsx:106) sets statusSeen true. A new action { type: 'snapshot'; status } is applied exactly like 'status' (same running-drops-requests and pairing rule) only when statusSeen is false, and returns the same state otherwise. App.tsx:75 dispatches 'snapshot' instead of 'status'. Rust needs no generation counter: emit_status() has one caller, the end of apply() (link.rs:386), and apply() always runs with lifecycle held (auto_start link.rs:394-398, set_config link.rs:402), after it has written the slot (link.rs:378-384). So the events form one serialized sequence in state order, and the subscription (App.tsx:54) is in place before link_status is read (App.tsx:71). A snapshot that loses to a delivered event is no newer than the last state that will be delivered: if it was read after mutation N, event N is emitted after that mutation and is either already delivered or still coming. The remaining assumption is that Tauri delivers serialized emits to the webview in emit order; not verified in this tree (scout unknown). A counter would carry a seq through LinkStatus, the ipc.ts decoder and types.ts: three more files and a DTO change for a narrow race.",
+        "alternatives": [
+          "Generation counter in LinkStatus (bumped under the slot lock in apply, compared in the reducer): removes the delivery-order assumption, but changes the DTO, the decoder and its tests. Offer later if the race is ever seen with the rule in place.",
+          "Fetch linkStatus() in its own step after subscribing, outside the Promise.all: narrows the window but does not close it (an event can still arrive while the command is in flight). Rejected."
+        ],
+        "tests": "orchestra/desktop/src/link.test.ts, in the existing describe block for linkReducer: (1) \"a status event that arrived first beats the startup snapshot\": from initialLinkUi apply status(running:true) then snapshot(running:false) -> status.running is true and requests are kept. (2) \"the startup snapshot applies when no event came first\": from initialLinkUi apply snapshot(s) -> status equals s and statusSeen stays false; a later status(t) replaces it. (3) \"a set_config result counts as seen\": a status action then a snapshot leaves the status from the status action."
+      },
+      {
+        "id": "F3",
+        "title": "Focus inside the two overlays",
+        "recommend": "One small shared module, orchestra/desktop/src/focus.ts. First, a pure export cycleFocus(count: number, current: number, back: boolean): number giving the index to focus on Tab (back false) or Shift+Tab (back true): -1 when count is 0; from current -1 (the dialog itself has focus, or focus is outside the list) Tab goes to 0 and Shift+Tab to count-1; otherwise wrap at both ends. Second, a hook useModalFocus(ref: RefObject<HTMLElement | null>) used by both overlays, mount-only (empty deps): on mount it records document.activeElement as the opener, focuses ref.current, and sets inert on every sibling of the overlay element (ref.current.parentElement, the div.overlay) inside its parent, recording only the siblings it changed; it adds a keydown listener on ref.current (not on window) that handles only Tab: it lists the enabled focusable descendants (button, input, select, textarea, [href], [tabindex] other than -1, excluding disabled), calls cycleFocus with the index of document.activeElement and e.shiftKey, then preventDefault and focuses that element (or the dialog itself when the list is empty). On unmount it removes the listener, clears inert on exactly the siblings it set, then focuses the opener if it is still connected. It never handles Escape and never calls stopPropagation, so Escape stays with the components' existing window listeners: PairingRequest Escape rejects, PairingDialog Escape closes, unchanged. PairingRequest.tsx and PairingDialog.tsx call useModalFocus(dialog) and drop the now-duplicate dialog.current?.focus() line from their Escape effects; nothing else in those effects changes. React runs all unmount cleanups of a commit before its new mount effects, so the QR-dialog-to-request hand-over (link.ts:203) restores, then re-traps.",
+        "alternatives": [
+          "Native <dialog> with showModal(): top layer and an inert page for free, but the browser's own cancel-on-Escape closes the element behind React's back, so both components need a cancel handler with preventDefault and the two Escape paths become ambiguous, exactly the scout's same-key risk. It also moves the backdrop from .overlay to ::backdrop (App.css change) and relies on a WebView2 version not checked on the owner's machine. Rejected.",
+          "Per-component handlers: the same 30 or so lines twice, with the pure cycle logic duplicated. Rejected."
+        ]
+      },
+      {
+        "id": "F4",
+        "title": "Focus-on-mount for the inline alertdialog cards",
+        "recommend": "OUT. Devices.tsx:134, LinkSettings.tsx:199 and TaskDetail.tsx:136 and :151 are inline cards, not modal (no overlay, no aria-modal); the finding the owner chose is about modals keeping focus. Moving focus into them is a different defect, adds three files (one of them TaskDetail, unrelated to the link) and raises its own questions (Escape, where focus goes on cancel). Record it as a follow-up together with the firewall-notice-below-the-fold note at 640 px.",
+        "alternatives": [
+          "IN: export a second tiny hook useFocusOnMount(ref) from focus.ts and call it at the four sites, focus only, no Escape. Small, but it adds orchestra/desktop/src/components/Devices.tsx, orchestra/desktop/src/components/LinkSettings.tsx and orchestra/desktop/src/components/TaskDetail.tsx to s2 and the hand test grows."
+        ]
+      },
+      {
+        "id": "F5",
+        "title": "Owner hand test addition (human-read, after s2: cd orchestra/desktop && npm run tauri dev on Windows)",
+        "recommend": "P1 port: quit Orchestra. In the app data folder, edit link/config.json to \"enabled\": true and \"port\": 0. Start: the pill does not say Link on; Devices shows the error Port 0 is not allowed. Pick a port from 1024 to 65535 and Save., the port field shows 0 marked invalid, and the settings are editable (no read-only banner); config.json is unchanged. Type 47800 and Save: the link starts and config.json now says 47800. Repeat once with 22. P2 focus: with the link on, Devices > Pair a phone: focus is inside the dialog; Tab and Shift+Tab cycle only through the dialog controls and never reach the header Devices or Open project buttons; clicking the page behind does nothing. Escape closes the dialog and focus returns to the Pair a phone button. Reopen and close with its Close button: focus returns there too. P3: the request confirm dialog cannot be reached by hand before A1; it uses the same hook, so P2 stands in for it, and its Escape-rejects rule is unchanged in code (the reviewer reads it)."
+      }
+    ],
+    "plan": [
+      {
+        "slice": "s1",
+        "intent": "A port outside 1024-65535 read from config.json is a start error (F1): the link stays off, enabled is kept, the file is left alone, the settings stay editable, and saving a valid port fixes it. One pure range helper shared by validate() and apply().",
+        "files": [
+          "orchestra/desktop/src-tauri/src/link_config.rs",
+          "orchestra/desktop/src-tauri/src/link.rs",
+          "orchestra/CLAUDE.md"
+        ],
+        "changes": "link_config.rs: add pub fn port_error(port: u32) -> Option<String> holding the 1024..=65535 rule; validate() uses it with its current message; load() unchanged; the module doc comment says an out-of-range port is a start error, not read-only. link.rs apply(): when settings.enabled && read_only.is_none(), check port_error first; on Some, error = Port N is not allowed. Pick a port from 1024 to 65535 and Save. and nothing is built or bound. CLAUDE.md: line 41 count 41 shell -> 44 shell; in the link/config.json bullet (CLAUDE.md:120-127) one sentence: a saved port outside 1024-65535 keeps the link off with an error and is fixed by saving a valid port.",
+        "tests": "link_config.rs mod tests: link_config_port_range_is_1024_to_65535 (port_error is Some for 0, 22 and 1023 and None for 1024 and 65535; validate refuses 0, 22, 1023 and accepts 1024 and 65535 with a loopback bind); link_config_low_port_on_disk_loads_editable_and_left_alone (for ports 0, 22, 1023, 1024, 65535 written to config.json: load returns that port with read_only None, and the file bytes are unchanged). link.rs mod tests: link_low_port_on_disk_is_a_start_error_and_fixable (for ports 0, 22 and 1023: an enabled config with a 127.0.0.1 bind, auto_start, poll up to 5 s for status.error: running false, enabled true, config_readonly None, the error contains Port N and 1024 to 65535, the file unchanged; then for one of them enable(&r, free_port()) is Ok, status.running is true and config.json carries the new port).",
+        "done_when": [
+          "cd orchestra && cargo test --workspace --locked -> exit 0, 0 failed; shell 44 passed (was 41), core 253, link 30, wire fixtures 4 unchanged",
+          "cd orchestra && cargo test -p orchestra --locked -- link_config_port_range_is_1024_to_65535 link_config_low_port_on_disk_loads_editable_and_left_alone link_low_port_on_disk_is_a_start_error_and_fixable -> 3 passed, 0 failed",
+          "grep -c port_error orchestra/desktop/src-tauri/src/link.rs -> >= 1; grep -c port_error orchestra/desktop/src-tauri/src/link_config.rs -> >= 2 (definition and validate)",
+          "grep -c \"44 shell\" orchestra/CLAUDE.md -> 1",
+          "cd orchestra && git diff --stat main -- core protocol Cargo.lock desktop/src-tauri/Cargo.toml desktop/src-tauri/tauri.conf.json desktop/src-tauri/capabilities ROADMAP.md -> empty"
+        ],
+        "risk": "low",
+        "risk_reason": "No secret or sensitive data, no file shared with s2, and the new behaviour (not bound, file untouched, editable, fixed by a save) is fully visible to the new shell test."
+      },
+      {
+        "slice": "s2",
+        "intent": "The startup link snapshot never overwrites a status event that already arrived (F2), and the two pairing overlays keep keyboard focus inside, make the page behind inert and give focus back on close (F3), with Escape behaviour unchanged.",
+        "files": [
+          "orchestra/desktop/src/link.ts",
+          "orchestra/desktop/src/link.test.ts",
+          "orchestra/desktop/src/App.tsx",
+          "orchestra/desktop/src/focus.ts",
+          "orchestra/desktop/src/focus.test.ts",
+          "orchestra/desktop/src/components/PairingRequest.tsx",
+          "orchestra/desktop/src/components/PairingDialog.tsx"
+        ],
+        "changes": "link.ts: LinkUi.statusSeen, initialLinkUi statusSeen false, LinkAction snapshot, reducer as in F2. link.test.ts: the three F2 cases. App.tsx:75: dispatch snapshot instead of status; nothing else in App.tsx. focus.ts: cycleFocus and useModalFocus as in F3. focus.test.ts: cycleFocus with count 0 -> -1; count 1 Tab and Shift+Tab -> 0; count 3: Tab from 2 -> 0, Shift+Tab from 0 -> 2, Tab from 0 -> 1, Shift+Tab from 1 -> 0; current -1: Tab -> 0, Shift+Tab -> count-1. PairingRequest.tsx and PairingDialog.tsx: call useModalFocus(dialog); remove only the dialog.current?.focus() line from the existing Escape effect.",
+        "done_when": [
+          "cd orchestra/desktop && npm test -> exit 0, 8 test files, >= 212 passed (206 before, plus at least 3 in link.test.ts and 3 in focus.test.ts), 0 failed",
+          "cd orchestra/desktop && npm run build -> exit 0 (tsc and vite)",
+          "cd orchestra/desktop && npx vitest run src/focus.test.ts src/link.test.ts -> 2 files, all passed",
+          "grep -c \"type: \\\"snapshot\\\"\" orchestra/desktop/src/App.tsx -> 1; grep -c \"type: \\\"status\\\"\" orchestra/desktop/src/App.tsx -> 2 (the event at :54 and onLinkStatus at :106)",
+          "grep -c useModalFocus orchestra/desktop/src/components/PairingRequest.tsx orchestra/desktop/src/components/PairingDialog.tsx -> 2 each (import and call)",
+          "grep -c Escape orchestra/desktop/src/focus.ts -> 0; grep -c \"e.key === \\\"Escape\\\"\" orchestra/desktop/src/components/PairingRequest.tsx orchestra/desktop/src/components/PairingDialog.tsx -> 1 each (unchanged)",
+          "grep -nE \"stopPropagation|showModal|<dialog\" orchestra/desktop/src/focus.ts orchestra/desktop/src/components/PairingRequest.tsx orchestra/desktop/src/components/PairingDialog.tsx -> no output",
+          "cd orchestra && git diff --stat main -- desktop/package.json desktop/package-lock.json desktop/vite.config.ts desktop/src/App.css desktop/src/ipc.ts desktop/src/types.ts desktop/src/components/Devices.tsx desktop/src/components/LinkSettings.tsx desktop/src/components/TaskDetail.tsx desktop/src-tauri -> empty",
+          "human-read: F5 P2 (focus cycle, inert background, focus restore on Escape and on Close) by the owner on Windows; a reader confirms PairingRequest Escape still only rejects"
+        ],
+        "risk": "high",
+        "risk_reason": "The Tab trap, inert background and focus restore are DOM behaviour no test here can see (no jsdom, G11), and PairingRequest is the trust-decision dialog whose Escape-rejects rule must not move."
+      }
+    ],
+    "edges": "none: s1 and s2 share no file and no artifact. Built in order s1 then s2 on one branch only because the run is single-loop.",
+    "not_doing": [
+      "The low findings from the desktop-pairing review: the address wipe on a save before link_interfaces resolves (owner chose not to), the link load inside the one Promise.all, the undefined pill-text-* classes, the online-edit vs reconfigure seam, the CredWriteW first-start race, the stray config.json.tmp on a failed save.",
+      "Focus-on-mount or Escape for the inline alertdialog cards (Devices.tsx:134, LinkSettings.tsx:199, TaskDetail.tsx:136 and :151) unless F4 is flipped to IN; the firewall notice below the fold at 640 px.",
+      "Making port 70000 (over u16) editable instead of read-only: needs Settings.port decoded as u32.",
+      "A Rust status generation counter or any LinkStatus DTO, ipc.ts or types.ts change.",
+      "A Modal component, native <dialog>, or any App.css change; jsdom, happy-dom, @testing-library or any new dependency.",
+      "Disabling Retry while the port is invalid, or any other LinkSettings change.",
+      "core/, protocol/, tauri.conf.json, capabilities/**, Cargo.toml, Cargo.lock, package.json, package-lock.json, vite.config.ts, ROADMAP.md (orchestrator at close)."
+    ],
+    "human_gate": "Approve: F1 option (b) as a start error (load unchanged, settings editable) over (a) read-only; F2 the reducer-only rule with no Rust counter; F3 the shared focus.ts hook over native <dialog>; F4 inline cards OUT; the two-slice single-loop plan on branch p3b-followups."
+  },
+  "approved_by_human": true,
+  "scope_exceptions": [
+    "ORCHESTRATOR-OWNED, normally empty. Paths a builder may write that the approved plan does not list. guard-builder-scope.py DENIES a builder's Write/Edit outside architect.plan[].files, and this is the only way through it. Adding one is a deliberate, recorded act: pair it with deviation_from_approved_plan on the slice that needed it, and say why the gate's file set was wrong. Never add a path to silence the guard on work the human did not approve."
+  ],
+  "builders": {
+    "s1": {
+      "written_by": "builder",
+      "branch": "p3b-followups",
+      "deviation_from_approved_plan": "none",
+      "status": "done",
+      "commits": [
+        "32ee5bd"
+      ],
+      "files_changed": [
+        "CLAUDE.md",
+        "desktop/src-tauri/src/link.rs",
+        "desktop/src-tauri/src/link_config.rs"
+      ],
+      "notes": "",
+      "gate_results": [
+        {
+          "cmd": "cargo test --workspace --locked",
+          "output": "exit 0; shell 44 passed, core 253 passed, link 30 passed, wire fixtures 4 passed, 0 failed"
+        },
+        {
+          "cmd": "the 3 named tests",
+          "output": "link_config_port_range..., link_config_low_port_on_disk..., link_low_port_on_disk_is_a_start_error_and_fixable all ok (inside the 44 shell run)"
+        },
+        {
+          "cmd": "grep -c port_error",
+          "output": "link.rs:1 link_config.rs:5"
+        },
+        {
+          "cmd": "grep -c '44 shell' CLAUDE.md",
+          "output": "1"
+        },
+        {
+          "cmd": "git diff --stat main -- core protocol Cargo.lock Cargo.toml tauri.conf.json capabilities ROADMAP.md",
+          "output": "empty"
+        }
+      ]
+    },
+    "s2": {
+      "written_by": "builder",
+      "branch": "p3b-followups",
+      "deviation_from_approved_plan": "none",
+      "status": "done",
+      "commits": [
+        "ea15c64"
+      ],
+      "files_changed": [
+        "desktop/src/link.ts",
+        "desktop/src/link.test.ts",
+        "desktop/src/App.tsx",
+        "desktop/src/focus.ts",
+        "desktop/src/focus.test.ts",
+        "desktop/src/components/PairingRequest.tsx",
+        "desktop/src/components/PairingDialog.tsx"
+      ],
+      "notes": "earlier blocked state was the push credential hang (git-credential-manager); resolved, ea15c64 on origin/p3b-followups, CI 39159362100 green",
+      "ci_run_ids": [
+        39159362100
+      ],
+      "pushes_used": 1,
+      "gate_results": [
+        {
+          "cmd": "npm test",
+          "output": "8 test files passed, 213 tests passed (206 + 7), 0 failed"
+        },
+        {
+          "cmd": "npx vitest run src/focus.test.ts src/link.test.ts",
+          "output": "2 files, 37 passed"
+        },
+        {
+          "cmd": "npm run build",
+          "output": "built OK (tsc + vite)"
+        },
+        {
+          "cmd": "greps",
+          "output": "snapshot 1, status 2; useModalFocus 2 each; Escape in focus.ts 0; Escape in each Pairing component 1; stopPropagation|showModal|<dialog none; forbidden-file diff empty"
+        },
+        {
+          "cmd": "GIT_TERMINAL_PROMPT=0 timeout 90 git push -u origin p3b-followups",
+          "output": "hung on git-credential-manager.exe, no output; killed; ls-remote shows no p3b-followups on origin"
+        }
+      ],
+      "ci_result": "success: run 39159362100 on ea15c64, all 6 jobs green"
+    }
+  },
+  "reviews": {
+    "s1": {
+      "written_by": "reviewer",
+      "verdict": "PASS",
+      "attempt": 1,
+      "risk": "low",
+      "summary": "PASS, low tag confirmed. Re-ran every done_when on C:/Users/natha/wt/op3f at 32ee5bd: cargo test --workspace --locked exit 0 (shell 44, core 253, link 30, wire 4, 0 failed); the 3 named tests pass; grep port_error link.rs 1, link_config.rs 5; '44 shell' in CLAUDE.md 1; git diff --stat 806c4c3 over core/protocol/Cargo.lock/Cargo.toml/tauri.conf.json/capabilities/ROADMAP.md empty. Diff touches only the 3 approved files. Re-derived bounds: port_error uses (1024..=65535).contains on u32, so 0/1023 err and 1024/65535 ok; 65536+ cannot reach apply() since Settings.port is u16 and the parse fails into the existing read-only path. apply() checks port_error before binding, keeps enabled, leaves the file alone, and read_only stays None, so set_config accepts a valid save (the test proves the fix with port 22 then a free port). load() is unchanged. Error text matches F1 exactly. Author/committer njcurtis3, no Claude trailers. CI 39159362100 green on 6 jobs; ea15c64 contains 32ee5bd.",
+      "findings": [
+        {
+          "file": "orchestra/desktop/src-tauri/src/link.rs",
+          "line": 354,
+          "issue": "apply() uses port_error only as a predicate and writes the 1024-65535 range again in its own message, so the range text exists twice (helper string and UI string). Harmless now; if the range ever changes the UI string must be edited too.",
+          "severity": "note",
+          "origin": ""
+        }
+      ]
+    },
+    "s2": {
+      "written_by": "reviewer",
+      "verdict": "PASS",
+      "attempt": 1,
+      "risk": "high",
+      "summary": "PASS. Re-ran every done_when in C:/Users/natha/wt/op3f at ea15c64: npm test 8 files 213 passed 0 failed; vitest focus+link 2 files 37 passed; npm run build tsc+vite ok; greps snapshot 1, status 2, useModalFocus 2 each, Escape in focus.ts 0, Escape handler 1 each, no stopPropagation/showModal/<dialog; forbidden-file diff vs 32ee5bd empty (vs 806c4c3 only s1's src-tauri). Diff is the 7 approved files. Re-derived F2: snapshot is a no-op once statusSeen; status and onLinkStatus both go through the status case. F3: overlay is a child of div.app, so header/main/banners get inert, #root never; only attributes it set are removed; destroy-before-create in one commit makes Dialog->Request handoff and StrictMode re-run correct; opener restore gated on isConnected; zero focusables focuses the dialog; Escape reaches the window listeners. Notes: the hook itself is untested (focus.test.ts only covers cycleFocus); a narrow startup race leaves the page live if the QR dialog closes before a co-mounted request; fieldset-disabled inputs stay in the Tab list. Author njcurtis3, no attribution; CI 39159362100 green on 6 jobs.",
+      "findings": [
+        {
+          "file": "orchestra/desktop/src/focus.test.ts",
+          "line": 1,
+          "severity": "note",
+          "origin": "architect",
+          "issue": "Only the pure cycleFocus is tested. The inert bookkeeping (set only un-inert siblings, remove only those), focus restore and the Tab listener in useModalFocus have no test; they rest on the human-read F5 P2 item. The done_when count (>=3 in focus.test.ts) is met but does not cover the F3 behaviours the gate names."
+        },
+        {
+          "file": "orchestra/desktop/src/focus.ts",
+          "line": 46,
+          "severity": "note",
+          "origin": "",
+          "issue": "Two overlays can coexist only via a startup race: a status event arrives, the user opens Devices > Pair before linkPending resolves, then requests-loaded is non-empty (requests-loaded does not clear pairing, link.ts requests-loaded case). PairingRequest then sees header/main already inert and records only the dialog overlay. If a later 'request' event then closes PairingDialog first, its cleanup un-inerts header/main and focuses the Pair button while PairingRequest is still open. Mount order (Request closes first) restores correctly. Too narrow to block; fix would be to have requests-loaded clear pairing like 'request' does, or refcount inert."
+        },
+        {
+          "file": "orchestra/desktop/src/focus.ts",
+          "line": 17,
+          "severity": "note",
+          "origin": "",
+          "issue": "focusables() filters on the element's own disabled attribute, so PairingRequest's checkboxes inside <fieldset disabled={busy}> stay in the list while busy; Tab then calls focus() on an unfocusable input and focus does not move. Still contained (preventDefault + inert background), just a dead Tab during the busy window. el.matches(':disabled') would cover it."
+        },
+        {
+          "file": "orchestra/desktop/src/App.tsx",
+          "line": 141,
+          "severity": "note",
+          "origin": "",
+          "issue": "Siblings mounted after the overlay (the error banner at App.tsx:141 when onError fires while a dialog is open) are not inert, so its Dismiss button is mouse-reachable behind the overlay. Harmless action; noted for completeness."
+        }
+      ],
+      "ran": [
+        "npm test",
+        "npx vitest run src/focus.test.ts src/link.test.ts",
+        "npm run build",
+        "done_when greps",
+        "git diff --stat 32ee5bd/806c4c3 ea15c64 over forbidden files",
+        "git log author/trailer check",
+        "gh run view 39159362100"
+      ]
+    }
+  },
+  "integrator": {
+    "written_by": "the node that wrote this key - here, always the string integrator",
+    "merged": [],
+    "conflicts": [],
+    "verification": "what command proved it works, and its output"
+  },
+  "ops": {
+    "written_by": "the node that wrote this key - here, always the string ops",
+    "gated": true,
+    "actions": []
+  },
+  "log": [
+    "orchestrator: opened run 2026-10-18 from the user's \"fix the three medium findings\"; orchestra main @ 806c4c3 (P3b merged, not pushed), clean. The low address-wipe finding was offered and not chosen; it stays a follow-up. Spawning scout.",
+    "orchestrator: scout returned (27 facts, 8 unknowns, 7 risks). Port: load() has no range check; fail-closed as Unreadable fits but leaves settings read-only. Status: apply() emits under the lifecycle mutex, so a reducer rule 'events beat the snapshot' suffices. Focus: only the two pairing overlays are modal; inline alertdialog cards (Devices, LinkSettings, TaskDetail) lack only focus-on-mount. Spawning architect.",
+    "orchestrator: architect returned single-loop s1 (Rust, low) + s2 (TS, high) with gate items F1-F5; orchestrator adds F6 (branch push for CI). Awaiting human gate.",
+    "orchestrator: human gate APPROVED 2026-10-18 (\"approve\"): F1 (b) bad port on disk is a start error fixable in the UI; F2 reducer-only snapshot rule, no Rust counter; F3 shared focus.ts hook; F4 inline cards OUT; F5 hand test P1/P2. F6: push only branch p3b-followups to origin, max 4 pushes, no force-push/PR/tag/main. Worktree C:/Users/natha/wt/op3f.",
+    "orchestrator: builder returned s1 32ee5bd, s2 ea15c64, all local done_when green (shell 44, core 253, link 30, wire 4; vitest 213). Builder push hung on git-credential-manager (killed, nothing landed). Orchestrator retried once within F6; it also hung on GCM; stopped and killed GCM; origin has no p3b-followups. Waiting on the owner to push or refresh Git Credential Manager sign-in.",
+    "orchestrator: owner had git pushes use njcurtis3 explicitly (global credential.https://github.com.username); push attempt 3 of 4 landed origin/p3b-followups (ea15c64). CI run 39159362100 in progress. Status back to running.",
+    "orchestrator: CI run 39159362100 on ea15c64 green on all 6 jobs (core x2 linux, macos check, windows workspace, desktop npm test, mobile npm test). Spawning fresh reviewers s1 (low) and s2 (high).",
+    "orchestrator: CLOSED 2026-10-18. s1 PASS (low), s2 PASS (high, 4 notes: useModalFocus untested beyond cycleFocus; startup race with two overlays un-inerts early; fieldset-disabled inputs stay in Tab list; banner mounted after overlay not inert). Merged p3b-followups --no-ff into orchestra main as 4948a58 (not pushed). close-run.py exit 0. Owner hand tests F5 P1/P2 outstanding."
+  ]
+}
