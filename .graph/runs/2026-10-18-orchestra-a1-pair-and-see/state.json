@@ -1,0 +1,1277 @@
+{
+  "$comment": "Shared state for ONE work-graph run. Lives at .graph/runs/<run-id>/state.json. Every node reads this on start and appends to its OWN key on finish - the builder writes its own builders.<slice> key, including the branch it worked on. Never rewrite another node's key. Every node key carries written_by, naming the node that wrote it: that is the ONLY record of authorship this file has, and without it 'never rewrite another node's key' is unverifiable - an orchestrator hand-writing all six keys is indistinguishable from six nodes doing their jobs. verify-state.py --audit checks it. This file is the edge: it is how context crosses between agents that cannot see each other.",
+  "run_id": "2026-10-18-orchestra-a1-pair-and-see",
+  "goal": "start A1. note there are updates to the roadmap",
+  "app": "orchestra",
+  "status": "done",
+  "scout": {
+    "written_by": "scout",
+    "facts": [
+      "PAIR QR = JSON text of PairingOffer, no URI scheme: {v:1, host_id, host_name, addrs:[\"ip:port\"], host_key (lowercase hex X25519 public key), secret (lowercase hex 32-byte psk), expires_at (ms since epoch)}, serde field order as declared. orchestra/core/src/link/pairing.rs:92-105 (struct), :70-81 (offer()), :108-110 (to_json). Test pins the key set at pairing.rs:178.",
+      "Desktop builds the QR: orchestra/desktop/src-tauri/src/link.rs:169 qr::svg_of(&offer.to_json()); view_of at link.rs:167-176 returns qr_svg, host_name, addrs, expires_at. Host-side open_pairing at orchestra/core/src/link/server.rs:386-395 refuses when nothing listens (NoAddress). QR rendering: orchestra/desktop/src-tauri/src/qr.rs:9-19 (qrcode crate, EC level M, min 280px SVG); payload above about 5000 bytes refused (qr.rs:44-46). Desktop dialog prints the addresses as text: orchestra/desktop/src/components/PairingDialog.tsx:71.",
+      "Pairing secret: 32 random bytes from getrandom (orchestra/core/src/link/keys.rs:44-50 random_bytes; keys.rs:135-140 Psk::generate), held in PairingWindow (orchestra/core/src/link/pairing.rs:17-31). Window TTL 300 s (pairing.rs:14), single use: consume() at pairing.rs:58-68; closed when the client first transport message decrypts (pairing.rs:1-3; conn.rs handshake(), hello read after message 2).",
+      "Host static key: SecretKey::generate (keys.rs:99-101), public key derivation keys.rs:112. host_id = lowercase hex of first 16 bytes of SHA-256(host public key) (keys.rs:196-198). fingerprint = first 8 bytes of SHA-256, hex, grouped by 4 and joined with a dash (keys.rs:190-193). Host key file: link_dir/host_key, 32 raw bytes (keys.rs:14, 217-222). Desktop keeps it in Windows Credential Manager (orchestra/desktop/src-tauri/src/keyring.rs, per P3b).",
+      "Noise suites: SUITE_PAIR = Noise_IKpsk2_25519_ChaChaPoly_SHA256, SUITE_LINK = Noise_KK_25519_ChaChaPoly_SHA256 (orchestra/core/src/link/noise.rs:19-20). Mode chosen by WebSocket path /pair or /link (noise.rs:27-52). psk is slot 2 (noise.rs:150-152). Crate: snow 0.10 with use-curve25519, use-chacha20poly1305, use-sha2, use-getrandom (orchestra/core/Cargo.toml:16).",
+      "Prologue bytes (noise.rs:79-86): ASCII orchestra-link v1 (17 bytes, noise.rs:25), then for each of [path, request text, reply text]: 4-byte big-endian u32 length followed by the UTF-8 bytes. Path is /pair or /link. Request and reply are the exact text strings on the wire, never re-serialised (protocol/README.md, What P3 decided, Prologue exactly). Exact-bytes unit test: noise.rs:241-256.",
+      "Handshake order, host side (orchestra/core/src/link/conn.rs:248-325): (1) WebSocket upgrade; /link always, /pair only while a window is open, otherwise plain HTTP 404 (conn.rs:196-215). (2) client sends ONE TEXT frame {\"proto\":\"orchestra\",\"v\":1} (codec.rs:277-279 encode_handshake_request); host replies ONE TEXT frame (conn.rs:255-262; reply shape codec.rs:293-305). Client text frames are read only if at most 1024 bytes (conn.rs:36, conn.rs:88-100). (3) client sends Noise message 1 as one BINARY frame. (4) host sends Noise message 2 as one BINARY frame (conn.rs send_raw Message::binary). (5) client sends first transport message as BINARY: the encrypted hello.",
+      "Payloads inside the Noise handshake: none. Both sides write an empty payload (test client orchestra/core/tests/link_support/mod.rs:238-250 and 253-264 use hs.write(&[]); host conn.rs writes hs.write(&[]) for message 2). Pairing: the client static key is carried encrypted inside IKpsk2 message 1 (noise.rs:98-110; host learns it via remote_static, conn.rs handshake). Reconnect: no key in KK message 1; host tries each stored client key, at most 32 (noise.rs:117-135, clients.rs:17 MAX_CLIENTS=32). The client name is NOT in the handshake: it rides in the first transport message, hello.",
+      "Hello: encrypted JSON {v:1, type:\"hello\", client_name, app_version} (orchestra/protocol/types.ts:158; host decode in orchestra/core/src/wire/codec.rs). Anything but hello first closes the socket; on /link a bad_request error is sent first (conn.rs handshake(), the non-hello arm). A non-hello on /pair closes silently. Host input is strict: unknown fields are bad_request (protocol/README.md, What P2 decided, Tolerance).",
+      "Pairing confirmation: after hello the host holds the connection and calls on_pairing_request (conn.rs:344-381, name clipped by clip()); confirm_timeout = 300 s (orchestra/core/src/link/mod.rs:59). Only after confirm does the host send welcome. Default scopes read+answer (orchestra/core/src/link/clients.rs:19). Reconnect (/link): welcome is sent straight after hello (conn.rs:383-420 run()).",
+      "Framing (orchestra/core/src/link/frame.rs): one application message = one WebSocket BINARY message holding a run of [u16 big-endian length][Noise ciphertext] chunks. Max plaintext per chunk MAX_CHUNK = 65519 (frame.rs:10-11; noise.rs:21-24 MAX_NOISE_MESSAGE=65535, TAG_BYTES=16). seal() frame.rs:50-66: empty message = one empty chunk. open() frame.rs:70-93 refuses when joined plaintext would pass the cap, before decrypting the overflowing chunk. Cap MAX_MESSAGE_BYTES = 4194304 (orchestra/protocol/constants.ts:11; same in core wire). WebSocket-layer cap = frame::max_wire_bytes(4 MiB) = 65 chunks x 65537 = 4259905 bytes (frame.rs:44-47; applied conn.rs upgrade() lines 206-208).",
+      "Binary vs text after the handshake: every post-handshake message is BINARY (conn.rs wait(binary=true) lines 88-100; send() lines 107-115 uses Message::binary). A TEXT frame after the handshake makes the host close (conn.rs run(): Polled::Text or Closed breaks the loop). No subprotocol or header is required: the accept callback checks only the path (conn.rs:204-215); no Origin or Sec-WebSocket-Protocol check.",
+      "Timeouts and keepalive (orchestra/core/src/link/mod.rs:52-60): handshake_timeout 10 s (covers the version exchange too), write_timeout 30 s, idle_timeout 120 s measured from the last BINARY frame received (conn.rs run(): last_rx is updated only in the Binary arm). Client must send type ping within 60 s (mod.rs:37); host answers type pong (conn.rs handle_binary). The host sends no keepalive of its own. Also 16 connections (mod.rs:52), 10 handshakes per minute per source (mod.rs:53; server.rs:456), 8 calls in flight per connection (mod.rs:54).",
+      "After the handshake the host sends, in this order (conn.rs run(), about lines 383-420): welcome {v,type:welcome,host_id,host_name,scopes,features:[]} (types.ts:167-173); snapshot {v,type:snapshot,seq,projects,sessions,inbox,tasks,storage} only if the client holds read (types.ts:175-183); then event {v,type:event,seq,name,payload} per published event to read-scope clients (types.ts:185-190); result {v,type:result,id,ok or error} (types.ts:194-195); pong; error {v,type:error,code,message,supported?} (types.ts:196-202). There is NO subscribe message: the subscription is implicit at connect (protocol METHODS, orchestra/protocol/constants.ts:19-35, has no subscribe).",
+      "Seq: one process-wide counter, assigned in publish order. snapshot.seq = seq of the last event the snapshot reflects; the first later event = snapshot.seq + 1 (protocol/README.md, What P3 decided, Snapshot and events). Core test orchestra/core/src/session/mod.rs:2959-2971 asserts view.seq equals the event count. Subscribe is atomic with the snapshot (orchestra/core/src/session/mod.rs:682-692). Per-connection queue 1024 events (mod.rs:55 in link); overflow closes the socket (conn.rs run(), TryRecvError::Disconnected arm). v1 has no replay: a seq gap means reconnect for a fresh snapshot.",
+      "Event payload shapes (orchestra/protocol/types.ts:185-190): session-updated payload = one SessionSummary; inbox-updated payload = the FULL InboxItem list (replace semantics, not a delta; core emits Event::InboxUpdated(s.state.inbox.clone()) at orchestra/core/src/session/mod.rs:335); task-updated payload = one TaskSummary; transcript-appended payload = TranscriptBatch. Event names verbatim plus reserved notice (orchestra/protocol/constants.ts:58-64). Session status values: types.ts:14-24 (starting, working, waiting_permission, waiting_question, needs_attention, idle, suspended, ended, failed, plus open strings).",
+      "Version negotiation: client sends v:1; host supports [1] (orchestra/protocol/constants.ts:6). Unknown v: host sends TEXT {type:error, code:unsupported_version, message, supported:[1]} then closes (conn.rs handshake(), lines 257-268; decode path codec.rs:281-291; TS decodeHandshakeReply at orchestra/protocol/codec.ts:542-548). Phone should show a version error that names supported [1]. Protocol gives no UI copy.",
+      "Silent failures: wrong psk, unknown or revoked key, rejected or expired pairing all end as a closed socket with no message (protocol/README.md, What P3 decided, No message on failure; conn.rs handshake() returns None). A closed /pair window is an HTTP 404 at upgrade (conn.rs:196-215). The phone cannot tell these apart from the WebSocket layer alone.",
+      "Test vectors: NONE for Noise. protocol/fixtures has 99 cases (101 files incl index.ts and constants.json). Handshake fixtures are plaintext only: 7 hs_c2h.* and 6 hs_h2c.* (protocol/fixtures/hs_c2h.request.json, hs_h2c.accept.json). No handshake transcript, no ciphertext, no transport vector. Rust reference client with random keys: orchestra/core/tests/link_support/mod.rs:213-270 (Conn::pair_with, link_open, link). Behaviour tests: orchestra/core/tests/link.rs:26 pair_confirm_then_kk_reconnect, :144 only_pair_and_link_upgrade, :154 hello_must_be_first. Frame tests: orchestra/core/src/link/frame.rs:114-170.",
+      "snow 0.10.0 exposes a deterministic test hook: Builder::fixed_ephemeral_key_for_testing_only (snow-0.10.0/src/builder.rs:137-139, doc(hidden), not cfg-gated). Nothing in orchestra/core uses it today (no match), so a transcript generator would be new core test code.",
+      "Mobile state, routes: orchestra/mobile/src/app/_layout.tsx:5-14 (SafeAreaProvider, ThemeProvider, Stack headerShown false) and orchestra/mobile/src/app/index.tsx:8-25 (HomeScreen: Orchestra needs a host, Pairing arrives in a later version). No pair route, no link code, no src/link directory. Components: src/components/touchable.tsx, themed-text.tsx, themed-view.tsx. Hooks: src/hooks/use-theme.ts, use-color-scheme.ts and .web.ts.",
+      "A0 helpers: orchestra/mobile/src/components/touchable.tsx:19-41 Touchable (min height and width 48 via MinTouchTarget; hitSlop clamped to at least 8 via MinTouchSpacing). orchestra/mobile/src/constants/theme.ts:10-25 Colors light and dark; :54-62 Spacing; :64-66 MinTouchTarget 48, MinTouchSpacing 8, MaxContentWidth 800. Theme hook orchestra/mobile/src/hooks/use-theme.ts:9-14.",
+      "Mobile tests: npm test in orchestra/mobile = jest (preset jest-expo, package.json jest block): 3 suites, 106 tests, all pass (touchable.test.tsx, home.test.tsx, protocol.test.ts). home.test.tsx asserts the Pairing arrives in a later version text, so it changes with A1. npx tsc --noEmit in orchestra/mobile exits 0 with no output.",
+      "Mobile protocol consumption: orchestra/protocol/index.ts re-exports constants, types and codec (no framing, no crypto in protocol/). Mobile imports it only by relative path from tests (orchestra/mobile/src/__tests__/protocol.test.ts:9-27, path ../../../protocol). metro.config.js:8-10 adds ../protocol to watchFolders. orchestra/mobile/tsconfig.json paths map only @/* and @/assets/*. jest moduleNameMapper maps only .css and @/ (package.json jest block). protocol/ has no node_modules, so its files must avoid Babel helpers (protocol/README.md, Using it).",
+      "Mobile installed deps (orchestra/mobile/package.json): expo ~57.0.30 (node_modules/expo 57.0.30), expo-router ~57.0.28, expo-secure-store ~57.0.4 (installed, node_modules/expo-secure-store 57.0.4), react-native 0.86.3, react 19.2.3, react-native-safe-area-context ~5.7.0, react-native-reanimated 4.5.1, jest-expo ~57.0.6. NOT installed (checked node_modules): expo-camera, expo-crypto, expo-network, expo-build-properties, any @noble package, any Noise library, react-native-webview.",
+      "app.json (orchestra/mobile/app.json): plugins = expo-router, expo-splash-screen (with config), expo-secure-store. No camera plugin, no android.permissions key, no usesCleartextTraffic, no network security config. runtimeVersion policy fingerprint. android.package com.telosrg.orchestra. No expo.extra.eas.projectId, so no EAS project exists yet. eas.json: development (developmentClient true, channel development), preview (apk, channel preview), production (channel production, autoIncrement).",
+      "Contradiction: ROADMAP A0 says expo.icon was removed (orchestra/ROADMAP.md A0 closed note), but orchestra/mobile/app.json still sets top-level expo icon to ./assets/images/icon.png. Recorded, not resolved.",
+      "CI (orchestra/.github/workflows/test.yml): job mobile-npm lines 82-96 runs on ubuntu-24.04, Node 22, npm ci and npm test in mobile/. No tsc, no lint, no expo-doctor. Triggers: push to all branches and pull_request (test.yml:3-6). Core job runs cargo test -p orchestra-core --locked (test.yml:38-39); windows workspace runs cargo test --workspace --locked (test.yml:50-51). desktop-npm job runs npm test in desktop/ (test.yml:66-80).",
+      "Desktop address: the QR carries addrs (pairing.rs:70-81) and the dialog prints them (PairingDialog.tsx:71). Port default 47800 (orchestra/desktop/src-tauri/src/link_config.rs:17). Binds are IPv4 from adapters (link_config.rs:180 socket_addrs); the listener refuses 0.0.0.0 and the IPv6 unspecified address (orchestra/core/src/link/server.rs:44-49). So the phone learns host:port only from the QR. No mDNS and no discovery (protocol/README.md, What P3 decided: not built).",
+      "RN 0.86.3 WebSocket (orchestra/mobile/node_modules/react-native/Libraries/WebSocket/WebSocket.js): inbound binary frames are base64 over the bridge and delivered as ArrayBuffer (lines 238-243, base64.toByteArray(ev.data).buffer); send() accepts ArrayBuffer and ArrayBufferView (lines 182, 201-202); binaryType setter accepts blob or arraybuffer only (lines 155-157). Text frames arrive as strings.",
+      "Expo docs (fetched v57 pages): expo-camera barcodeScannerSettings {barcodeTypes:[qr]} and onBarcodeScanned; useCameraPermissions returns status and canAskAgain; plugin [expo-camera, {cameraPermission}] adds CAMERA on Android automatically (docs.expo.dev/versions/v57.0.0/sdk/camera/). expo-crypto v57: getRandomBytes(n up to 1024) native, Math.random fallback in dev per docs; getRandomValues fills in place; no global crypto polyfill documented (docs.expo.dev/versions/v57.0.0/sdk/crypto/). expo-network v57: useNetworkState, getNetworkStateAsync, isConnected, isInternetReachable, type; ACCESS_NETWORK_STATE added automatically (docs.expo.dev/versions/v57.0.0/sdk/network/).",
+      "Cleartext: Android 9 (API 28) and up disable cleartext by default (developer.android.com security-config page, fetched). Expo v57 build-properties documents android.usesCleartextTraffic (optional boolean, default false on Android 9+) (docs.expo.dev/versions/v57.0.0/sdk/build-properties/). That option lives in expo-build-properties, which is not installed and not in app.json. A release ws:// to a LAN IP is therefore blocked unless a config plugin or network security config is added.",
+      "Noble libraries (upstream READMEs fetched, not installed): @noble/curves exports x25519 (from ed25519.js), relies on global crypto.getRandomValues, and says React Native may need a getRandomValues polyfill; the fetched README reports a 2.3.0 audit (Aug 2026). @noble/ciphers exports chacha20poly1305 (chacha.js), same randomness note, README says audited. @noble/hashes (sha256, hmac, hkdf) not fetched; unverified."
+    ],
+    "unknowns": [
+      "Whether an Expo 57 Android release build actually blocks ws:// to a LAN IP: needs expo prebuild or a built APK to inspect the merged manifest. Not run. The fetched docs establish the default; the merged manifest is unverified.",
+      "Whether Hermes runs noble-curves and noble-ciphers correctly: they use BigInt and getRandomValues. Not verified on Hermes or on device. Hermes WebAssembly support was NOT confirmed by search, so WASM-based Noise libraries are assumed unusable, not proven unusable.",
+      "No maintained JS or TS Noise library for IKpsk2 or KK on Hermes was found. Candidates seen: noise-protocol (npm, emilbayes; Noise_*_25519_ChaChaPoly_BLAKE2b only, libsodium-backed, last publish about 2023 per trackers), @likecoin/noise-js (AESGCM and SHA256, not ChaChaPoly), salty-crypto (BLAKE2s profile only), @chainsafe/libp2p-noise (libp2p, large, pattern set not confirmed). None fits without changes. Recommendation is a hand-written Noise state machine over noble, verified against snow transcripts; not decided here.",
+      "Whether RN WebSocket on Android carries 4 MiB messages reliably (base64 over the bridge, about 5.6 MB of string per max message) is unmeasured. Per-chunk wire size is at most 65537 bytes.",
+      "Exact bytes of the host reply frame: built with serde_json json and to_string (codec.rs:293-305). Key order depends on serde_json features and is not pinned by any fixture. The client must echo the exact received text into the prologue, which avoids the question; a transcript fixture must capture the literal bytes.",
+      "Which EAS profile is a debug build (decides whether cleartext works on the development profile): not checked.",
+      "Whether Expo prebuild adds android.permission.INTERNET (expected via the RN template; not verified, no android directory exists since CNG generates it).",
+      "Whether this Windows machine can build an Android APK (needs Android SDK or EAS): not checked. No EAS project exists (app.json has no extra.eas.projectId), and CLAUDE.md puts EAS project creation behind the ops gate, so a device build of A1 may need owner action.",
+      "Phone-side copy for desktop-unreachable and version-mismatch states is not specified by protocol/ or the roadmap. The error shape (unsupported_version with supported [1]) is specified.",
+      "Core build and tests not run in this scout (cargo test not run; desktop npm test not run). Only mobile npm test and mobile tsc were run.",
+      "Open P2 and P3 items that touch the phone, taken from protocol/README.md and ROADMAP.md notes, not re-verified: encodeHostMessage rewrites the unknown-entry fallback inside result.ok (noted for H3); Rust rejects seq 1.0 while TS accepts it (H3 concern)."
+    ],
+    "risks": [
+      "PLAN-KILLER CANDIDATE: cleartext ws:// to a LAN or Tailscale IP is blocked by default on Android 9 and up release builds (fetched Android and Expo docs). The fix is a native change: expo-build-properties with android.usesCleartextTraffic true (app-wide, since LAN addresses vary and a domain-config cannot express an IP range), or a config plugin writing a network security config. Either changes the native fingerprint, so it needs a new EAS build. Noise still encrypts the payload, so cleartext is a transport policy choice, not a confidentiality hole. The owner should choose the mechanism.",
+      "Native dependencies A1 needs (expo-camera with its plugin, expo-crypto for getRandomBytes, expo-network for connectivity, and possibly expo-build-properties) all change the native fingerprint, so runtimeVersion fingerprint forces a new development or preview build before the phone can be tested on device. EAS project creation is ops-gated (orchestra/CLAUDE.md, Native targets), so device checks may stall on owner action.",
+      "No Noise test vectors exist: protocol/fixtures holds only plaintext handshake frames. A JS Noise IKpsk2 and KK implementation would be checked against nothing unless a transcript generator is added to core (snow fixed-ephemeral hook exists). Hand-written handshake code is security-sensitive and unaudited. The P3 gate put the phone Noise and its vectors in A1, so the vectors are A1 work.",
+      "No JS Noise library fits Expo and Hermes out of the box (see unknowns). A state machine over noble needs explicit ephemeral randomness (noble x25519 keys from expo-crypto getRandomBytes, not a global getRandomValues) and BigInt on Hermes. Both unverified on device.",
+      "Post-handshake rules a JS client can break silently: any TEXT frame after the handshake closes the connection (conn.rs run()); every Noise message must be BINARY; hello must be the first transport message; the host sends no keepalive, so the phone must ping within 60 s; the host closes after 120 s without a client binary frame; a seq gap means reconnect (no replay).",
+      "Error states are indistinguishable at the WebSocket layer: wrong psk, revoked or unknown key, and expired or used pairing windows all close silently; a closed /pair window is HTTP 404 at upgrade. Whether RN WebSocket onerror exposes the HTTP status was not checked in RN source. The desktop-unreachable versus not-paired split cannot be made reliable from the socket alone; the phone should lean on its own stored state and the offer expires_at.",
+      "Pairing window is 300 s from the offer expires_at (pairing.rs:14, 79). A phone that scans late or retries must reject an expired offer client-side. The host confirm wait is also 300 s (mod.rs:59), so a pairing that dies after hello but before welcome holds the host connection up to 300 s.",
+      "Inbox events are full lists (types.ts:186; session/mod.rs:335): the phone must replace inbox state, not merge. Session updates are single items. Misreading these shows stale or duplicated inbox data.",
+      "CI runs mobile jest but not mobile tsc or lint (test.yml:82-96). A type error in new A1 code would pass CI. Run npx tsc --noEmit locally, or add it to CI in the A1 change.",
+      "home.test.tsx asserts the current placeholder copy. Replacing the index screen breaks that test by design; the A1 change must update the assertion, not delete it silently.",
+      "The app.json icon contradiction (see unknowns) is harmless for A1 but a reviewer will see the mismatch.",
+      "Dependency pins: expo-camera, expo-network and expo-crypto must come from npx expo install (SDK 57 compatible), per orchestra/CLAUDE.md; a plain npm install may pick the wrong SDK version. mobile/package-lock.json is the only lockfile that changes; protocol/ has no lockfile."
+    ]
+  },
+  "architect": {
+    "written_by": "architect",
+    "shape": "single-loop",
+    "parallel_safe": false,
+    "run_scope": "orchestra only. One branch a1-pair-and-see in a linked worktree C:/Users/natha/wt/orchestra-a1; five slices in sequence on that branch. Core change is cfg(test) only; no desktop/ change; protocol/ gains fixture data and README prose only (no TS change, v stays 1).",
+    "rationale": "SHAPE single-loop, not diamond: s2 and s3 both change orchestra/mobile/package.json and package-lock.json, and each mobile slice consumes the previous one's modules (s2 noise/keys -> s3 store/offer -> s4 client -> s5 screens). A real artifact flows on every edge, so it is a sequence. RISK: s1 high - adds a test-only fixed-ephemeral constructor to core/src/link/noise.rs, the production crypto module, where a misplaced cfg ships a deterministic-ephemeral path; a self-regenerating generator cannot prove its bytes right (only the production responder reading them can). s2 high - hand-written Noise; tests cannot see nonce reuse, wrong-direction keys or a wrong randomness source if vectors happen to pass. s3 high - touches app.json (native-mobile rule) and is the slice that persists secrets. s4 high - holds the static key and psk at runtime; timer/reconnect/close rules depend on a real socket a fake only partly models. s5 low - no file shared with another slice, persists no secret, logging in src/app is grep-banned, every state is render-tested; device behaviour is an owner check, not reviewer evidence. VERIFIED HERE (beyond the scout): @noble/curves, @noble/ciphers, @noble/hashes are 2.4.0, ESM-only (type: module), exporting x25519 (ed25519.js), chacha20poly1305 (chacha.js), sha256 (sha2.js), hmac (hmac.js), hkdf/extract/expand (hkdf.js). They read globalThis.crypto only inside their own randomBytes, never at import, so injected expo-crypto randomness suffices and no global polyfill is needed. noble x25519 throws on an all-zero shared secret (snow does not; matters only for a malicious key). jest needs @noble added to transformIgnorePatterns (jest-expo transforms node_modules only on an allowlist). TextDecoder is installed on native by expo/src/winter and supports fatal, so strict UTF-8 is {fatal:true, ignoreBOM:true}. RN Android WebSocket reports an upgrade failure (e.g. 404) as error then close 1006 with the OkHttp message as reason, so a 404 is visible only as a string. Baselines on main: npx expo-doctor 21/21 passed; npx expo export --platform android exits 0 on Windows and emits a Hermes .hbc, so it is a Windows check that Metro resolves protocol/ and noble ESM exports and hermesc compiles BigInt code. No Android SDK, adb or ANDROID_HOME on this machine. All three fixture runners (desktop import.meta.glob fixtures/*.json, Rust read_dir, mobile readdirSync) read only the top level of protocol/fixtures, so protocol/fixtures/noise/ leaves the 99-case counts alone. Handshake::build is private and snow's fixed_ephemeral hook is not exposed through it, so the generator must be a crate-internal cfg(test) module, not an integration test. FLAGGED, not silently overridden: protocol/README.md Transport says the phone uses a JS Noise implementation checked against the Noise test vectors, and is reopened if no maintained JS Noise implementation passes them on Hermes, with libsodium as fallback. The scout found none, so read literally the reopen condition has fired; the fallback (crypto_kx+secretstream) is not Noise and would need the P3a host rewritten. G1 asks the owner to amend the record. Also README Revocation says the phone deletes its keys for a host after a failed handshake; a silent close is also what a desktop restart mid-handshake looks like. G6.",
+    "decisions_for_gate": [
+      {
+        "id": "G1",
+        "topic": "Noise on the phone",
+        "recommend": "Hand-written, initiator-only Noise for exactly Noise_IKpsk2_25519_ChaChaPoly_SHA256 and Noise_KK_25519_ChaChaPoly_SHA256 in mobile/src/link/noise.ts, over @noble/curves x25519, @noble/ciphers chacha20poly1305, @noble/hashes sha256+hmac, all pinned exactly 2.4.0. Two hard-coded token sequences (IKpsk2: pre <-s; -> e,es,s,ss; <- e,ee,se,psk. KK: pre ->s,<-s; -> e,es,ss; <- e,ee,se), psk-mode MixKey on e, HKDF per the Noise spec on hmac, nonce = 4 zero bytes + u64 LE counter, h init = SHA-256(name) for the 36-byte IKpsk2 name and the raw 32-byte name for KK. No responder, rekey or pattern parser. Keys come only from an injected random function (expo-crypto getRandomBytes(32) in the app, fixed bytes in tests). Byte-for-byte agreement with snow transcripts (G2) is the acceptance bar. protocol/README.md amends Transport: checked against snow transcripts in protocol/fixtures/noise; reopened if a maintained JS Noise library passes those vectors on Hermes (switch to it) or a review finds a flaw (stop A2 until fixed).",
+        "alternatives": [
+          "README fallback react-native-libsodium crypto_kx+secretstream: not Noise, so the P3a host and its link tests are rewritten, plus a native module. Not recommended.",
+          "@chainsafe/libp2p-noise or noise-protocol (emilbayes): no ChaChaPoly_SHA256 IKpsk2/KK on Hermes without forking. Not recommended.",
+          "A generic pattern interpreter: more code to review for no gain. No."
+        ]
+      },
+      {
+        "id": "G2",
+        "topic": "Noise test vectors",
+        "recommend": "A crate-internal #[cfg(test)] module core/src/link/vectors.rs builds both handshakes through the production noise.rs, with one cfg(test) pub(crate) constructor in noise.rs that calls the snow builder fixed_ephemeral_key_for_testing_only. Fixed keys = SHA-256 of label strings. Writes protocol/fixtures/noise/ikpsk2.json, kk.json, offer.json. Each transcript: suite, path, the request and reply text from the real encode_handshake_request / encode_handshake_reply (pinning serde_json key order: request proto,v and reply proto,supported,v), prologue hex, static and ephemeral keys, psk (IKpsk2), msg1, msg2, handshake hash, both split keys, and frame::seal transport messages: c2h hello, h2c welcome, c2h ping, h2c a 65520-byte plaintext (exactly 2 chunks) in full as base64, c2h a 65520-byte plaintext as the SHA-256 of its wire bytes. Big plaintexts are byte i = 0x61 + i mod 26, with their SHA-256. offer.json = PairingOffer::to_json for the vector host key, fixed expires_at, addrs 127.0.0.1:47800 and 192.168.1.20:47800. Drift guard: the default test regenerates in memory and asserts string equality with the committed files, so a snow, serde_json or framing change fails every core CI job; ORCHESTRA_WRITE_VECTORS=1 rewrites them. A second test feeds the committed msg1 to the production responder_pair / responder_link and runs frame::open on the committed c2h frames, so the vectors are proved against the real host read path. Each file under 256 KiB.",
+        "alternatives": [
+          "Also import upstream cacophony vectors for the two suites into mobile tests: a third-party file that covers neither prologue nor framing. Optional, not recommended for A1.",
+          "An integration test in core/tests: needs a doc(hidden) pub API in production code. Rejected.",
+          "Commit once with no drift check. Rejected (you asked for no drift)."
+        ]
+      },
+      {
+        "id": "G3",
+        "topic": "Cleartext ws:// on Android 9+",
+        "recommend": "(a) expo-build-properties android.usesCleartextTraffic true, app-wide. Cost: one config plugin and one native dep (the fingerprint changes, but no binary exists yet to strand); cleartext allowed for any host. Exposure: the app opens no other connection. On the link the only plaintext is the proto/v frames (bound into the prologue, so not downgradable) and metadata (IP, port, timing, sizes) that TLS would leak too; the rest is Noise ChaChaPoly with mutual static keys. Reviewer keeps: no http:// anywhere in src.",
+        "alternatives": [
+          "(b) A local config plugin writing network_security_config.xml: a domain-config cannot express an IP range (LAN varies, Tailscale is 100.64.0.0/10), so it ends with base-config cleartextTrafficPermitted=true, which is (a) plus a hand-kept plugin. More code, no gain.",
+          "(c) wss:// with a pinned self-signed cert: the P1 rejected option B (pinning inside OkHttp, plus a host change). Not for A1.",
+          "(c2) A native WebSocket module that bypasses the policy: a native module to maintain. No."
+        ]
+      },
+      {
+        "id": "G4",
+        "topic": "Getting A1 onto a phone (device testing is an owner check)",
+        "recommend": "Plainly: no slice proves A1 on a device. Every done_when is jest, tsc, expo-doctor, expo export or a prebuild manifest grep, run on Windows. The owner check runs in Expo Go: cd mobile && npx expo start --go on the LAN, with the desktop in npm run tauri dev and its link on a LAN or Tailscale address. Expo Go ships expo-camera, expo-crypto, expo-network, expo-secure-store, expo-device and expo-constants and allows cleartext, so it tests the real Noise on real Hermes against the real host, with no ops gate and no SDK. Unknown: whether Play Store Expo Go is on SDK 57 today; if not, use alternative 1. Expo Go cannot prove our own merged manifest; s3 proves that mechanically (prebuild + grep), and the release-build device check moves to the R2 preview APK (EAS project creation stays ops-gated).",
+        "alternatives": [
+          "The owner installs Android Studio (SDK + JDK 17) and runs npx expo run:android over USB: a debug dev-client build. A big install, and still not a release manifest.",
+          "Open the ops gate now for an EAS project and a dev build or preview APK: the only true release-cleartext proof, but it pulls R2 into a build run, which CLAUDE.md forbids. Not inside A1."
+        ]
+      },
+      {
+        "id": "G5",
+        "topic": "Storage (expo-secure-store only)",
+        "recommend": "A fresh client static key per paired host, generated at pairing (hosts cannot correlate the phone, and forgetting one host deletes exactly its key). Keys: orchestra.hosts = JSON array of host_ids (32 hex chars each). orchestra.host.<host_id> = JSON {schema:1, host_id, host_name, host_key, addrs, client_secret_key, client_public_key, fingerprint, paired_at}, about 450 bytes. Key names use [A-Za-z0-9._-] only. Every value is asserted under 2048 bytes before the write (Expo warns above 2048 and may refuse later); addrs capped at 8. Write the record, then the index; a record with no index entry is ignored. No snapshot cache persisted in A1. The API is a list, so the A5 switcher needs no migration; the A1 UI shows the first host.",
+        "alternatives": [
+          "One phone-wide static key for all hosts: hosts can correlate it, and a revoke on one host cannot delete it. Not recommended.",
+          "One JSON blob for every host: passes 2048 bytes at about 4 hosts. No."
+        ]
+      },
+      {
+        "id": "G6",
+        "topic": "What a silent close means (amends README Revocation)",
+        "recommend": "Track the phase reached. (1) The WebSocket never opens: unreachable; on /pair a close reason containing 404 = code used or window closed. (2) An error frame in the version exchange: version mismatch, definitive. (3) /link closed after msg1 without msg2: after 2 in a row with the network up, show Not paired with this host, with Pair again / Forget this desktop, and keep retrying at the slow backoff. (4) /pair msg2 fails to decrypt: wrong code or host key, definitive for that QR. (5) /pair closed after hello, before welcome: rejected, timed out or desktop stopped (the phone cannot tell which). (6) error revoked: Removed from <host>. Pair again., and delete that host record and key. Keys are deleted automatically only on revoked, or on Forget. The s1 README section amends the Revocation line that says the phone deletes its keys on a failed handshake.",
+        "alternatives": [
+          "Follow the README literally (delete keys on the first failed /link handshake): one dropped packet or a desktop restart unpairs the phone. Not recommended.",
+          "Never auto-delete, even on revoked: leaves a dead key in storage. Not recommended."
+        ]
+      },
+      {
+        "id": "G7",
+        "topic": "How mobile imports protocol/, and what lives where",
+        "recommend": "Keep the P2 relative imports (src/link/*.ts imports ../../../protocol); metro watchFolders already covers it, and the s5 expo export proves it resolves at runtime for the first time. protocol/ gains data only: fixtures/noise/*.json and a README section What A1 decided. No TypeScript is added there. Noise and framing stay in mobile/src/link: protocol/ has no node_modules, so a bare @noble import from a protocol file cannot resolve under Metro or jest, and the desktop never runs JS Noise (Rust owns the socket in both roles; H3 reuses core/src/link). One protocol, both clients holds: no wire change, v stays 1, desktop unaffected, and the vectors are the shared contract between the two Noise implementations.",
+        "alternatives": [
+          "A tsconfig paths alias @protocol/* plus a jest moduleNameMapper: works (Expo Metro honours tsconfig paths), but it reverses a recorded P2 decision for cosmetics. Not recommended.",
+          "Put frame.ts and noise.ts in protocol/: noble cannot be imported from there and nothing else would use them. No."
+        ]
+      },
+      {
+        "id": "G8",
+        "topic": "CI",
+        "recommend": "Add npx tsc --noEmit after npm test in the mobile-npm job of .github/workflows/test.yml, in s2 so every later push typechecks (the committed expo-env-types.d.ts makes tsc pass on a clean checkout). Do not add expo-doctor (it calls the Expo API and can be flaky) or expo export (slow; it stays a local done_when). The drift check needs no CI change: it is a cargo unit test inside the existing core jobs.",
+        "alternatives": [
+          "Also add npx expo export --platform android to CI: catches Metro resolution regressions on every push for about a minute of CI. Reasonable; say yes if you want it.",
+          "No CI change: a type error in A1 code would pass CI. Not recommended."
+        ]
+      },
+      {
+        "id": "G9",
+        "topic": "Keepalive, reconnect, background",
+        "recommend": "Ping every 25 s after welcome; if no pong or other host message arrives within 15 s of a ping, close and reconnect. Backoff 1, 2, 4, 8, 16, then 30 s capped, with up to 20% jitter (Math.random allowed for jitter only, banned in the crypto files); that stays under the host limit of 10 handshakes a minute per source. Each attempt tries the stored addrs in order with a 5 s connect timeout each. Reset the backoff and try at once when expo-network reports connectivity regained or AppState becomes active; no attempts while offline. A seq gap, a decrypt failure, a TEXT frame after the handshake or an undecodable message closes and reconnects at once (once; repeats back off). The socket is left alone in the background; if Android kills it, the foreground reconnect covers it, which keeps the door open for the A3 recently-backgrounded notifications.",
+        "alternatives": [
+          "Close on background and reopen on foreground: simpler, but A3 would undo it.",
+          "A host-side keepalive: a core change for no A1 need. No."
+        ]
+      },
+      {
+        "id": "G10",
+        "topic": "Phone copy and Android back",
+        "recommend": "Approve the copy in notes.copy (plain words; the two README strings used verbatim). Android back: the pair screen is one route whose steps (rationale, camera, connecting, confirm wait, result) are internal state. Back from any step pops to home and cancels a pairing in progress (the socket closes on unmount, and the desktop confirm dialog then times out or is closed by the core). Back on home exits. No custom BackHandler, so the return-true-only-when-handled rule cannot be broken. predictiveBackGestureEnabled stays false.",
+        "alternatives": [
+          "Per-step back (camera back to rationale): needs a BackHandler for little gain. Not recommended."
+        ]
+      },
+      {
+        "id": "G11",
+        "topic": "client_name sent in hello (shown in the desktop confirm dialog)",
+        "recommend": "expo-device Device.deviceName (the name the user gave the phone), else modelName, else Android phone, cut to 128 UTF-8 bytes on the phone (the host clips too); app_version from expo-constants. It goes only to the user's own desktop. The phone shows its own fingerprint on the confirm-wait screen for comparison with the desktop line Its code.",
+        "alternatives": [
+          "Let the user edit the name before pairing: a text field with keyboard handling; an A5 polish."
+        ]
+      },
+      {
+        "id": "G12",
+        "topic": "Desktop and core changes A1 needs",
+        "recommend": "None beyond s1, which is cfg(test) only and changes no shipped behaviour. The desktop already shows name and fingerprint (desktop/src/components/PairingRequest.tsx:98). A QR listing only 127.0.0.1 is handled on the phone with copy telling the user to pick a LAN or Tailscale address. A1 unblocks the deferred P3b confirm-dialog owner check, which joins the A1 owner checks. Known gaps left as they are: re-pairing the same desktop leaves the old client entry in Devices (revoke by hand; cap 32), and an address that changes after pairing needs a re-pair (no discovery in v1).",
+        "alternatives": [
+          "Dedupe re-pairs on the host by name: a core change with its own security question (a name is not an identity). Not in A1."
+        ]
+      },
+      {
+        "id": "G13",
+        "topic": "Dependency pins",
+        "recommend": "@noble/* pinned exact at 2.4.0 (no caret; crypto code should not float), installed through npx expo install for consistency (it passes non-SDK packages to npm), then the caret removed by hand if added. Expo packages take whatever npx expo install picks for SDK 57 (expo-camera 57.0.x, expo-crypto 57.0.x, expo-network 57.0.x, expo-build-properties 57.0.x).",
+        "alternatives": [
+          "Caret ranges for noble: a minor release could change behaviour under the vectors; the vectors would catch it, but only after install. Not recommended."
+        ]
+      }
+    ],
+    "plan": [
+      {
+        "slice": "s1",
+        "risk": "high",
+        "depends_on": [],
+        "intent": "Deterministic Noise vectors from the core (G2) with a drift guard, plus a protocol/README.md section What A1 decided: the G1 amendment to Transport, the G2 vector format, the G6 amendment to Revocation, G5 per-host keys, G7 placement. noise.rs gains exactly one #[cfg(test)] pub(crate) constructor that passes a fixed ephemeral to the snow builder and changes no non-test line. link/mod.rs gains #[cfg(test)] mod vectors;. vectors.rs: build_ikpsk2(), build_kk(), build_offer() return JSON values. Test vectors_match_committed_files compares them with protocol/fixtures/noise/*.json (string-equal after serde_json::to_string_pretty plus a trailing newline), or writes them when ORCHESTRA_WRITE_VECTORS=1. Test vectors_open_on_the_production_host_path runs responder_pair / responder_link on the committed msg1, checks remote_static and the handshake hash, and frame::open on the committed c2h hello and ping.",
+        "files": [
+          "orchestra/core/src/link/mod.rs",
+          "orchestra/core/src/link/noise.rs",
+          "orchestra/core/src/link/vectors.rs",
+          "orchestra/protocol/fixtures/noise/ikpsk2.json",
+          "orchestra/protocol/fixtures/noise/kk.json",
+          "orchestra/protocol/fixtures/noise/offer.json",
+          "orchestra/protocol/README.md"
+        ],
+        "done_when": [
+          "cd orchestra && cargo test -p orchestra-core --locked --lib link::vectors -> exit 0, at least 2 tests run, 0 failed",
+          "cd orchestra && ORCHESTRA_WRITE_VECTORS=1 cargo test -p orchestra-core --locked --lib link::vectors && git diff --exit-code -- protocol/fixtures/noise -> exit 0 (regenerating gives byte-identical committed files)",
+          "cd orchestra && cargo test --workspace --locked -> exit 0, 0 failed (no regression in core, link, wire_fixtures or shell)",
+          "cd orchestra && grep -c fixed_ephemeral_key_for_testing_only core/src/link/noise.rs -> 1, and the reviewer confirms every added line in git diff main -- core/src/link/noise.rs sits inside one #[cfg(test)] item",
+          "cd orchestra && grep -rln fixed_ephemeral core/src | grep -v -E 'link/(noise|vectors)[.]rs' -> no output",
+          "cd orchestra && a node one-liner JSON.parse-es protocol/fixtures/noise/{ikpsk2,kk,offer}.json and checks each size <= 262144 -> exit 0",
+          "cd orchestra/desktop && npm test -> exit 0 (fixture count unchanged: noise/ is not globbed)",
+          "cd orchestra/mobile && npm test -> exit 0, 106 tests",
+          "cd orchestra && git diff --name-only main -- desktop mobile fleet protocol/codec.ts protocol/types.ts protocol/constants.ts protocol/index.ts protocol/fixtures/index.ts -> no output"
+        ]
+      },
+      {
+        "slice": "s2",
+        "risk": "high",
+        "depends_on": [
+          "s1"
+        ],
+        "intent": "The phone Noise (G1) and framing, replaying the s1 vectors byte for byte. Install @noble/curves, @noble/ciphers, @noble/hashes exactly 2.4.0 (G13). Add @noble to the jest transformIgnorePatterns allowlist in the package.json jest block, keeping the jest-expo entries. bytes.ts: hex, concat, u32 BE, strict UTF-8 encode/decode (TextEncoder; TextDecoder with fatal and ignoreBOM). keys.ts: publicKey(secret) via x25519, hostId(pub) (first 16 bytes of SHA-256, hex), fingerprint(pub) (8 bytes, groups of 4 joined by -), generateStaticKey(random). noise.ts: CipherState, SymmetricState, the two initiator handshakes, prologue(path, requestText, replyText) from the exact strings, split() into send/recv CipherStates; random is a required parameter with no default. frame.ts: seal (chunks of at most 65519; an empty message is one empty chunk) and open (joins chunks, refuses before decrypting a chunk that would pass MAX_MESSAGE_BYTES from protocol/constants; Malformed, TooLarge, Decrypt). Tests replay ikpsk2.json and kk.json: prologue bytes, msg1 equal, msg2 read, handshake hash, split keys, c2h hello and ping wire equal, h2c welcome opened, h2c 65520-byte frame opened to the rule plaintext, c2h 65520-byte frame SHA-256 equal. Negative: a flipped bit in msg2 fails; a wrong psk fails at msg2; a flipped chunk byte fails open; a frame over the cap is TooLarge before decrypt; 65519 bytes is 1 chunk and 65520 is 2. keys.test: hostId(offer.host_key) equals offer.host_id from offer.json. CI: npx tsc --noEmit in the mobile-npm job (G8).",
+        "files": [
+          "orchestra/mobile/package.json",
+          "orchestra/mobile/package-lock.json",
+          "orchestra/mobile/src/link/bytes.ts",
+          "orchestra/mobile/src/link/keys.ts",
+          "orchestra/mobile/src/link/noise.ts",
+          "orchestra/mobile/src/link/frame.ts",
+          "orchestra/mobile/src/__tests__/noise-vectors.test.ts",
+          "orchestra/mobile/src/__tests__/frame.test.ts",
+          "orchestra/mobile/src/__tests__/keys.test.ts",
+          "orchestra/.github/workflows/test.yml"
+        ],
+        "done_when": [
+          "cd orchestra/mobile && npm test -> exit 0, at least 6 suites, more than 106 tests, 0 failed",
+          "cd orchestra/mobile && npx jest noise-vectors frame keys -> exit 0, 3 suites, 0 failed",
+          "cd orchestra/mobile && npx tsc --noEmit -> exit 0, no output",
+          "cd orchestra/mobile && npm ls @noble/curves @noble/ciphers @noble/hashes -> each 2.4.0; grep -c -E '@noble/(curves|ciphers|hashes).: .2[.]4[.]0.' package.json -> 3 (exact pins, no caret)",
+          "cd orchestra/mobile && grep -n -E 'Math[.]random|getRandomValues|randomBytes|randomSecretKey|keygen[(]' src/link/noise.ts src/link/keys.ts src/link/frame.ts src/link/bytes.ts -> no output (randomness only injected)",
+          "cd orchestra/mobile && grep -rn -E 'Noise_(XX|NK|NN|XK|IK_)' src/link -> no output (only the two patterns)",
+          "cd orchestra && grep -c 'npx tsc --noEmit' .github/workflows/test.yml -> 1, inside the mobile-npm job",
+          "ci: test.yml job mobile npm test (ubuntu-24.04) green on the pushed branch -> checked by the integrator after push",
+          "cd orchestra && git diff --name-only main -- core desktop protocol fleet mobile/app.json -> only the s1 files"
+        ]
+      },
+      {
+        "slice": "s3",
+        "risk": "high",
+        "depends_on": [
+          "s2"
+        ],
+        "intent": "Native deps, app config and storage. npx expo install expo-camera expo-crypto expo-network expo-build-properties. app.json plugins: expo-camera with cameraPermission (Orchestra uses the camera only to scan the pairing code shown by the Orchestra desktop app.), microphonePermission false, recordAudioAndroid false, barcodeScannerEnabled true; expo-build-properties with android.usesCleartextTraffic true (G3); android.blockedPermissions [android.permission.RECORD_AUDIO] as a backstop. Leave expo.icon alone. random.ts: getRandomBytes(32) from expo-crypto, the only randomness the app wires in. offer.ts: parse the QR text as a PairingOffer, strict on what it needs and tolerant of extra fields (client rule): v === 1 (another integer = newer version); host_id, host_key, secret lowercase hex of 32/64/64 chars; hostId(host_key) === host_id or not-an-Orchestra-code; addrs a non-empty list of IPv4 a.b.c.d:port with loopback dropped (none left = loopback-only); expires_at a number, expired if now > expires_at + 60 s. Returns a tagged union, never throws. store.ts (G5): listHosts, getHost, saveHost (record then index), forgetHost (both), via expo-secure-store with the G5 key names, a size assert under 2048 bytes before every write, and JSON.parse failure treated as absent. orchestra/CLAUDE.md Mobile section: the cleartext choice and why, src/link as the home of the phone link, the Expo Go owner-check path (G4). After committing, prove the merged manifest with prebuild, then clean up.",
+        "files": [
+          "orchestra/mobile/package.json",
+          "orchestra/mobile/package-lock.json",
+          "orchestra/mobile/app.json",
+          "orchestra/mobile/src/link/random.ts",
+          "orchestra/mobile/src/link/offer.ts",
+          "orchestra/mobile/src/link/store.ts",
+          "orchestra/mobile/src/__tests__/offer.test.ts",
+          "orchestra/mobile/src/__tests__/store.test.ts",
+          "orchestra/CLAUDE.md"
+        ],
+        "done_when": [
+          "cd orchestra/mobile && npm test -> exit 0, 0 failed. offer.test parses protocol/fixtures/noise/offer.json to an ok offer with exactly one usable addr (192.168.1.20:47800) and rejects: bad JSON, v 2 (newer), host_id mismatch, short hex, loopback-only addrs, expired",
+          "cd orchestra/mobile && npx jest store -> exit 0: round trip; forget removes both keys; every key name uses only A-Z a-z 0-9 . _ -; an oversize value is refused before SecureStore.setItemAsync is called",
+          "cd orchestra/mobile && npx tsc --noEmit -> exit 0",
+          "cd orchestra/mobile && npx expo-doctor -> exit 0, all checks passed (21/21 on main today)",
+          "cd orchestra/mobile && npm ls expo-camera expo-crypto expo-network expo-build-properties -> each a 57.x version",
+          "cd orchestra/mobile && grep -rn -E 'AsyncStorage|EXPO_PUBLIC_' src -> no output",
+          "after commit: cd orchestra/mobile && npx expo prebuild --platform android --no-install --clean; then in android/app/src/main/AndroidManifest.xml: grep -c android.permission.CAMERA -> >= 1; grep RECORD_AUDIO -> none, or only with tools:node=remove; grep -c usesCleartextTraffic=.true. -> 1; grep -c android.permission.INTERNET -> >= 1. Then rm -rf android && git checkout -- package.json && git status --porcelain -> no output",
+          "cd orchestra && git diff --name-only main -- core desktop protocol fleet -> only the s1 files"
+        ]
+      },
+      {
+        "slice": "s4",
+        "risk": "high",
+        "depends_on": [
+          "s3"
+        ],
+        "intent": "The link client and its state, no screens. client.ts: connect({mode pair|link, addr, hostKey, clientSecret, psk?, clientName, appVersion, random, WebSocketImpl}) as an explicit phase machine (opening, version, msg1-sent, hello-sent, welcomed, live) over ws://addr/pair or /link. binaryType = arraybuffer. Send encodeHandshakeRequest() as one TEXT frame and keep the exact string sent; the first message back must be TEXT, at most 1024 bytes, through decodeHandshakeReply; an error unsupported_version gives VersionMismatch{supported}. The prologue uses the exact sent and received strings. msg1 is sent BINARY (ArrayBuffer), msg2 arrives BINARY, split, then the first transport message is the sealed hello. After that every send is BINARY via frame.seal; any TEXT frame from the host, open() failure or decode failure closes with ProtocolError. decodeHostMessage on each opened message. /pair waits up to 310 s for welcome; welcome.host_id must equal the offer host_id. Outcomes are the G6 classes: Unreachable, PairWindowClosed (404 in the close reason), VersionMismatch, LinkRefused, PairAuthFailed, PairNotConfirmed, Revoked, ProtocolError, Closed. A send(message) seam is exposed for A2 calls. state.ts: a pure reducer: welcome (scopes, host_name); snapshot replaces sessions, inbox, tasks, projects, lastSeq = snapshot.seq; event: seq <= lastSeq ignored, seq > lastSeq + 1 is Gap; session-updated and task-updated upsert by id; inbox-updated replaces the whole list; transcript-appended and unknown events only advance seq. controller.ts: owns one paired host (first of listHosts) and applies G9 (ping 25 s, pong 15 s, backoff with jitter, addr order, expo-network, AppState active), G6 (2 LinkRefused in a row = NotPaired; Revoked = forgetHost), and pair(offer) (fresh static key, IKpsk2, saveHost only after welcome). provider.tsx: React context {phase, host, sessions, inboxCount, error, pair, cancelPair, retryNow, forget}. No console.* anywhere in src/link (secrets must never reach logs).",
+        "files": [
+          "orchestra/mobile/src/link/client.ts",
+          "orchestra/mobile/src/link/state.ts",
+          "orchestra/mobile/src/link/controller.ts",
+          "orchestra/mobile/src/link/provider.tsx",
+          "orchestra/mobile/src/__tests__/fake-host.ts",
+          "orchestra/mobile/src/__tests__/client.test.ts",
+          "orchestra/mobile/src/__tests__/state.test.ts",
+          "orchestra/mobile/src/__tests__/controller.test.ts"
+        ],
+        "done_when": [
+          "cd orchestra/mobile && npm test -> exit 0, 0 failed (fake-host.ts is a helper; jest must not run it as a suite)",
+          "cd orchestra/mobile && npx jest client -> exit 0. With fake-host.ts (a fake WebSocket answering from kk.json / ikpsk2.json: reply text, msg2, then frames sealed with the vector h2c split key) it covers: pair happy path to welcome + snapshot; the received hello opens with the vector c2h key and decodes as hello; link happy path; unsupported_version gives VersionMismatch with supported [1]; close after msg1 on /link gives LinkRefused; flipped msg2 bit on /pair gives PairAuthFailed; close after hello on /pair gives PairNotConfirmed; error revoked gives Revoked; TEXT frame after the handshake gives ProtocolError and a close; close reason containing 404 on /pair gives PairWindowClosed; every frame sent after the version request is an ArrayBuffer",
+          "cd orchestra/mobile && npx jest state -> exit 0: snapshot then consecutive events applied; inbox-updated replaces, not merges; session-updated upserts one; a gap gives Gap; seq <= lastSeq ignored; unknown event names and status strings kept, not thrown",
+          "cd orchestra/mobile && npx jest controller -> exit 0 (fake timers): ping by 25 s, always before 60 s; no pong in 15 s means reconnect; backoff non-decreasing to 30 s, at most 10 attempts in any 60 s; no attempt while offline; 2 LinkRefused in a row give NotPaired with keys still stored; Revoked calls forgetHost; saveHost only after welcome",
+          "cd orchestra/mobile && npx tsc --noEmit -> exit 0",
+          "cd orchestra/mobile && grep -rn 'console[.]' src/link -> no output",
+          "cd orchestra/mobile && grep -c -E 'binaryType *= *.arraybuffer' src/link/client.ts -> 1",
+          "cd orchestra && git diff --name-only HEAD~1 -- mobile/app.json mobile/package.json core desktop protocol -> no output"
+        ]
+      },
+      {
+        "slice": "s5",
+        "risk": "low",
+        "depends_on": [
+          "s4"
+        ],
+        "intent": "Screens and states (G10 copy and back). _layout.tsx wraps the Stack in LinkProvider. index.tsx shows: not paired (copy and a Pair with a desktop button to /pair); connected (header with host name and N need you from inboxCount, then a FlatList of session rows: project_name, a plain-word status with unknown statuses shown raw, last_message on one line, an empty state); banners over the cached list for offline (expo-network), reconnecting, desktop unreachable (next retry and Try now), version mismatch (names the supported list), not paired with this host (Pair again, Forget this desktop), removed, no read scope. pair.tsx: rationale, then requestPermission; the denied path offers Try again while canAskAgain, else Open settings via Linking.openSettings(); CameraView with barcodeScannerSettings barcodeTypes [qr], first scan only; offer errors; connecting; confirm wait with the phone fingerprint, a countdown to expires_at and Cancel; paired then router.replace to /; failed with Scan again. Every control uses Touchable (48dp, hitSlop) with accessibilityLabel and accessibilityRole; safe areas via SafeAreaView; font scaling on. Back pops to home and cancels (no BackHandler). home.test.tsx is rewritten for the new states, deliberately replacing the Pairing arrives in a later version assertion.",
+        "files": [
+          "orchestra/mobile/src/app/_layout.tsx",
+          "orchestra/mobile/src/app/index.tsx",
+          "orchestra/mobile/src/app/pair.tsx",
+          "orchestra/mobile/src/components/session-row.tsx",
+          "orchestra/mobile/src/components/link-banner.tsx",
+          "orchestra/mobile/src/constants/copy.ts",
+          "orchestra/mobile/src/__tests__/home.test.tsx",
+          "orchestra/mobile/src/__tests__/pair.test.tsx",
+          "orchestra/mobile/src/__tests__/session-row.test.tsx"
+        ],
+        "done_when": [
+          "cd orchestra/mobile && npm test -> exit 0, 0 failed",
+          "cd orchestra/mobile && npx jest home pair session-row -> exit 0. home.test renders not-paired (title and button), connected with 2 sessions, and each banner state from copy.ts, and the version banner text contains 1. pair.test (expo-camera mocked): the rationale shows before requestPermission is called; denied with canAskAgain false shows a button that calls Linking.openSettings; a bad scanned code shows the not-an-Orchestra-code copy; the confirm wait shows the fingerprint; unmount calls cancelPair",
+          "cd orchestra/mobile && grep -c 'Pairing arrives in a later version' src/__tests__/home.test.tsx src/app/index.tsx -> 0 and 0",
+          "cd orchestra/mobile && npx tsc --noEmit -> exit 0",
+          "cd orchestra/mobile && npx expo export --platform android --output-dir <scratch>/a1-export -> exit 0 and one .hbc bundle written (Metro resolves ../protocol and the @noble ESM exports; hermesc compiles BigInt code)",
+          "cd orchestra/mobile && npx expo-doctor -> exit 0",
+          "cd orchestra/mobile && grep -rn -E 'allowFontScaling|BackHandler|AsyncStorage|console[.]|http://' src/app src/components -> no output",
+          "cd orchestra/mobile && grep -c 'Linking.openSettings' src/app/pair.tsx -> >= 1",
+          "cd orchestra && git diff --name-only HEAD~1 -- mobile/app.json mobile/package.json mobile/src/link core desktop protocol -> no output",
+          "human-read (owner, on a device, G4), in Expo Go (npx expo start --go) against npm run tauri dev with the link on a LAN or Tailscale address. O1: scan and pair; the desktop confirm dialog appears (the deferred P3b check) and its Its code equals the phone fingerprint. O2: the session list matches the desktop and changes live when a session starts or stops. O3: airplane mode shows the offline banner, and turning it off reconnects. O4: desktop link off shows unreachable, and back on reconnects. O5: kill and reopen the app; it reconnects over /link without re-pairing. O6: revoke in Devices shows Removed from <host>. Pair again., and the next pair works. O7: deny the camera twice; Open settings opens the app settings. O8: back from each pair step returns home, and back on home exits; note whether the desktop confirm dialog closes. O9: a QR listing only 127.0.0.1 shows the loopback copy"
+        ]
+      }
+    ],
+    "edges": "s1 -> s2 (protocol/fixtures/noise/*.json, the vectors s2 replays); s2 -> s3 (keys.ts hostId used by offer.ts; package.json and package-lock.json shared, so ordered); s3 -> s4 (store.ts, offer.ts, random.ts and the installed expo-network used by client and controller); s4 -> s5 (provider.tsx and the controller states the screens render). No parallel slices.",
+    "not_doing": [
+      "A2: answering, the inbox UI, call/result and the offline answer queue. A1 keeps the inbox array and its count only; client.ts exposes a send(message) seam for A2.",
+      "A3 notifications, register_push, FCM; the A5 desktop switcher (the store is a list, the UI shows one host).",
+      "Any desktop/ change and any non-test core change: no re-pair dedupe on the host, no address editing on the phone, no mDNS or discovery.",
+      "Any protocol/ TypeScript or wire change (v stays 1); no TS framing or Noise inside protocol/.",
+      "A JS Noise responder, any pattern other than IKpsk2 and KK, rekey, a generic pattern interpreter.",
+      "EAS project creation, any EAS build or preview APK, any credential (ops gate, R2). No Android SDK install by an agent.",
+      "A persisted snapshot cache, AsyncStorage of any kind, licensing or tier checks (the direct link is never gated, ADR 0001 item 2).",
+      "The app.json expo.icon vs ROADMAP A0 contradiction, P3a/P3b review follow-ups, and the open P2 H3 items.",
+      "Measuring a 4 MiB message over the RN bridge on device (stays an unknown; note it in O2 if a large inbox exists).",
+      "Ticking ROADMAP.md (gitignored, local): for the integrator or owner after merge.",
+      "Editing fleet/ (vendored)."
+    ],
+    "notes": {
+      "worktree": "git -C orchestra worktree add C:/Users/natha/wt/orchestra-a1 -b a1-pair-and-see main; run npm ci in the worktree mobile/ (and desktop/ for s1's desktop test) before building. done_when paths starting orchestra/ mean the worktree root.",
+      "copy": {
+        "not_paired_title": "Pair with your desktop",
+        "not_paired_body": "This phone shows what your agents are doing on your computer. Pair it with the Orchestra desktop app first.",
+        "not_paired_hint": "On the desktop, open Devices and choose Pair a phone.",
+        "not_paired_button": "Pair with a desktop",
+        "rationale_title": "Scan the code on your desktop",
+        "rationale_body": "Orchestra uses the camera only to read the pairing code shown by the desktop app. Nothing is recorded or sent anywhere.",
+        "rationale_button": "Continue",
+        "denied_retry": "Orchestra needs the camera to read the pairing code. [Try again]",
+        "denied_settings": "Camera access is off. To scan the pairing code, allow camera access for Orchestra in Settings. [Open settings]",
+        "scanning": "Point the camera at the code on your desktop.",
+        "bad_code": "That is not an Orchestra pairing code.",
+        "newer_code": "This code is from a newer version of Orchestra. Update this app, then scan again.",
+        "expired_code": "This code has expired. On the desktop, choose Pair a phone again and scan the new code.",
+        "loopback_only": "The desktop is listening only on itself. On the desktop, choose a local network or Tailscale address, then show a new code.",
+        "connecting": "Connecting to <host>...",
+        "confirm_title": "Confirm on your desktop",
+        "confirm_body": "Your desktop is asking whether to allow this phone. Check that it shows this code: <fingerprint>",
+        "confirm_wait": "Waiting for the desktop (<m:ss> left). [Cancel]",
+        "paired": "Paired with <host>.",
+        "pair_window_closed": "That code was already used or has closed. On the desktop, choose Pair a phone and scan the new code.",
+        "pair_auth_failed": "This code does not match the desktop at that address. Show a new code on the desktop and scan it again.",
+        "pair_not_confirmed": "Pairing did not finish. The desktop did not accept this phone, or it ran out of time. On the desktop, choose Pair a phone and try again. [Scan again]",
+        "pair_unreachable": "Cannot reach <host> at <addr>. Check that this phone is on the same network as the desktop, or on Tailscale, and that the desktop link is on.",
+        "offline": "This phone is offline. Orchestra needs a network connection to reach your desktop.",
+        "reconnecting": "Reconnecting to <host>...",
+        "unreachable": "Cannot reach <host>. It may be asleep, closed, or on a different network. Trying again in <n> s. [Try now]",
+        "version_mismatch": "This app and <host> speak different protocol versions. The desktop supports version <supported>; this app speaks version 1. Update whichever is older.",
+        "not_paired_with_host": "Not paired with this host. The desktop no longer recognises this phone. [Pair again] [Forget this desktop]",
+        "revoked": "Removed from <host>. Pair again.",
+        "no_read_scope": "<host> has not allowed this phone to see sessions. Change it in Devices on the desktop.",
+        "no_sessions": "No sessions on <host> right now.",
+        "status_labels": "starting Starting; working Working; waiting_permission Needs permission; waiting_question Has a question; needs_attention Needs you; idle Idle; suspended Suspended; ended Ended; failed Failed; anything else shown as sent"
+      },
+      "unknowns_carried": [
+        "Whether Play Store Expo Go is on SDK 57 today (G4 fallback: run:android after an SDK install).",
+        "Hermes runtime correctness of the noble BigInt code is proven only by the owner check; expo export proves it compiles.",
+        "A 4 MiB snapshot over the RN bridge (base64) is unmeasured.",
+        "Whether the desktop confirm dialog closes promptly when the phone cancels (observe in O8)."
+      ],
+      "fact_checks": "Scout facts used as given; two conflicts with protocol/README.md records are raised in G1 and G6 rather than overridden."
+    }
+  },
+  "approved_by_human": true,
+  "scope_exceptions": [
+    "ORCHESTRATOR-OWNED, normally empty. Paths a builder may write that the approved plan does not list. guard-builder-scope.py DENIES a builder's Write/Edit outside architect.plan[].files, and this is the only way through it. Adding one is a deliberate, recorded act: pair it with deviation_from_approved_plan on the slice that needed it, and say why the gate's file set was wrong. Never add a path to silence the guard on work the human did not approve."
+  ],
+  "builders": {
+    "s1": {
+      "written_by": "builder",
+      "status": "done",
+      "branch": "a1-pair-and-see",
+      "commit": "aa24d6fcd3ef72ada15583f5ed8e1ff72d8246c4",
+      "changed": [
+        "core/src/link/mod.rs",
+        "core/src/link/noise.rs",
+        "core/src/link/vectors.rs",
+        "protocol/fixtures/noise/ikpsk2.json",
+        "protocol/fixtures/noise/kk.json",
+        "protocol/fixtures/noise/offer.json",
+        "protocol/README.md"
+      ],
+      "notes": "Both split keys are not in the vectors: snow exposes them only under risky-raw-split, and Cargo.toml is outside s1.",
+      "gate_results": "1. cargo test -p orchestra-core --locked --lib link::vectors -> 2 passed; 0 failed (vectors_open_on_the_production_host_path, vectors_match_committed_files)\n2. ORCHESTRA_WRITE_VECTORS=1 cargo test ... link::vectors -> 2 passed; then git diff --exit-code -- protocol/fixtures/noise -> exit=0 (only LF/CRLF warnings)\n3. cargo test --workspace --locked -> exit 0; core lib 255 passed, link integration 30 passed, 4 passed, desktop shell 44 passed, 0 failed\n4. grep -c fixed_ephemeral_key_for_testing_only core/src/link/noise.rs -> 1; git diff main -- core/src/link/noise.rs has 0 removed lines, additions are one #[cfg(test)] impl Handshake block\n5. grep -rln fixed_ephemeral core/src | grep -v -E 'link/(noise|vectors)[.]rs' -> no output\n6. node JSON.parse + size: ikpsk2 90773, kk 90590, offer 511 bytes -> exit 0\n7. desktop npm test -> 213 passed (213)\n8. mobile npm test -> Tests: 106 passed, 106 total (3 suites)\n9. git diff --name-only main -- desktop mobile fleet protocol/{codec,types,constants,index}.ts protocol/fixtures/index.ts -> no output",
+      "deviation_from_approved_plan": "The noise.rs cfg(test) item is one impl block with with_ephemeral plus handshake_hash (needed for the hash check). The replay test runs production responder_pair/responder_link on msg1 for remote_static, then a fixed-ephemeral responder for msg2, hash and frame::open, since a random host ephemeral cannot reproduce the transport keys.",
+      "followup_1": {
+        "written_by": "builder",
+        "commit": "3329af2",
+        "branch": "a1-pair-and-see",
+        "files": [
+          "protocol/README.md"
+        ],
+        "changed": "G5 now says the index entry is written before the record (crash leaves an id with no record, skipped by listHosts, filled by next save), matching store.ts; fixtures hold ephemeral SECRET keys only, public ones are the first 32 bytes of msg1/msg2; vectors are built through a cfg(test) copy of build(), and only msg1 on responder_pair/responder_link is the production path.",
+        "gate_results": {
+          "git diff --stat HEAD~1": "protocol/README.md | 17 +++++++++++------ ; 1 file changed, 11 insertions(+), 6 deletions(-)",
+          "cd mobile && npx jest --watchAll=false": "Test Suites: 13 passed, 13 total; Tests: 277 passed, 277 total"
+        }
+      }
+    },
+    "s2": {
+      "written_by": "builder",
+      "status": "done",
+      "branch": "a1-pair-and-see",
+      "commit": "02e864a",
+      "changed": [
+        "mobile/package.json",
+        "mobile/package-lock.json",
+        "mobile/src/link/bytes.ts",
+        "mobile/src/link/keys.ts",
+        "mobile/src/link/noise.ts",
+        "mobile/src/link/frame.ts",
+        "mobile/src/__tests__/noise-vectors.test.ts",
+        "mobile/src/__tests__/frame.test.ts",
+        "mobile/src/__tests__/keys.test.ts",
+        ".github/workflows/test.yml"
+      ],
+      "notes": "frame.test.ts takes about 20s (two 4 MiB seal/open runs) in jest-expo.",
+      "gate_results": "1. cd mobile && npm test -> Test Suites: 6 passed, 6 total; Tests: 137 passed, 137 total\n2. npx jest noise-vectors frame keys -> Test Suites: 3 passed; Tests: 31 passed, 31 total\n3. npx tsc --noEmit -> exit 0, no output\n4. npm ls @noble/curves @noble/ciphers @noble/hashes -> ciphers 2.4.0, curves 2.4.0, hashes 2.4.0 (deduped); grep -c exact pins package.json -> 3\n5. grep randomness (Math.random|getRandomValues|randomBytes|randomSecretKey|keygen() in src/link/*.ts -> no output\n6. grep -rn Noise_(XX|NK|NN|XK|IK_) src/link -> no output\n7. grep -c 'npx tsc --noEmit' .github/workflows/test.yml -> 1 (mobile-npm job, before npm test)\n8. git diff --name-only main -- core desktop protocol fleet mobile/app.json -> only s1 files (core/src/link/{mod,noise,vectors}.rs, protocol/README.md, protocol/fixtures/noise/*.json)\n9. CI job green on pushed branch -> not run; integrator checks after push",
+      "results": "137 tests in 6 suites pass; tsc clean; all 31 s2 tests pass including byte-for-byte replay of both transcripts",
+      "deviation_from_approved_plan": "transformIgnorePatterns in package.json restates the jest-expo preset's three entries with @noble added to the allowlist, since a package.json override replaces the preset array. noise-vectors.test.ts declares a narrow Buffer type for base64 decoding because tsconfig has only jest types. Split keys are not compared directly (s1 did not record them); the transport frames prove them."
+    },
+    "s3": {
+      "written_by": "builder",
+      "attempt_1": {
+        "written_by": "builder",
+        "status": "done",
+        "branch": "a1-pair-and-see",
+        "commit": "c36f783",
+        "changed": [
+          "mobile/package.json",
+          "mobile/package-lock.json",
+          "mobile/app.json",
+          "mobile/src/link/random.ts",
+          "mobile/src/link/offer.ts",
+          "mobile/src/link/store.ts",
+          "mobile/src/__tests__/offer.test.ts",
+          "mobile/src/__tests__/store.test.ts",
+          "CLAUDE.md"
+        ],
+        "notes": "mobile/android/ (gitignored prebuild output) still on disk: the plan-scope hook denied rm -rf; orchestrator to delete it.",
+        "results": "npm test 8 suites 157 tests pass; npx jest store 10 pass; tsc exit 0; expo-doctor 21/21; npm ls: expo-build-properties 57.0.22, expo-camera 57.0.6, expo-crypto 57.0.4, expo-network 57.0.2; grep AsyncStorage|EXPO_PUBLIC_ in src: none; prebuild manifest: CAMERA 1, RECORD_AUDIO absent, usesCleartextTraffic=true 1, INTERNET 1; prebuild rewrote package.json scripts android/ios (expo run:*), reverted with git checkout; git status --porcelain clean; git diff --name-only main -- core desktop protocol fleet: only the 7 s1 files",
+        "gate_results": "1. cd mobile && npm test -> Test Suites: 8 passed, 8 total; Tests: 157 passed, 157 total\n2. npx jest store -> Test Suites: 1 passed; Tests: 10 passed\n3. npx tsc --noEmit -> exit 0, no output\n4. npx expo-doctor -> 21/21 checks passed. No issues detected!\n5. npm ls expo-camera expo-crypto expo-network expo-build-properties -> expo-build-properties@57.0.22, expo-camera@57.0.6, expo-crypto@57.0.4, expo-network@57.0.2\n6. grep -rn -E 'AsyncStorage|EXPO_PUBLIC_' src -> no output (exit 1)\n7. npx expo prebuild --platform android --no-install --clean; AndroidManifest.xml: grep -c android.permission.CAMERA -> 1; grep RECORD_AUDIO -> no output; grep -c usesCleartextTraffic=\"true\" -> 1; grep -c android.permission.INTERNET -> 1. prebuild modified package.json (android/ios scripts); git checkout -- package.json; git status --porcelain -> no output. rm -rf android DENIED by plan-scope hook, android/ remains on disk (gitignored).\n8. cd orchestra && git diff --name-only main -- core desktop protocol fleet -> core/src/link/mod.rs, core/src/link/noise.rs, core/src/link/vectors.rs, protocol/README.md, protocol/fixtures/noise/{ikpsk2,kk,offer}.json (s1 files only)",
+        "deviation_from_approved_plan": "None to the file set. RECORD_AUDIO is absent from the manifest entirely (blockedPermissions removes it) rather than tools:node=remove. expo install added the expo-build-properties plugin entry itself; replaced by the configured entries. android/ not deleted (hook)."
+      },
+      "status": "done",
+      "branch": "a1-pair-and-see",
+      "commit": "90ad894",
+      "notes": "mobile/android/ (gitignored prebuild output) still on disk, left as instructed.",
+      "attempt_2": {
+        "commits": [
+          "90ad894"
+        ],
+        "predecessor": "An earlier attempt-2 builder stalled with no progress for 10 minutes and left uncommitted partial edits to random.ts, offer.ts, store.ts; reviewed as a draft, kept and corrected.",
+        "changed": [
+          "mobile/app.json",
+          "mobile/package.json",
+          "mobile/src/link/random.ts",
+          "mobile/src/link/offer.ts",
+          "mobile/src/link/store.ts",
+          "mobile/src/__tests__/offer.test.ts",
+          "mobile/src/__tests__/store.test.ts",
+          "CLAUDE.md"
+        ],
+        "fixes": [
+          "BLOCKER random.ts: expo-crypto getRandomValues(new Uint8Array(n)), throws if unavailable or wrong shape; tests (in store.test.ts) spy Math.random with __DEV__ true and no nativeCallSyncHook: zero calls, getRandomValues called once.",
+          "MEDIUM app.json: blockedPermissions moved to expo.android; CLAUDE.md wording now accurate (tools:node=\"remove\"). Prebuild manifest: RECORD_AUDIO tools:node=\"remove\" x1, CAMERA 1, usesCleartextTraffic=\"true\" 1, INTERNET 1.",
+          "LOW serialize: saveHost/forgetHost run through a promise queue; test with concurrent save/forget keeps every host.",
+          "LOW orphan secret after crash: saveHost now writes the index entry first, then the record (secret) last, so a crash leaves an id with no record (skipped by listHosts, filled by next save), never an undeletable orphan secret. Test simulates the crash.",
+          "LOW getItemAsync throw: getHost/listHosts treat it as absent; reads that feed a write (index in saveHost/forgetHost) are strict and rethrow. G6 reasoning: absent-on-throw only hides a host so it can be re-paired with a new key (the old secret was unreadable anyway); a lenient index read would look empty and be written back over the index, orphaning every host key, so write paths refuse. Tests cover both.",
+          "LOW host_name: offer.ts clips to 128 bytes on a character boundary after dropping control and bidi chars, same rule as core clients.rs; test added.",
+          "package.json: jest testPathIgnorePatterns gains /src/__tests__/fake-host\\.ts$ ; fake-host.ts untouched, its self-test (s4) is now redundant."
+        ],
+        "deviation_from_approved_plan": "(1) random uses getRandomValues, not getRandomBytes as planned (review blocker). (2) blockedPermissions in expo.android, not expo-build-properties. (3) saveHost order is index then record, not record then index as planned, to make the crash case recoverable; the store test for ordering was updated. (4) The random test lives in store.test.ts (an approved s3 file) because a new random.test.ts is outside the approved file set and the guard denied it.",
+        "results": "jest full: 11 suites, 242 tests pass; tsc exit 0; expo-doctor 21/21; prebuild manifest as above; package.json reverted after prebuild, git status clean.",
+        "gate_results": "1. npx jest --watchAll=false -> Test Suites: 11 passed, 11 total; Tests: 242 passed, 242 total\n2. npx jest store offer -> 2 suites, 26 tests passed\n3. npx tsc --noEmit -> exit 0, no output\n4. CI=1 npx expo-doctor -> 21/21 checks passed. No issues detected!\n5. CI=1 npx expo prebuild --platform android --no-install --clean; AndroidManifest: line 5 uses-permission RECORD_AUDIO tools:node=\"remove\"; grep -c CAMERA 1; grep -c usesCleartextTraffic=\"true\" 1; grep -c INTERNET 1; package.json rewritten by prebuild, git checkout -- package.json, git status --short empty"
+      }
+    },
+    "s4": {
+      "written_by": "builder",
+      "status": "done",
+      "branch": "a1-pair-and-see",
+      "commit": "7270372",
+      "attempt_1": {
+        "written_by": "builder",
+        "status": "done",
+        "branch": "a1-pair-and-see",
+        "commit": "cd5bfaf",
+        "commits": [
+          "a108f4f",
+          "cd5bfaf"
+        ],
+        "changed": [
+          "mobile/src/link/client.ts",
+          "mobile/src/link/state.ts",
+          "mobile/src/link/controller.ts",
+          "mobile/src/link/provider.tsx",
+          "mobile/src/__tests__/fake-host.ts",
+          "mobile/src/__tests__/client.test.ts",
+          "mobile/src/__tests__/state.test.ts",
+          "mobile/src/__tests__/controller.test.ts"
+        ],
+        "notes": "Re-pairing a different host leaves the old record first in listHosts (one-host A1 rule, no auto-delete per G6); A5 switcher must decide.",
+        "deviation_from_approved_plan": "fake-host.ts sits under __tests__ so jest runs it as a suite; the ignore list is in package.json (outside the file set and checked unchanged by done_when), so the helper carries one self-test. One-line orchestrator fix: add '/fake-host' to testPathIgnorePatterns in mobile/package.json and drop the self-test. Fake host derives the h2c key by replaying the vector handshake (split keys are not recorded in the vectors) instead of reading a recorded key. Second commit cd5bfaf only closes client test connections so jest exits.",
+        "gate_results": [
+          {
+            "cmd": "cd mobile && npm test",
+            "result": "Test Suites: 12 passed, 12 total; Tests: 237 passed, 237 total; exit 0"
+          },
+          {
+            "cmd": "cd mobile && npx jest client",
+            "result": "1 suite, 38 passed; exit 0"
+          },
+          {
+            "cmd": "cd mobile && npx jest state",
+            "result": "1 suite, 13 passed; exit 0"
+          },
+          {
+            "cmd": "cd mobile && npx jest controller",
+            "result": "1 suite, 28 passed (fake timers); exit 0"
+          },
+          {
+            "cmd": "cd mobile && npx tsc --noEmit",
+            "result": "exit 0, no output"
+          },
+          {
+            "cmd": "cd mobile && grep -rn 'console[.]' src/link",
+            "result": "no output (grep exit 1)"
+          },
+          {
+            "cmd": "cd mobile && grep -c -E 'binaryType *= *.arraybuffer' src/link/client.ts",
+            "result": "1"
+          },
+          {
+            "cmd": "git diff --name-only c36f783 -- mobile/app.json mobile/package.json core desktop protocol",
+            "result": "no output"
+          }
+        ]
+      },
+      "attempt_2": {
+        "commits": [
+          "7270372"
+        ],
+        "changed": [
+          "mobile/src/link/controller.ts",
+          "mobile/src/link/client.ts",
+          "mobile/src/link/provider.tsx",
+          "mobile/src/__tests__/controller.test.ts",
+          "mobile/src/__tests__/fake-host.ts"
+        ],
+        "fixes": [
+          "BLOCKER dispose terminal: disposed flag honoured by start, attempt, scheduleRetry, failed and pair finish; regression test (stored host, pair in flight, dispose, 180 s fake time, zero new sockets, zero timers)",
+          "MEDIUM fake-host.ts self-test removed; npm test now 13 suites, fake-host no longer listed",
+          "LOW cancelPair after welcome before saveHost resolves: pairCancelled checked after the await; conn closed, host forgotten, outcome Closed; test added",
+          "LOW /pair silent close in msg1-sent maps to PairAuthFailed (controller already stops trying other addrs on a non-Unreachable failure)",
+          "LOW refused counter reset on any non-LinkRefused failure and on network change",
+          "LOW backoff reset moved from welcome to a 30 s STABLE_LINK_MS timer, cleared with the other timers",
+          "LOW provider deviceName falls through on empty string (|| instead of ??)"
+        ],
+        "skipped": [
+          "backoffDelay jitter after the cap: existing G9 tests assert a hard 30 s ceiling (<=30020 and exactly 30000), so jitter past the cap contradicts the approved gate; reverted"
+        ],
+        "deviation_from_approved_plan": "none beyond removing fake-host self-test (package.json testPathIgnorePatterns was added by orchestrator in 90ad894); skipped the jitter-after-cap item with reason above. Provider/controller public API unchanged.",
+        "gate_results": [
+          {
+            "cmd": "npx jest --watchAll=false (full)",
+            "output": "Test Suites: 13 passed, 13 total; Tests: 277 passed, 277 total (fake-host not a suite)"
+          },
+          {
+            "cmd": "npx jest --watchAll=false client controller state",
+            "output": "Test Suites: 3 passed; Tests: 78 passed"
+          },
+          {
+            "cmd": "npx tsc --noEmit",
+            "output": "exit 0"
+          },
+          {
+            "cmd": "grep -rn console mobile/src/link | wc -l",
+            "output": "0"
+          },
+          {
+            "cmd": "git diff --name-only HEAD -- mobile/app.json mobile/package.json core desktop protocol",
+            "output": "(empty)"
+          }
+        ]
+      },
+      "notes": "attempt 2 fix after REJECT; see attempt_2",
+      "gate_results": [
+        {
+          "cmd": "npx jest --watchAll=false (full)",
+          "output": "Test Suites: 13 passed, 13 total; Tests: 277 passed, 277 total (fake-host not a suite)"
+        },
+        {
+          "cmd": "npx jest --watchAll=false client controller state",
+          "output": "Test Suites: 3 passed; Tests: 78 passed"
+        },
+        {
+          "cmd": "npx tsc --noEmit",
+          "output": "exit 0"
+        },
+        {
+          "cmd": "grep -rn console mobile/src/link | wc -l",
+          "output": "0"
+        },
+        {
+          "cmd": "git diff --name-only HEAD -- mobile/app.json mobile/package.json core desktop protocol",
+          "output": "(empty)"
+        }
+      ]
+    },
+    "s5": {
+      "written_by": "builder",
+      "status": "done",
+      "branch": "a1-pair-and-see",
+      "commit": "0535aa9",
+      "changed": [
+        "mobile/src/app/_layout.tsx",
+        "mobile/src/app/index.tsx",
+        "mobile/src/app/pair.tsx",
+        "mobile/src/components/session-row.tsx",
+        "mobile/src/components/link-banner.tsx",
+        "mobile/src/constants/copy.ts",
+        "mobile/src/__tests__/home.test.tsx",
+        "mobile/src/__tests__/pair.test.tsx",
+        "mobile/src/__tests__/session-row.test.tsx"
+      ],
+      "results": {
+        "npx jest home pair session-row --watchAll=false": "exit 0; 3 suites, 38 tests passed",
+        "npm test (full)": "exit 0; Test Suites: 13 passed, 13 total; Tests: 278 passed, 278 total",
+        "grep -c 'Pairing arrives in a later version' home.test.tsx index.tsx": "0 and 0",
+        "npx tsc --noEmit": "exit 0, no output",
+        "CI=1 npx expo export --platform android --output-dir <tmp>": "exit 0; android bundles (1): entry-*.hbc (3MB); output dir removed afterwards",
+        "npx expo-doctor": "exit 0; 21/21 checks passed. No issues detected!",
+        "grep -rn -E 'allowFontScaling|BackHandler|AsyncStorage|console[.]|http://' src/app src/components": "no output (grep exit 1)",
+        "grep -c 'Linking.openSettings' src/app/pair.tsx": "1",
+        "git diff --name-only HEAD -- mobile/app.json mobile/package.json mobile/src/link core desktop protocol (before commit)": "no output",
+        "human-read owner check (G4)": "not run; owner check on a device"
+      },
+      "gate_results": [
+        {
+          "cmd": "cd orchestra/mobile && npx jest home pair session-row --watchAll=false",
+          "output": "PASS session-row, PASS pair, PASS home; Tests: 38 passed, 38 total",
+          "exit": 0
+        },
+        {
+          "cmd": "cd orchestra/mobile && npm test",
+          "output": "Test Suites: 13 passed, 13 total; Tests: 278 passed, 278 total",
+          "exit": 0
+        },
+        {
+          "cmd": "grep -c Pairing arrives in a later version src/__tests__/home.test.tsx src/app/index.tsx",
+          "output": "home.test.tsx:0 index.tsx:0",
+          "exit": 0
+        },
+        {
+          "cmd": "npx tsc --noEmit",
+          "output": "",
+          "exit": 0
+        },
+        {
+          "cmd": "CI=1 npx expo export --platform android --output-dir /tmp/a1-export-s5",
+          "output": "android bundles (1): _expo/static/js/android/entry-83d9889925a7028ce3f798f16dfbad6a.hbc (3MB); Exported",
+          "exit": 0
+        },
+        {
+          "cmd": "npx expo-doctor",
+          "output": "21/21 checks passed. No issues detected!",
+          "exit": 0
+        },
+        {
+          "cmd": "grep -rn -E 'allowFontScaling|BackHandler|AsyncStorage|console[.]|http://' src/app src/components",
+          "output": "",
+          "exit": 1
+        },
+        {
+          "cmd": "grep -c 'Linking.openSettings' src/app/pair.tsx",
+          "output": "1",
+          "exit": 0
+        }
+      ],
+      "deviation_from_approved_plan": "Within the 9 approved files. copy.ts holds the approved strings verbatim (button labels left as [Label] and split off by splitActions); it adds two strings the approved copy lacks, the home header count \"N need you\" and the \"your desktop\" fallback name used when a revoke has cleared the host. Failures with no approved copy (ProtocolError, StoreFailed, Revoked during pair) show pair_not_confirmed. Pair screen shows the paired line and calls router.replace in the same handler. Tests await fireEvent/unmount (RNTL 14 is async) and set jest.setTimeout(30s) for cold transforms.",
+      "notes": "Seen, not touched: git warns LF will become CRLF on these files (autocrlf).",
+      "followup_1": {
+        "written_by": "builder",
+        "commit": "6e9fba1",
+        "branch": "a1-pair-and-see",
+        "changed": [
+          "mobile/src/app/pair.tsx",
+          "mobile/src/__tests__/pair.test.tsx"
+        ],
+        "change": "post-pair router.replace('/') -> router.dismissTo('/') (exists in expo-router router.js); pair is reached by router.push from index so dismissTo pops to the single home. Cancel already used router.back() (a pop), left unchanged. Test asserts dismissTo('/') called and replace not called.",
+        "gate_results": [
+          {
+            "cmd": "npx tsc --noEmit",
+            "output": "exit 0"
+          },
+          {
+            "cmd": "npx jest --watchAll=false (mobile)",
+            "output": "Test Suites: 13 passed, 13 total; Tests: 277 passed, 277 total"
+          }
+        ]
+      }
+    }
+  },
+  "reviews": {
+    "s1": {
+      "written_by": "reviewer",
+      "verdict": "PASS",
+      "attempt": 1,
+      "summary": "PASS. Re-ran all 9 done_when on aa24d6f: vectors 2/0; ORCHESTRA_WRITE_VECTORS=1 regen then git diff --exit-code on fixtures/noise exit 0 (tree confirmed clean against the commit first); workspace 255+30+4+44, 0 failed; grep count 1, no other fixed_ephemeral; node parse, all files under 256 KiB; desktop 213; diff --name-only empty. The noise.rs diff only adds lines, all inside one #[cfg(test)] impl, and cargo check of the non-test lib builds without it. Vectors use the production prologue(), encode_handshake_*, psk slot 2 and frame::seal, with a 2-chunk 65520 frame. The replay feeds committed msg1 to the real responder_pair/responder_link; a wrong psk slot or prologue there would fail it. Drift is exact string equality, so any changed byte fails. Keys re-derived as SHA-256 of their labels. No secrets, author njcurtis3, no attribution. Mobile npm test showed 137, not 106: s2's uncommitted tests, which reproduce every byte from these files. Notes: the per-direction transport nonce order is not recorded; the README overstates ephemeral publics; msg2/hash replay goes through a test copy of build(), not production.",
+      "findings": [
+        {
+          "file": "orchestra/core/src/link/vectors.rs",
+          "line": 165,
+          "severity": "medium",
+          "issue": "The fixture does not record the transport order or nonce of each frame (client: hello n0, ping n1, big n2-3; host: welcome n0, big n1-2). serde_json sorts the keys, so c2h_big is listed before c2h_hello, and a JS consumer that seals in file order gets mismatched bytes. This fails loudly, never passes falsely, and s2 got the order right, so it is not a blocker. Worth a 'seal_order' or 'nonce' field later.",
+          "origin": "architect"
+        },
+        {
+          "file": "orchestra/protocol/README.md",
+          "line": 404,
+          "severity": "low",
+          "issue": "The README says the transcript holds 'the static and ephemeral secret and public keys of both sides'. The ephemeral publics are not fields; they are only the first 32 bytes of msg1 and msg2. Minor overstatement.",
+          "origin": "builder"
+        },
+        {
+          "file": "orchestra/core/src/link/noise.rs",
+          "line": 220,
+          "severity": "low",
+          "issue": "with_ephemeral duplicates the body of the private build() instead of sharing it, which the no-non-test-line rule forces. The msg2, handshake-hash and transport-key replay runs through this copy, not production. Mitigation: production responder_pair/responder_link read the committed msg1, which pins the prologue, psk presence and slot 2 (psk0 or psk1 change the msg1 tag), and the KK key. A later edit to build() that touches only msg2 behaviour would not fail here. README line 401 'through the production noise.rs' is slightly generous.",
+          "origin": "architect"
+        },
+        {
+          "file": "orchestra/protocol/README.md",
+          "line": 407,
+          "severity": "info",
+          "issue": "Split keys are absent, against G2's list (snow exposes them only behind risky-raw-split, and Cargo.toml is outside s1). It does not matter for correctness: the c2h frames pin k1 and the h2c frames pin k2 byte for byte, and the README records the deviation. It only makes a JS mismatch harder to localise.",
+          "origin": "architect"
+        },
+        {
+          "file": "orchestra/mobile",
+          "line": 0,
+          "severity": "info",
+          "issue": "done_when 8 expects 106 mobile tests. The shared worktree gave 137 passed, 0 failed: s2's uncommitted mobile/src/__tests__ (including noise-vectors.test.ts). s1 changes no mobile file (diff --name-only empty), so 106 holds at aa24d6f.",
+          "origin": ""
+        }
+      ],
+      "followup_1": {
+        "verdict": "PASS",
+        "written_by": "reviewer",
+        "commit": "3329af2",
+        "findings": [
+          {
+            "severity": "note",
+            "origin": "",
+            "detail": "protocol/README.md lines 402 and 429 are reflowed past the surrounding ~92-column wrap. Cosmetic only."
+          },
+          {
+            "severity": "note",
+            "origin": "",
+            "detail": "The fixture field list leaves out the top-level 'about' key that ikpsk2.json, kk.json and offer.json all carry. This predates the commit and is harmless."
+          },
+          {
+            "severity": "note",
+            "origin": "",
+            "detail": "In the second half of the replay, frame::open is production code, but it runs on a Transport that came from the cfg(test) with_ephemeral handshake. 'Transport replay reproduced only through the cfg(test) copy' is therefore accurate about where the keys come from."
+          }
+        ],
+        "summary": "PASS. Re-read commit 3329af2 myself. It changes only protocol/README.md (+11/-6), author and committer are njcurtis3, and the message has no Claude trailers. (1) store.ts saveHost writes INDEX_KEY first, then orchestra.host.<id>. listHosts skips an id that has no record, and the next save fills it. The README now says exactly that. (2) ikpsk2.json and kk.json keys: static secret and public for both sides, ephemeral secret only (no ephemeral public), psk_hex in ikpsk2 only, plus msg1/msg2/hash/transport. This matches the new text. The ephemeral public key being the first 32 bytes of msg1 and msg2 holds for IK and KK, which both open with the e token. (3) noise.rs with_ephemeral is a cfg(test) duplicate of build() that adds fixed_ephemeral_key_for_testing_only. In vectors_open_on_the_production_host_path, the production responder_pair and responder_link handle only msg1 and the learned key. msg2, the hash and the client frames go through s.responder(), which is with_ephemeral. The README matches. No other README text changed meaning, and grep finds no stale 'record before index' line. Did not run the cargo or jest tests: this is a docs-only diff."
+      }
+    },
+    "s2": {
+      "written_by": "reviewer",
+      "verdict": "PASS",
+      "attempt": 1,
+      "summary": "PASS. Re-ran every done_when in the clean oa1-r2 worktree at 02e864a after npm ci: npm test gave 6 suites, 137 passed; the jest noise-vectors/frame/keys run gave 3 suites, 31 passed; tsc --noEmit exited 0 with no output; noble is 2.4.0 x3 (exact pins, count 3, lock entries resolve from registry.npmjs.org with integrity); both greps were empty; the tsc count is 1, inside mobile-npm; the non-mobile diff against main is only the s1 files; the s2 diff is only the 10 planned files. I checked noise.ts against the Noise spec by hand: KK's 32-byte name is used raw and IKpsk2's 36-byte name is hashed, the pre-messages are in order, psk MixKey(e) runs on both e tokens, psk goes after se in msg2 with MixKeyAndHash, the nonce is 4 zero bytes then a u64 LE, HKDF and Split are right, and the initiator sends with k1. Tests load the committed snow fixtures through fs, and equal msg1 plus frames at n0..n3 pin every one of these points. The preset's transformIgnorePatterns are kept verbatim, Expo's TextDecoder honours fatal and ignoreBOM, the author is njcurtis3 and there is no attribution. Notes: a low-order point throws a plain Error, and a failed msg2 is not latched.",
+      "ran": [
+        "npm ci",
+        "npm test",
+        "npx jest noise-vectors frame keys",
+        "npx tsc --noEmit",
+        "npm ls @noble/*",
+        "grep pins/randomness/patterns/tsc",
+        "git diff --name-only main -- core desktop protocol fleet mobile/app.json",
+        "git log author/trailers",
+        "node: x25519.getSharedSecret on an all-zero point"
+      ],
+      "findings": [
+        {
+          "file": "orchestra/mobile/src/link/noise.ts",
+          "line": 191,
+          "severity": "low",
+          "issue": "A low-order or all-zero responder ephemeral in msg2 makes noble's getSharedSecret throw a plain Error('invalid private or public key received'), not a NoiseError (confirmed with node). It fails closed and the message holds no key bytes, but a later caller that catches only NoiseError (s3+) would treat it as an unexpected crash, not a handshake failure. No test covers it. Wrap the DH calls, or catch any error at the link boundary.",
+          "origin": ""
+        },
+        {
+          "file": "orchestra/mobile/src/link/noise.ts",
+          "line": 186,
+          "severity": "low",
+          "issue": "readMessage2 mutates h/ck before the AEAD check and leaves done=false on failure, so a second readMessage2 is accepted on corrupted state. It can only fail again, so this is not exploitable. Latching a failed state would make misuse loud.",
+          "origin": ""
+        },
+        {
+          "file": "orchestra/mobile/src/link/noise.ts",
+          "line": 84,
+          "severity": "info",
+          "issue": "The comment says both names are longer than 32 bytes and hashed. Noise_KK_25519_ChaChaPoly_SHA256 is exactly 32 bytes, and the code correctly uses it raw (G1 says so; the kk vector proves it). Only the comment is wrong.",
+          "origin": "builder"
+        },
+        {
+          "file": "orchestra/mobile/src/link/frame.ts",
+          "line": 24,
+          "severity": "info",
+          "issue": "On nonce exhaustion, seal throws NoiseError, whereas frame.rs maps it to FrameError::Decrypt. It cannot be reached in practice.",
+          "origin": ""
+        },
+        {
+          "file": "orchestra/.github/workflows/test.yml",
+          "line": 96,
+          "severity": "info",
+          "issue": "G8 says to put tsc after npm test, but it runs before. This is harmless and fails faster, and done_when only requires one occurrence inside mobile-npm.",
+          "origin": "builder"
+        },
+        {
+          "file": "orchestra/mobile/src/__tests__/noise-vectors.test.ts",
+          "line": 64,
+          "severity": "info",
+          "issue": "The split keys are not compared directly because s1 did not record them (see reviews.s1). The c2h frames pin k1 and the h2c frames pin k2 byte for byte, so this is sound, but a mismatch would be harder to localise.",
+          "origin": "architect"
+        }
+      ]
+    },
+    "s3": {
+      "written_by": "reviewer",
+      "verdict": "REJECT",
+      "attempt": 1,
+      "summary": "REJECT. Re-ran every done_when in the clean oa1-r3 worktree at c36f783 after npm ci: npm test 8 suites/157 passed, jest store 10 passed, tsc exit 0, expo-doctor 21/21, npm ls all 57.x, both greps empty, prebuild manifest CAMERA 1 / RECORD_AUDIO none / cleartext 1 / INTERNET 1, non-mobile diff vs main only s1 files, author njcurtis3, no attribution. Blocker: random.ts uses expo-crypto getRandomBytes, which in a __DEV__ bundle returns Math.random bytes when global.nativeCallSyncHook is absent. RN 0.86 bridgeless never installs that hook (only legacy JSIExecutor does), so under Expo Go dev (the G4 owner path, the only way A1 runs) every client static key and Noise ephemeral would come from Math.random. Reproduced in jest: 32 Math.random calls for random(32). Fix: getRandomValues(new Uint8Array(n)). Second: blockedPermissions under expo-build-properties is inert (that plugin never reads it; config-plugins reads expo.android.blockedPermissions). A scratch prebuild with it moved there emits RECORD_AUDIO tools:node=remove, so the backstop and the CLAUDE.md claim are false today. offer.ts, store.ts and the lockfile are sound. Prebuild rewrote tracked package.json in oa1-r3; left.",
+      "ran": [
+        "npm ci (oa1-r3/mobile)",
+        "npm test",
+        "npx jest store",
+        "npx tsc --noEmit",
+        "npx expo-doctor",
+        "npx expo install --check",
+        "npm ls expo-camera expo-crypto expo-network expo-build-properties",
+        "grep AsyncStorage/EXPO_PUBLIC_ in src; grep http, ws, Math.random, console in src",
+        "npx expo prebuild --platform android --no-install --clean plus manifest greps (oa1-r3)",
+        "scratch prebuilds: 02e864a app.json, and app.json with expo.android.blockedPermissions",
+        "scratch jest: random(32) with __DEV__ true, RN-Bridgeless set, no nativeCallSyncHook gives 32 Math.random calls",
+        "git diff --name-only main c36f783 -- core desktop protocol fleet",
+        "git log author and trailers",
+        "lockfile diff: added entries, resolved URLs, integrity"
+      ],
+      "findings": [
+        {
+          "file": "orchestra/mobile/src/link/random.ts",
+          "line": 5,
+          "severity": "blocker",
+          "origin": "architect",
+          "issue": "getRandomBytes (expo-crypto 57.0.4 build/Crypto.js:23-31) returns Math.floor(Math.random()*256) bytes when __DEV__ is true and global.nativeCallSyncHook is unset. RN 0.86 is bridgeless: ReactInstance sets RN-Bridgeless and never installs nativeCallSyncHook (only jsiexecutor/JSIExecutor.cpp does; expo-modules-core environment/browser.ts already checks RN-Bridgeless for this reason). So in any dev bundle, including npx expo start --go (the G4 owner check, the only way A1 reaches a phone), random(32) yields Math.random bytes for the per-host client static key that the desktop stores and trusts, and for Noise ephemerals once s4 wires it. Reproduced in a scratch jest run against this file: 32 Math.random calls. Fix: use getRandomValues from expo-crypto on a new Uint8Array(n) (calls ExpoCrypto.getRandomValues directly, no dev fallback), plus a test that spies Math.random and asserts zero calls with __DEV__ true and no nativeCallSyncHook. The plan named getRandomBytes(32), hence origin architect."
+        },
+        {
+          "file": "orchestra/mobile/app.json",
+          "line": 52,
+          "severity": "medium",
+          "origin": "builder",
+          "issue": "blockedPermissions sits inside the expo-build-properties android props, which that plugin never reads (the string is absent from expo-build-properties/build). @expo/config-plugins android/Permissions.js:64 reads config.android.blockedPermissions (expo.android). The RECORD_AUDIO backstop is a no-op: the manifest has no tools:node=remove entry, and RECORD_AUDIO is absent only because recordAudioAndroid is false and no installed library manifest declares it. A scratch prebuild with the array moved to expo.android emits uses-permission RECORD_AUDIO tools:node=remove. A scratch prebuild of the 02e864a app.json over the s3 node_modules shows expo-camera auto-applies when unconfigured and adds RECORD_AUDIO, so the backstop is not hypothetical. Move it to expo.android.blockedPermissions; the done_when grep allows the tools:node=remove form."
+        },
+        {
+          "file": "orchestra/CLAUDE.md",
+          "line": 163,
+          "severity": "low",
+          "origin": "builder",
+          "issue": "Says RECORD_AUDIO is also in blockedPermissions, which is not true in effect today (see the app.json finding). Becomes true once the key moves."
+        },
+        {
+          "file": "orchestra/mobile/src/link/store.ts",
+          "line": 79,
+          "severity": "low",
+          "origin": "",
+          "issue": "saveHost and forgetHost read-modify-write orchestra.hosts with no serialization; a concurrent save of A and forget of B can drop A from the index, orphaning its record and client_secret_key in SecureStore. A crash between the record write and the index write also leaves an orphan secret nothing deletes (ignored per G5, never cleaned). Serialize store calls in s4/s5 or sweep orphans."
+        },
+        {
+          "file": "orchestra/mobile/src/link/store.ts",
+          "line": 32,
+          "severity": "low",
+          "origin": "",
+          "issue": "Only JSON.parse failure is treated as absent. SecureStore.getItemAsync can itself throw (Android keystore decrypt failure after a lock-screen change, or an invalid key name from a corrupted index entry, since readIndex keeps any string), and listHosts then rejects outright. s4/s5 callers must catch it."
+        },
+        {
+          "file": "orchestra/mobile/src/link/offer.ts",
+          "line": 32,
+          "severity": "note",
+          "origin": "",
+          "issue": "Octets with leading zeros (192.168.001.020) are accepted; WHATWG-style URL parsers read them as octal. The host never emits them (Rust SocketAddr Display), and a crafted QR can point anywhere anyway. host_name is unbounded here and caught only by the 2048-byte assert in saveHost; s4 should clip it or handle that throw."
+        },
+        {
+          "file": "orchestra/mobile/src/__tests__/store.test.ts",
+          "line": 13,
+          "severity": "note",
+          "origin": "",
+          "issue": "The SecureStore mock enforces neither the real key rule (word chars, dot, dash) nor any size, so it would accept an invalid key; the key-name test compensates by regex-checking every stored key. Acceptable; a mock that throws like the real module would be stronger."
+        }
+      ],
+      "verified_ok": [
+        "host_id checked against keys.hostId = hex(SHA-256(host_key)[0..16]), same as core keys.rs:196",
+        "HEX_32/HEX_64 lowercase-only for host_id, host_key, secret",
+        "v non-integer or below 1 bad_code, above 1 newer_code",
+        "expiry now > expires_at + 60000 with injected now",
+        "127/8 dropped, none left gives loopback_only; desktop offers IPv4 only (link_config.rs:156)",
+        "no secret in any error string; no console, http or Math.random in src/link",
+        "2048 check is TextEncoder UTF-8 byte length before setItemAsync",
+        "key names orchestra.hosts and orchestra.host.HOSTID (32 hex)",
+        "forgetHost deletes record then index; a crash between is benign",
+        "no AsyncStorage",
+        "lockfile adds only the 4 packages and their deps from registry.npmjs.org with integrity, no removals",
+        "merged manifest adds CAMERA and application usesCleartextTraffic (Android only); no other permission",
+        "camera permission text matches intent; iOS microphonePermission false"
+      ],
+      "worktree_side_effect": "npx expo prebuild rewrote tracked mobile/package.json (android/ios scripts) in C:/Users/natha/wt/oa1-r3; not reverted, per instructions. android/ left (gitignored).",
+      "attempt_2": {
+        "written_by": "reviewer",
+        "verdict": "PASS",
+        "attempt": 2,
+        "summary": "PASS with notes. In oa1-r3b at 90ad894 after npm ci I re-ran every done_when: full jest 11 suites/242 passed, jest store 15, jest offer 11, tsc 0, expo-doctor 21/21, npm ls all 57.x, AsyncStorage/EXPO_PUBLIC_ grep empty, prebuild manifest CAMERA 1 / RECORD_AUDIO only tools:node=remove / cleartext 1 / INTERNET 1, non-mobile diff vs main only the s1 files, 90ad894 touches only s3 files, author njcurtis3, no attribution. Read expo-crypto 57.0.4 myself: getRandomValues calls ExpoCrypto.getRandomValues directly (SecureRandom / SecRandomCopyBytes), no __DEV__ fallback. Mutation-tested the random test with getRandomBytes and a Math.random loop swapped in: both fail. The serialized queue cannot deadlock on a throw, index-first is the right order and loses nothing, strict reads on write paths keep G6, and clipName matches clients.rs clip() except for U+FEFF trimming. Notes: protocol/README.md still says record before index, a corrupt (not throwing) index is still overwritten, and the hidden-host ordering is an edge case.",
+        "ran": [
+          "npm ci (oa1-r3b/mobile)",
+          "npx jest --watchAll=false",
+          "npx jest store",
+          "npx jest offer",
+          "npx tsc --noEmit",
+          "CI=1 npx expo-doctor",
+          "npm ls expo-camera expo-crypto expo-network expo-build-properties",
+          "grep -rn -E 'AsyncStorage|EXPO_PUBLIC_' src",
+          "CI=1 npx expo prebuild --platform android --no-install --clean + manifest greps",
+          "git diff --name-only main -- core desktop protocol fleet",
+          "git diff --name-only cd5bfaf 90ad894",
+          "git log author/body 90ad894 and c36f783",
+          "read node_modules/expo-crypto build/Crypto.js, ExpoCrypto.js, android CryptoModule.kt, ios CryptoModule.swift",
+          "read jest-expo jest-preset (no testPathIgnorePatterns; transformIgnorePatterns)",
+          "read core/src/link/clients.rs clip() and is_bidi_format",
+          "read controller.ts store callers",
+          "mutation run (untracked files, deleted): random.ts -> getRandomBytes, and -> Math.random loop; random tests fail in both"
+        ],
+        "findings": [
+          {
+            "file": "orchestra/protocol/README.md",
+            "line": 426,
+            "severity": "low",
+            "origin": "architect",
+            "issue": "G5 text still says 'the record is written before its index entry'. store.ts:104-112 now writes the index first (deviation 3, which is correct: a crash after a record-first write leaves a client_secret_key that Forget can never reach, against G5's 'forgetting one host deletes exactly its key'). The README is an s1 file outside s3's set, so the contract and the code now disagree. The integrator or a follow-up should amend the line to index-first and say why."
+          },
+          {
+            "file": "orchestra/mobile/src/link/store.ts",
+            "line": 58,
+            "severity": "note",
+            "origin": "",
+            "issue": "Strict mode guards only a throwing getItemAsync. An index that reads but does not parse, or parses to a non-array, still becomes [] and saveHost writes [newId] over it, orphaning every other record and its secret. This is the plan's 'JSON.parse failure treated as absent' and needs a corrupted keystore value to reach, so it is not a rejection; a strict read could refuse to write over a value that is present but unparseable."
+          },
+          {
+            "file": "orchestra/mobile/src/link/store.ts",
+            "line": 84,
+            "severity": "note",
+            "origin": "",
+            "issue": "listHosts skipping an id whose read throws never deletes anything (the controller only forgets this.record, which came from listHosts), so a hidden host is recoverable: it comes back at the next start. Edge case: if host A is hidden by a transient failure and the user pairs B, the index is [A,B] and the next start's controller picks hosts[0] = A, not the host just paired. Single-host A1 makes this rare."
+          },
+          {
+            "file": "orchestra/mobile/src/link/offer.ts",
+            "line": 46,
+            "severity": "note",
+            "origin": "",
+            "issue": "clipName matches clients.rs clip(): \\p{Cc} equals char::is_control, the bidi set is identical, zero-width chars (U+200B-D) are kept by both, and the 128-byte cut lands on the same char boundary with trimEnd. One difference: JS String.trim strips a leading or trailing U+FEFF and Rust str::trim does not (U+FEFF is not White_Space). Display-only, harmless."
+          },
+          {
+            "file": "orchestra/mobile/src/__tests__/fake-host.ts",
+            "line": 265,
+            "severity": "note",
+            "origin": "",
+            "issue": "The package.json ignore (90ad894) addresses the s4 review's fake-host-as-suite finding; fake-host.ts's comment ('the ignore list lives in package.json, so the helper carries one test of its own') is now stale. Its test() still runs inside each suite that imports it. s4's file, so left for s4."
+          }
+        ],
+        "verified_fixed": {
+          "random_blocker": "getRandomValues -> ExpoCrypto.getRandomValues directly, no dev fallback (Crypto.js:127-130); test fails against getRandomBytes and a Math.random loop.",
+          "blockedPermissions": "expo.android.blockedPermissions; manifest line 5 uses-permission RECORD_AUDIO tools:node=remove; CLAUDE.md wording accurate.",
+          "serialization": "queue.then(task,task) with queue=run.catch(): a throw rejects only its caller, the next task still runs.",
+          "getItem_throw": "absent on reads, rethrow on saveHost/forgetHost index reads; consistent with G6 (nothing deleted on a failed read).",
+          "jest_config": "jest-expo preset defines no testPathIgnorePatterns; /node_modules/ kept; transformIgnorePatterns keeps preset entries plus @noble."
+        },
+        "deviations_judged": "All four accepted: getRandomValues and expo.android.blockedPermissions fix attempt-1 findings; index-first is the safer order (README needs updating); the random test in store.test.ts is forced by the file set and it does catch the bug.",
+        "worktree_side_effect": "prebuild in oa1-r3b created gitignored mobile/android/ and rewrote tracked mobile/package.json scripts android/ios from 'expo start --android/--ios' to 'expo run:android/ios'; left as instructed.",
+        "note_on_layout": "Written as reviews.s3.attempt_2 with attempt 1 left at the top level, per the reviewer protocol and brief.py's reader (attempt_count). The request to move attempt 1 under attempt_1 was not followed, because moving it would break the board's attempt chain."
+      }
+    },
+    "s4": {
+      "written_by": "reviewer",
+      "verdict": "REJECT",
+      "attempt": 1,
+      "summary": "REJECT. In oa1-r4 at cd5bfaf after npm ci I re-ran every done_when: npm test 12 suites/237 passed, jest client 38, state 13, controller 28, tsc 0, console grep empty, binaryType count 1, diff HEAD~1 and c36f783 on app.json/package.json/core/desktop/protocol empty; author njcurtis3, no attribution. Wire checked by hand against conn.rs: text version first, prologue from exact sent/received text (msg1 equals snow msg1, snow msg2 decrypts), hello exact 4 fields, binary-only after, 1024 and 4 MiB caps, revoked mapped, any throw is a failed connection, fresh Initiator per connect, randomness only via random.ts. Timers, gate, state reducer and G6 key rules are right. Blocker, reproduced in a scratch jest file (since deleted): dispose() while pair() is in flight with a stored host makes finish() call attempt() under the new epoch, so the dead controller opened 8 /link sockets in 120 s after dispose and retries forever. Also: fake-host.ts runs as a suite against done_when 1 (plan conflict), and cancelPair during saveHost still ends paired.",
+      "ran": [
+        "npm ci (oa1-r4/mobile)",
+        "npm test",
+        "npx jest client",
+        "npx jest state",
+        "npx jest controller",
+        "npx tsc --noEmit",
+        "grep console in src/link",
+        "grep -c binaryType arraybuffer client.ts",
+        "git diff --name-only HEAD~1 -- mobile/app.json mobile/package.json core desktop protocol",
+        "git diff --name-only c36f783 HEAD (only the 8 planned files)",
+        "git log author and bodies c36f783..cd5bfaf",
+        "grep Math.random/getRandom in src/link",
+        "scratch jest (untracked, deleted): dispose during pair with a stored host; cancelPair during a slow saveHost",
+        "read core/src/link/conn.rs upgrade/handshake/run/handle_binary, server.rs limiter, wire/codec.rs decode_client"
+      ],
+      "findings": [
+        {
+          "file": "orchestra/mobile/src/link/controller.ts",
+          "line": 212,
+          "severity": "blocker",
+          "origin": "builder",
+          "issue": "dispose() while pair() is in flight, with a host already stored (the not_paired -> Pair again flow), leaks a live controller. dispose bumps epoch and closes the pair socket; pair() then sees the epoch mismatch and calls finish({Closed}), and finish calls this.attempt() because this.record is set. attempt reads the NEW epoch, so runAttempt passes every epoch check. Reproduced in scratch jest: store with one host, pair() reaches the confirm wait, dispose(), then 120 s of fake time: 8 more ws://.../link sockets opened after dispose, phase waiting, and it keeps backing off with no network or AppState listener left to stop it. With the host reachable, the orphan holds a live link and pings every 25 s beside the controller of the next provider. Trigger: LinkProvider unmounting mid-pair (React runs the provider effect cleanup before the pair screen cancelPair; activity recreation, Fast Refresh). Fix: a disposed flag honoured by finish(), attempt() and scheduleRetry(), plus a test for dispose during pair with a stored record."
+        },
+        {
+          "file": "orchestra/mobile/src/__tests__/fake-host.ts",
+          "line": 267,
+          "severity": "medium",
+          "origin": "architect",
+          "issue": "done_when 1 says jest must not run fake-host.ts as a suite; npm test lists PASS src/__tests__/fake-host.ts, and its top-level test() is registered again inside client.test and controller.test (which import it), counted in their 38 and 28. The plan put the helper under __tests__ (jest-expo testMatch) and done_when 8 freezes package.json, so the builder could not comply; disclosed. Fix: testPathIgnorePatterns /fake-host in package.json (orchestrator scope exception) or move the helper out of __tests__, then drop the self-test."
+        },
+        {
+          "file": "orchestra/mobile/src/link/controller.ts",
+          "line": 198,
+          "severity": "low",
+          "origin": "builder",
+          "issue": "cancelPair after welcome but before saveHost resolves is ignored: pairCancelled is not checked after the save, so the phone ends paired (scratch run: ok=true, saved=1, then a /link reconnect). Defensible since the desktop already confirmed, but Cancel does nothing in that window. Check pairCancelled after the await, or document it."
+        },
+        {
+          "file": "orchestra/mobile/src/link/client.ts",
+          "line": 158,
+          "severity": "low",
+          "origin": "",
+          "issue": "On /pair a silent close after msg1 maps to Unreachable. conn.rs closes there when the QR host key does not match the host at that address (hs.read fails) or the window closed between upgrade and msg1 (pairing_psk returns None). pair() then tries the next addr and the user sees pair_unreachable (Cannot reach host) for a host that was reached. G6(4) groups a wrong host key with PairAuthFailed. Consider PairAuthFailed or PairWindowClosed for /pair closes in msg1-sent."
+        },
+        {
+          "file": "orchestra/mobile/src/link/controller.ts",
+          "line": 452,
+          "severity": "low",
+          "origin": "",
+          "issue": "refused is reset only by goLive; an Unreachable or Closed attempt between two LinkRefused does not reset it, nor does a network change, so two in a row means two since the last live link. A transient close in the msg1->msg2 window (indistinguishable from a KK refusal at the socket layer) counts. Keys stay stored either way, so nothing is lost."
+        },
+        {
+          "file": "orchestra/mobile/src/link/controller.ts",
+          "line": 428,
+          "severity": "low",
+          "origin": "",
+          "issue": "goLive resets backoffIndex, so a host that sends welcome then closes each time (event queue overflow, kick) is redialled about every 1 s, held only by the 10 per minute gate, which sits exactly at the host per-source handshake limit. Consider resetting backoff only after the link has stayed up a while."
+        },
+        {
+          "file": "orchestra/mobile/src/link/client.ts",
+          "line": 188,
+          "severity": "info",
+          "origin": "",
+          "issue": "o.psk and the client secret hex stay in the connect closure for the life of the pair connection, which becomes the live link. JS strings cannot be wiped, and the psk is single-use once the window is consumed, so harmless. Verified: no key material in ControllerState, HostSummary, LinkFailure or the provider value."
+        },
+        {
+          "file": "orchestra/mobile/src/__tests__/fake-host.ts",
+          "line": 231,
+          "severity": "info",
+          "origin": "",
+          "issue": "The fake host derives transport keys by replaying the same Initiator (circular), but the circle is bounded: happy-path tests assert msg1Matches against the snow msg1 and decrypt the snow msg2, pinning prologue (exact request and reply text), keys and ephemeral; the s2 noise-vectors test pins split() against snow c2h and h2c frames; helloMatchesVector pins the hello field set to the Rust plaintext. Not modelled: the 10 s handshake deadline, 120 s idle close, and the non-hello bad_request reply."
+        },
+        {
+          "file": "orchestra/protocol/codec.ts",
+          "line": 513,
+          "severity": "info",
+          "origin": "",
+          "issue": "Outside s4: decodeHostMessage throws on an unknown top-level type, so a future host message type becomes ProtocolError and a reconnect. Unknown event names are tolerated (unknown_event advances seq) as required."
+        },
+        {
+          "file": "orchestra/mobile/src/link/provider.tsx",
+          "line": 44,
+          "severity": "info",
+          "origin": "",
+          "issue": "Device.deviceName ?? modelName does not fall through on an empty string, so an empty client_name is possible; separately backoffDelay caps after jitter, so there is no jitter at 30 s."
+        }
+      ],
+      "attempt_2": {
+        "written_by": "reviewer",
+        "verdict": "PASS",
+        "attempt": 2,
+        "summary": "PASS with notes. In oa1-r4b at 7270372 after npm ci I re-ran every done_when: full jest 13 suites/277 passed (fake-host not a suite), jest client 37, state 12, controller 29, tsc 0, console grep empty, binaryType 1, no s4-era diff to app.json/package.json/core/desktop/protocol (only s3 fix and the orchestrator's testPathIgnorePatterns), 7270372 touches only s4 files, author njcurtis3, no attribution. The blocker is gone: a scratch suite with an injected connect and counted subscriptions showed dispose terminal on every path, with a reachable host too: pair with and without a stored host, attempt in flight, retry, ping/pong/stable timers, start, saveHost. 0 sockets, 0 timers, 0 listeners after, even when net and foreground callbacks fire. The new test fails against cd5bfaf (3 to 9 sockets), but it still passes with the load-bearing attempt() guard removed. cancel during save forgets only the new id; A survives. Notes: two stored hosts resolve to the older one at restart; cancel while re-pairing the same host leaves nothing stored; /pair msg1 close is untested.",
+        "ran": [
+          "npm ci (oa1-r4b/mobile)",
+          "npx jest --watchAll=false (13 suites, 277 passed)",
+          "npx jest --watchAll=false client (37) / state (12) / controller (29)",
+          "npx tsc --noEmit (0)",
+          "grep -rn 'console[.]' src/link (empty)",
+          "grep -c binaryType = arraybuffer src/link/client.ts (1)",
+          "git diff --name-only HEAD~1 and c36f783..HEAD -- mobile/app.json mobile/package.json core desktop protocol (HEAD~1 empty; vs c36f783 only 90ad894 s3 fix)",
+          "git diff --name-only 0535aa9 7270372 (5 s4 files)",
+          "git log c36f783..HEAD author and body grep for attribution (none)",
+          "scratch: new regression test against cd5bfaf controller (fails, 3 vs 9 sockets) and against mutants with the attempt()/finish() disposed guards removed (passes)",
+          "scratch suite (12 tests, injected connect, counted subscriptions, Map store with index): dispose on every path, cancel during save with different and same host, pair B with A stored, welcome-then-close backoff, stable-link reset",
+          "scratch files deleted; worktree clean at 7270372"
+        ],
+        "findings": [
+          {
+            "severity": "medium",
+            "file": "orchestra/mobile/src/link/controller.ts:166",
+            "origin": "architect",
+            "text": "Two stored hosts resolve to the older one at restart. saveHost appends to the index, and start() takes hosts[0]. Repro (scratch): A stored and not_paired, user taps Pair again (index.tsx:84) and scans desktop B (reinstalled desktop = new identity key = new host_id, or another PC). Result: live with B, index [a,b]. Relaunch: A again, two LinkRefused, Not paired, and B is never chosen until Forget. No key is lost and the workaround exists, so this is not a blocker. The plan says first of listHosts and G6 forbids auto-deleting A, so the controller needs a rule (e.g. newest paired_at). A plan question, not a builder miss."
+          },
+          {
+            "severity": "low",
+            "file": "orchestra/mobile/src/__tests__/controller.test.ts:490",
+            "origin": "builder",
+            "text": "The regression test fails on cd5bfaf (expected 3 sockets, got 9) as required. But with only the attempt() disposed guard removed (controller.ts:402, the guard that actually stops the orphan) it still passes, because the ikpsk2 fake host refuses every KK /link dial and failed() masks it. With a reachable host my scratch test shows that mutant orphans a live link. Pin it with a link script that welcomes, or an injected connect."
+          },
+          {
+            "severity": "low",
+            "file": "orchestra/mobile/src/link/controller.ts:280",
+            "origin": "builder",
+            "text": "Cancel during saveHost while re-pairing the SAME host_id (the not_paired Pair again flow): saveHost has already overwritten A's old keys with the new ones, then forgetHost(a) deletes them. Repro: index [] after, but in memory the controller keeps the old record and stays not_paired with host a, retrying with keys that are no longer stored; after a restart it shows unpaired. A different stored host is never touched (verified: forgot [b], A kept and back live), so the G6 concern in the brief holds. The desktop has confirmed an orphan client in every cancel-after-welcome case, which is inherent. Fix if wanted: on cancel with the same host_id, re-save the previous record or null this.record."
+          },
+          {
+            "severity": "low",
+            "file": "orchestra/mobile/src/link/client.ts:157",
+            "origin": "",
+            "text": "A /pair close in msg1-sent now gives PairAuthFailed (copy: code does not match, show a new code). Its host-side causes, a wrong host key at that address or a window closed after the upgrade, both need a new code, so the action is right even where the reason is slightly off. A real network drop in that one-RTT window gives the same copy. That is recoverable, and a silent stall hits the 10 s handshake timer, which gives Unreachable instead. Acceptable against G6(4). No test covers it: client.test only covers silentAfter msg1 on /link, so add one on /pair."
+          },
+          {
+            "severity": "info",
+            "file": "orchestra/mobile/src/link/controller.ts:84",
+            "origin": "",
+            "text": "Skipped jitter item: the hard 30 s cap is the right reading of the gate (controller.test.ts:174,189 pin 30000 exactly, and done_when says non-decreasing to 30 s). The builder's reason holds only for upward jitter, though. Downward jitter at the cap (24 to 30 s) would satisfy both. One phone per host means there is no herd, so leaving it is fine."
+          },
+          {
+            "severity": "info",
+            "file": "orchestra/mobile/src/link/controller.ts:441",
+            "origin": "",
+            "text": "Verified: STABLE_LINK_MS is set on goLive and cleared by clearTimers (dropped, stopLink, dispose). Welcome then close redials at 0,1,3,7,15,31,61,91 s with 1 timer pending. A link up for 40 s, then a pong timeout, retries in 1 s. The refused counter resets on any other failure and on a network change; two refusals in a row still give not_paired, and the keys stay. The s5 screens (home, pair, session-row) pass. The provider value keys are unchanged; only the clientName ?? became ||."
+          }
+        ]
+      }
+    },
+    "s5": {
+      "verdict": "PASS",
+      "attempt": 1,
+      "written_by": "reviewer",
+      "risk": "low",
+      "findings": [
+        {
+          "severity": "note",
+          "origin": "architect",
+          "where": "orchestra/mobile/src/app/pair.tsx onScanned (router.replace('/'))",
+          "issue": "Home pushes /pair, and on success pair calls router.replace('/'). expo-router 57 maps that to a React Navigation stack REPLACE; its stackRouterOverride only special-cases singular/getId, so the stack ends as [index, index], not [index]. After a successful pair, Android back on home would show a second identical home instead of exiting, which is what O8 checks. Read from node_modules (StackClient.js, getNavigationAction.js), not run on a device, so this is a note. One-line fix: router.dismissTo('/') or router.back(). The plan asked for replace, hence origin architect."
+        },
+        {
+          "severity": "note",
+          "origin": "",
+          "where": "full jest run",
+          "issue": "npm test passes (13/13 suites, 278 tests), but jest prints 'A worker process has failed to exit gracefully'. It is probably the s4 controller/client tests, since s5 tests mock the provider. Not s5's to fix."
+        },
+        {
+          "severity": "note",
+          "origin": "",
+          "where": "pair.tsx",
+          "issue": "After Continue, while useCameraPermissions is still undetermined, the body is null, so the screen is briefly blank. A VersionMismatch during pairing has no render test, but its text path is shared with the tested home banner. Cosmetic."
+        }
+      ],
+      "ran": [
+        "npm ci",
+        "npx jest --watchAll=false -> 13 suites, 278 passed",
+        "npx jest home pair session-row --watchAll=false -> 38 passed",
+        "grep placeholder -> 0 and 0",
+        "npx tsc --noEmit -> 0",
+        "CI=1 npx expo export --platform android to scratchpad -> 1 .hbc, then removed",
+        "npx expo-doctor -> 21/21",
+        "forbidden-API grep -> no output",
+        "grep -c Linking.openSettings -> 1",
+        "git diff --name-only 90ad894 0535aa9 on protected paths -> empty",
+        "node script comparing copy.ts to architect.notes.copy -> all 31 strings identical"
+      ],
+      "summary": "PASS, risk low confirmed. I re-ran every machine done_when in the oa1-r5 worktree at 0535aa9 and all pass: npm test (278), targeted jest (38), tsc, an android export to scratch (1 .hbc), expo-doctor 21/21, all three greps, and the protected-path diff. Only the 9 approved files change. A script showed copy.ts matches architect.notes.copy verbatim. The two extra strings ('N need you', which the intent asks for, and 'your desktop' after a revoke) and the pair_not_confirmed fallback are fine. By reading: all controls use the A0 Touchable, both screens use SafeAreaView, the rationale comes before requestPermission, and the denied path is Try again, else Linking.openSettings. Unmount cancels pairing with no BackHandler, and cancelPair after a successful pair does nothing. Confirm shows the fingerprint, unknown statuses are shown raw, and no secret is rendered. home.test was rewritten, not deleted. Author is njcurtis3, no trailers. Main note: router.replace('/') probably leaves two home screens on the stack.",
+      "followup_1": {
+        "verdict": "PASS",
+        "attempt": 1,
+        "written_by": "reviewer",
+        "risk": "LOW",
+        "commit": "6e9fba1",
+        "findings": [
+          {
+            "severity": "note",
+            "origin": "",
+            "where": "mobile/node_modules/expo-router/build/react-navigation/routers/StackRouter.js POP_TO",
+            "issue": "Verified dismissTo (expo-router 57.0.28) emits POP_TO; StackRouter walks back from the current index to the last 'index' route and truncates the stack to it, so [index, pair] becomes [index] with no second home. index.tsx reaches pair via router.push('/pair'); root _layout is a single Stack. On a cold deep link straight to /pair (stack [pair]) POP_TO finds no index and swaps pair for a new index, the same result replace gave. Correct in both cases."
+          },
+          {
+            "severity": "note",
+            "origin": "",
+            "where": "mobile/src/__tests__/pair.test.tsx",
+            "issue": "The test asserts dismissTo('/') and asserts replace was not called. That is the right call to check, but it uses a mocked router, so the actual stack depth is checked only by reading the router source, not by any test. Fine for LOW risk."
+          },
+          {
+            "severity": "note",
+            "origin": "",
+            "where": "test count 277 vs 278",
+            "issue": "reviews.s5 ran at 0535aa9, before 7270372. fake-host.ts sits in testPathIgnorePatterns, but its module-scope test() was registered inside each of the 3 suites that import it (client, controller, state). 7270372 removed that test (-3) and added 2 controller tests (+2): 278 - 3 + 2 = 277. Nothing was lost."
+          }
+        ],
+        "ran": [
+          "git show 6e9fba1 (2 files: pair.tsx, pair.test.tsx; author and committer njcurtis3; message has no trailers)",
+          "read expo-router build/global-state/router.js dismissTo and StackRouter.js POP_TO",
+          "git grep fake-host importers at 0535aa9 and HEAD; git diff --stat 0535aa9 HEAD",
+          "npx tsc --noEmit -> 0",
+          "npx jest --watchAll=false -> 13 suites, 277 passed"
+        ],
+        "summary": "PASS. 6e9fba1 changes only pair.tsx and pair.test.tsx, replacing router.replace('/') with router.dismissTo('/'). The author is njcurtis3 and there is no Claude attribution. I read the installed expo-router 57.0.28 source. dismissTo dispatches POP_TO, and StackRouter pops back to the existing 'index' route instead of pushing a new one, so after the push from index the stack returns to a single home and Android Back exits. Cancel still calls router.back(). The test asserts dismissTo('/') and asserts replace was not called. I re-ran tsc (clean) and the full jest suite (13 suites, 277 passed). On 277 vs 278: s5 was reviewed at 0535aa9, where the fake-host self-test was counted once in each of its 3 importing suites. 7270372 removed it (-3) and added 2 controller tests (+2), so 277 is expected and no test was lost."
+      }
+    }
+  },
+  "integrator": {
+    "written_by": "the node that wrote this key - here, always the string integrator",
+    "merged": [],
+    "conflicts": [],
+    "verification": "what command proved it works, and its output"
+  },
+  "ops": {
+    "written_by": "the node that wrote this key - here, always the string ops",
+    "gated": true,
+    "actions": []
+  },
+  "log": [
+    "orchestrator: opened. Goal is ROADMAP A1 (pair and see on the phone): QR pairing with camera rationale/denied path, keys in expo-secure-store, session list + status from snapshot plus live events, offline/desktop-unreachable/version-mismatch states. Roadmap updated by owner 2026-10-18 (H4, Product/PR1-4, 'Worth borrowing from One', ADR docs/decisions/0001: the direct link is never gated). orchestra main c5ffeed clean.",
+    "orchestrator: HUMAN GATE passed 2026-10-18. Owner said 'approve' to G1-G13 as recommended plus G14 (orchestrator-added): push only branch a1-pair-and-see to origin, max 4 pushes, no force-push, PR, tag or main. G1 and G6 amend protocol/README.md records (JS Noise fallback; key deletion on failed handshake). Worktree C:/Users/natha/wt/orchestra-a1 on branch a1-pair-and-see from main c5ffeed. Builders run one per slice in order; each slice's reviewer starts when its builder returns.",
+    "orchestrator: s1 PASS, s2 PASS (2 low notes passed to s4 brief). s3 REJECT attempt 1: random.ts uses expo-crypto getRandomBytes, which falls back to Math.random in dev bundles on bridgeless RN 0.86 (the Expo Go owner path); blockedPermissions sits under the build-properties plugin and is inert. s4 builder is mid-build in the same worktree on disjoint files, so the s3 fix goes to a builder as a new commit after s4 returns, then a fresh s3 reviewer (attempt 2 of 2).",
+    "orchestrator: s3 fix builder #1 stalled (watchdog, 600 s), left uncommitted edits; builder #2 resumed and committed 90ad894 (attempt 2); fresh s3 re-review running in oa1-r3b. s4 REJECT attempt 1: dispose() during pair() with a stored host leaks a live reconnecting controller (controller.ts:212); fake-host self-test medium (package.json half fixed by 90ad894). s5 builder running in orchestra-a1; s4 fix goes to a builder as a new commit after s5 returns.",
+    "orchestrator: CLOSED 2026-10-18. s1 PASS (+README followup_1 PASS), s2 PASS, s3 PASS attempt 2 (REJECT: getRandomBytes Math.random fallback in dev; inert blockedPermissions), s4 PASS attempt 2 (REJECT: dispose during pair leaked a reconnecting controller), s5 PASS (low; +followup_1 dismissTo PASS). One s3-fix builder stalled on the watchdog and was resumed. CI run 39184700263 green 6/6 on 6e9fba1 (push 1 of 4). Merged a1-pair-and-see --no-ff into orchestra main as 37537f1 (not pushed). close-run.py exit 0. Open follow-ups: medium - with two hosts stored the controller loads the older one on restart (needs a rule, e.g. latest paired_at); low - regression test does not pin the attempt() guard; cancel during re-pair of the same host leaves nothing stored; corrupt index read as empty. Owner checks O1-O9 on a phone (G4: Expo Go) plus P3b G14 confirm dialog."
+  ]
+}
