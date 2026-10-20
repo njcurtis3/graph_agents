@@ -8,7 +8,7 @@
 > new Runs-table rows, and the roster's execution counts read from run state (scout 32 and architect 32 runs, builder 109
 > slices, reviewer 108 reviews, integrator 5 runs). **Not re-checked:** any narrative claim outside those rows. The two
 > `bash_write_targets.py` / `measure_bash_corpus.py` "registered" drifts are the long-standing false positives,
-> unchanged; `Archer-Store` is still an unregistered sibling awaiting the owner.
+> unchanged; `Archer-Store` is an unregistered sibling, left out of the portfolio on purpose (owner, 2026-10-20).
 >
 ## Status: 32 runs, 31 of them executed; the fifth diamond has run
 
