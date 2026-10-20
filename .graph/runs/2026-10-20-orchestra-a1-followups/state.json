@@ -1,0 +1,792 @@
+{
+  "$comment": "Shared state for ONE work-graph run. Lives at .graph/runs/<run-id>/state.json. Every node reads this on start and appends to its OWN key on finish - the builder writes its own builders.<slice> key, including the branch it worked on. Never rewrite another node's key. Every node key carries written_by, naming the node that wrote it: that is the ONLY record of authorship this file has, and without it 'never rewrite another node's key' is unverifiable - an orchestrator hand-writing all six keys is indistinguishable from six nodes doing their jobs. verify-state.py --audit checks it. This file is the edge: it is how context crosses between agents that cannot see each other.",
+  "run_id": "2026-10-20-orchestra-a1-followups",
+  "goal": "address the open medium and low items after A1 finished",
+  "app": "orchestra",
+  "status": "done",
+  "scout": {
+    "written_by": "scout",
+    "facts": [
+      "HEAD orchestra 37537f1, clean. Items 1-5 and 7 are mobile/src/link and mobile test work; no core change is needed for them.",
+      "[1] Stored record has paired_at number: mobile/src/link/store.ts:14 (type), :73 (isRecord). Set from this.now() at mobile/src/link/controller.ts:270. The latest-pair timestamp already exists in every record, so a latest-paired_at rule needs no record-shape change and no migration.",
+      "[1] Index is append-only by FIRST pairing: saveHost appends only if the id is absent (store.ts:110). Index order therefore does not reflect the latest pairing.",
+      "[1] Re-pairing a stored id updates in place: saveHost overwrites orchestra.host.<id> (store.ts:111), index untouched; controller.ts:261-270 builds the new record with a new paired_at.",
+      "[1] Selection: controller.ts:161 (listHosts), :166 (this.record = hosts[0] ?? null). listHosts returns index order (store.ts:84-91). G5 (architect.decisions_for_gate) says the A1 UI shows the first host, so a newest-pair rule amends G5.",
+      "[1] Repro of the medium: reviews.s4.attempt_2 findings[0]; index [a,b] restarts on a. No key is lost; Forget is the workaround.",
+      "[2] Dispose regression test: mobile/src/__tests__/controller.test.ts:490-502. Every dial uses the ikpsk2 vector (fakeHost(v) at :38, random at :54, recordOf(v) at :19-31). The stored record is therefore a KK /link dial against an ikpsk2 transcript and fails as LinkRefused, so the test never sees a live link.",
+      "[2] attempt() guard: controller.ts:402. runAttempt re-checks epoch at :419 and :428. finish() has its own disposed check at :224, so the mutant orphans a link only when a live connection is reachable.",
+      "[2] fake-host.ts: FakeSocket takes ONE vector (:136-163; fakeHost :253-262). send() answers msg1 with v.msg2_hex (:210). replay() uses Initiator.link when psk_hex is undefined (:242-245). So the fixtures DO support a KK responder: kk.json has no psk_hex and a full msg2 and transport. Only the vector lookup is missing.",
+      "[2] Shared keys: ikpsk2.json and kk.json have the same host_static_public_hex (b529537b...) and client_static_secret_hex (5a06e4ff...). client_ephemeral_secret_hex starts f4c9374b in both (first 8 hex checked only).",
+      "[2] Path selection: mobile/src/link/client.ts:106 (/pair or /link), :233 (ws://addr path). client.test.ts already loads loadVector('kk') for /link.",
+      "[3] Cancel after save: controller.ts:273-285. saveHost (:274) runs before the pairCancelled check (:280). On cancel, forgetHost(record.host_id) (:283) deletes the SAME id that was just overwritten. this.record is still the previous record until :287, so the old keys are in memory only.",
+      "[3] Same-id re-pair is reachable (Pair again on a not_paired host; reviews.s4.attempt_2 finding[2]). A different id is safe (reviews.s4: forgot [b], A kept).",
+      "[3] Test gap: controller.test.ts:504-524 covers cancel-during-save with an EMPTY store only. No test covers cancel-during-save with a stored host of the same id.",
+      "[3] SecureStore: one value per key; the record is about 450 bytes (G5) against a 2048-byte limit (store.ts:18, assertSize :25-28). There is no transaction across keys (store.ts:101-103 comment).",
+      "[3] G6 says keys are deleted only on revoked or on Forget. The cancel path deletes the previous record's keys implicitly, which G6 does not list.",
+      "[4] readJson (store.ts:40-54) returns undefined for a parse failure and for null. readIndex (:56-59) maps a non-array to []. Strict mode (:45) rethrows only a throwing getItemAsync. An unparseable or non-array index is read as empty, and saveHost (:109-110) writes [newId] over it.",
+      "[4] SecureStore cannot enumerate keys: node_modules/expo-secure-store/build/SecureStore.d.ts exports isAvailableAsync, deleteItemAsync, getItemAsync, setItemAsync, setItem, getItem, canUseBiometricAuthentication (:90-151). No getAllKeys. The index cannot be rebuilt from the store.",
+      "[4] forgetHost also reads strictly (store.ts:118). A throwing index blocks Pair and Forget (controller.ts:188-201).",
+      "[4] Tests: store.test.ts:109 treats unparseable values as absent; :145 covers a throwing read. No test covers a readable but unparseable index on a write path.",
+      "[5] Phone mapping: client.ts:157-159 (msg1-sent close gives PairAuthFailed on /pair, LinkRefused on /link). onerror stores errorText (:248-252); onclose concatenates reason and errorText (:253-256). The 10 s handshake timer (:214, :243) turns a silent stall into Unreachable.",
+      "[5] The host sends NO protocol close after a failed handshake. handshake() returns None on each failure (core/src/link/conn.rs:248-300; the only explicit reply is the version error, :253-261), and the caller returns (conn.rs:190-192), dropping the socket. A wrong code, wrong host key, wrong psk, or a window closed mid-handshake all look like an abrupt drop, the same as a network drop.",
+      "[5] Distinguishing needs the phone side (onerror text or RN close code). RN's exact codes are NOT verified here. Guess: both arrive as 1006 with an empty reason.",
+      "[5] No /pair test covers close-after-msg1. client.test.ts:161-165 covers only /link (silentAfter msg1). G6 lists /pair msg2 decrypt failure (item 4) but not a /pair msg1 close, so the copy has no gate rule.",
+      "[6] noise.rs build() body is :137-155. The test-only with_ephemeral is :218-240 and duplicates it, adding fixed_ephemeral_key_for_testing_only at :237. Callers: core/src/link/vectors.rs:110 and :126. The TS side has no duplicate (noise.ts injects random).",
+      "[6] The no-non-test-line rule is the s1 plan intent in state architect.plan (\"changes no non-test line\"). It is a plan rule for s1, not a numbered gate. reviews.s1 accepted the duplicate as a risk (findings, origin architect).",
+      "[7] mobile/app.json:7 has a TOP-LEVEL expo.icon = ./assets/images/icon.png, and assets/images/icon.png exists. The key removed by commit be2b6aa (2026-10-16, git log -p -- mobile/app.json) was under ios: \"icon\": \"./assets/expo.icon\", a path that no longer exists. ROADMAP.md:464 (A0 note) names the wrong key; the top-level icon is valid.",
+      "[7] reviews.s3.attempt_2 ran expo-doctor 21/21 at 90ad894 with the top-level icon present. This scout's local expo-doctor run failed (expo config --json exit 1), most likely from the stale node_modules; not re-confirmed.",
+      "[8] Release cleartext is mobile/app.json:52 (usesCleartextTraffic via expo-build-properties). The s3 prebuild grep proves the GENERATED manifest, not the merged release manifest gradle builds. Release proof needs an EAS or gradle release build (ops gate, R2).",
+      "[counts] cargo test --workspace --locked (orchestra): exit 0, 333 passed, 0 failed (per binary 44, 255, 30, 4). Core lib is 255; orchestra/CLAUDE.md documents 253.",
+      "[counts] mobile jest and tsc NOT reproduced: mobile/node_modules is stale (no @noble/*, expo-crypto, expo-camera, expo-network). jest: 4 suites pass (127 tests), 9 fail with module-not-found. tsc: exit 2, 13 errors (module-not-found plus pair.tsx:168 implicit any).",
+      "[counts] Last reviewer-reported mobile numbers (not reproduced): reviews.s4.attempt_2 jest 13 suites, 277 passed at 7270372; reviews.s5.followup_1 jest 277 at 6e9fba1; tsc 0.",
+      "[doc] protocol/README.md:426 says the record is written before its index; store.ts:104-113 writes the index first (reviews.s3.attempt_2 findings[0])."
+    ],
+    "unknowns": [
+      "[1] Newest-pair vs last-connected: no last-connected field exists; adding one is a schema change. Owner decision. A reinstalled desktop is a new host_id, so the newest id wins under the paired_at rule.",
+      "[2] Guess: on /link the Deps.random must also yield the kk ephemeral (identical first 8 hex; full equality unverified).",
+      "[3] Guess: restoring the previous record on cancel can itself fail, leaving new keys in the store and old keys in memory. SecureStore has no transaction.",
+      "[4] Refuse-to-write leaves a corrupt-index user unable to Pair or Forget. An escape hatch (reset storage, empty index, orphaned records) is a product decision.",
+      "[5] Whether RN's WebSocket gives distinct close codes or onerror text for a network drop vs a remote drop: NOT verified (RN source not read).",
+      "[6] Whether the no-non-test-line rule is still binding is a human call. The non-duplicating options (extract a configure helper, or a cfg-gated parameter) change production lines.",
+      "[7] expo-doctor's current verdict was not re-run here; the 21/21 is from the s3 review at 90ad894.",
+      "[8] Merged release manifest (cleartext, RECORD_AUDIO removal) is verifiable only by a release gradle or EAS build; deferred to R2 as ROADMAP says.",
+      "[counts] Jest and tsc at HEAD are unverified here. npm ci in orchestra/mobile would fix the stale node_modules; this scout did not install (read-only)."
+    ],
+    "risks": [
+      "[1] A newest-pair rule changes the G5 \"first host\" statement; the gate must record that amendment.",
+      "[3] The cancel path currently forgets the same id's keys, which G6 does not authorise. Fixing it closes a G6 violation, not just a test gap.",
+      "[4] Refuse-to-write makes a corrupt index block Pair and Forget with no UI escape; a reset path is needed with it.",
+      "[5] The \"code does not match\" copy on a /pair msg1 close is a guess for network drops; the reviewer accepted it as recoverable. G6 has no rule for this case.",
+      "[6] Extracting a shared builder removes production lines, breaking the s1 \"no non-test line\" rule. A copy stays a drift risk if build() changes.",
+      "[7] Dropping the top-level icon would be the wrong fix; the ROADMAP A0 note is what is wrong.",
+      "[8] Nothing in this run can verify release cleartext or the merged release manifest."
+    ]
+  },
+  "architect": {
+    "written_by": "architect",
+    "shape": "single-loop",
+    "parallel_safe": false,
+    "run_scope": "orchestra only. One worktree C:/Users/natha/wt/oa1f on branch a1-followups from main 37537f1. One builder at a time, slices in order s1, s2, s3, s4, each its own commit(s) on the same branch. Run npm ci in oa1f/mobile before s1 (node_modules are not shared with the main checkout). Every done_when runs in Git Bash from C:/Users/natha/wt/oa1f unless a cd is shown.",
+    "rationale": "single-loop, not diamond. The slices share files: controller.test.ts (s1, s2), fake-host.ts (s1, s3), protocol/README.md (s2, s3, s4), so there are no disjoint file sets and nothing to fan out. One app, about ten files, one reviewable diff per slice. Sequential on one branch in one worktree; each slice gets its own reviewer when its builder returns. Risk: every slice is high, each for a named reason. s1 shares controller.test.ts with s2, and its value is a mutation proof that a green suite cannot show (the current test is green with or without the guard). s2 decides when a per-host client secret in SecureStore is overwritten, restored or deleted (G5/G6 key material) and shares controller.test.ts and README. s3 changes failure classification from a reading of RN 0.86.3 source that has not run on a device, and shares fake-host.ts and README. s4 edits the production Noise handshake builder in core and shares README. Native: no slice touches app.json, eas.json, a config plugin or a native module, so no new build and no runtimeVersion consequence; no new dependency and no npx expo install. Every done_when runs on Windows (jest, tsc, cargo test, cargo check); Linux, arm64 and macOS come from CI on the pushed branch (F8). UI: copy strings only, no layout change, so mobile-first is not engaged beyond leaving the screens untouched.",
+    "plan": [
+      {
+        "slice": "s1",
+        "intent": "Item 2. fake-host answers /link with the KK vector and /pair with the IKpsk2 vector, and the dispose regression test pins the attempt() guard. fake-host.ts: the first argument of fakeHost accepts either one Vector (every existing call unchanged) or {pair: Vector, link: Vector}; each FakeSocket picks its vector by the URL path suffix (/pair or /link). The two fixtures share the client static and ephemeral secrets and the host static key (verified: full equality), so vectorRandom(ikpsk2, true) serves both paths. Update the stale header comment about the self-test if still present. controller.test.ts: rewrite the test named 'dispose during pair with a stored host leaves nothing running' to use {pair: ikpsk2, link: kk} and hosts [recordOf(kk)]: start() must reach phase live over /link first (assert it, and that sockets[0].url ends with /link and msg1Matches is true), then pair() reaches pairStep confirm over /pair, then dispose(). After dispose the test drives every remaining entry point into attempt(): t.ctl.retryNow(), t.foreground(), t.network(false), t.network(true) (the setup unsubscribe is a no-op, so these callbacks still fire). Then tick 180 s and assert: socket count unchanged since dispose, jest.getTimerCount() 0, no ping sent by any socket after dispose. Add one test named 'a stored host and a pairing offer each get their own vector' (sockets[0] /link and sockets[1] /pair both have msg1Matches true, and the link reaches live). Architect finding the builder must not paper over: no production path reaches attempt() after dispose except retryNow and the network/foreground callbacks (finish :224, failed :461, scheduleRetry :499 and start :152 each check disposed; dispose clears the timers and unsubscribes). The :402 guard is defence in depth for a late callback or a stale Try now, and the test pins it through those entry points. No production code changes in this slice.",
+        "files": [
+          "orchestra/mobile/src/__tests__/fake-host.ts",
+          "orchestra/mobile/src/__tests__/controller.test.ts"
+        ],
+        "done_when": [
+          "cd mobile && npx jest 2>&1 | grep -E '^(Test Suites|Tests):' -> 'Test Suites: 13 passed, 13 total' and 'Tests: 278 passed, 278 total' (277 + 1)",
+          "cd mobile && npx tsc --noEmit; echo $? -> 0",
+          "cd mobile && npx jest src/__tests__/controller.test.ts -t 'dispose during pair' 2>&1 | grep -E '^Tests:' -> contains '1 passed' and no 'failed'",
+          "Mutation, after the slice commit with a clean tree: cd mobile && grep -c 'if (this.disposed || !record || this.attempting' src/link/controller.ts -> 1; then sed -i 's/if (this.disposed || !record || this.attempting/if (!record || this.attempting/' src/link/controller.ts; npx jest src/__tests__/controller.test.ts -t 'dispose during pair' >/dev/null 2>&1; echo mutant_exit=$?; git checkout -- src/link/controller.ts; git status --porcelain | wc -l -> 'mutant_exit=1' then 0",
+          "git diff --name-only main...HEAD -> exactly mobile/src/__tests__/controller.test.ts and mobile/src/__tests__/fake-host.ts"
+        ],
+        "risk": "high",
+        "risk_reason": "shares controller.test.ts with s2; the green suite cannot show the guard is pinned, only the mutation can, so the reviewer reruns the mutation itself",
+        "depends_on": []
+      },
+      {
+        "slice": "s2",
+        "intent": "Items 1, 3 and 4, per F1, F2, F3. (1) controller.ts start(): select the stored host with the largest paired_at; a tie goes to the entry later in listHosts order. Replace hosts[0] at :166 and the header comment at :1 (the first of listHosts). (3) controller.ts pair(): after welcome and before saveHost, look up the stored record with the same host_id through deps.store.listHosts() (HostStore interface unchanged). If the cancel check after the save fires: a previous record was found -> saveHost(previous) (restore; do not forget); none found -> forgetHost(new id) as today; the lookup itself threw -> neither (leave the new record, which the desktop has confirmed). A failed restore is caught and nothing is deleted. this.record is not changed on cancel, so finish() resumes the host that was current before pairing. (4) store.ts readIndex: a value that parses as an array keeps only entries matching /^[0-9a-f]{32}$/, de-duplicated in order. A value that is present but does not parse, or parses to a non-array, is salvaged: every distinct match of /(?<![0-9a-f])[0-9a-f]{32}(?![0-9a-f])/g in the raw text, in order. An id with no readable record is skipped by listHosts as today. saveHost and forgetHost rewrite the index as a clean JSON array whenever the stored text was not already the clean form, even if the id was present. A throwing getItemAsync stays strict on write paths (unchanged). No UI copy. protocol/README.md, What A1 decided: amend the G5 bullet (the controller loads the most recently paired host, largest paired_at, a tie to the later index entry, which amends the G5 text that the A1 UI shows the first host; the index read and salvage rule; a value with no ids is empty and its records are unreachable because SecureStore cannot enumerate keys) and the G6 bullet (a Cancel that lands after the save restores the previous record of that host_id, or deletes the new one if there was none). Tests, store.test.ts (+4): 'recovers host ids from an index that does not parse' (truncated array text with ID1 and ID2 records -> listHosts both; saveHost(ID3) -> index exactly [ID1,ID2,ID3]); 'recovers host ids from an index that is not an array'; 'drops index entries that are not host ids' (['../x', ID1, ID1, 5] -> [ID1], and the next save writes it clean); 'forget over an unparseable index keeps the other hosts'. controller.test.ts (+5): 'loads the most recently paired of two stored hosts' (both index orders); 'a tie in paired_at goes to the later index entry'; 'cancel while re-pairing a stored host restores its previous record' (uses the s1 {pair, link} fake host; the last saveHost argument deep-equals the previous record, forgotten is []); 'cancel while pairing a new host beside a stored one forgets only the new one'; 'a failed restore deletes nothing'. The existing test 'cancelPair while the host is being saved keeps nothing' (empty store) stays green unchanged.",
+        "files": [
+          "orchestra/mobile/src/link/store.ts",
+          "orchestra/mobile/src/link/controller.ts",
+          "orchestra/mobile/src/__tests__/store.test.ts",
+          "orchestra/mobile/src/__tests__/controller.test.ts",
+          "orchestra/protocol/README.md"
+        ],
+        "risk": "high",
+        "risk_reason": "decides when a per-host client_secret_key in SecureStore is overwritten, restored or deleted (G5/G6 key material) and how a corrupt index is rewritten; shares controller.test.ts with s1 and README with s3 and s4",
+        "depends_on": [
+          "s1"
+        ],
+        "done_when": [
+          "cd mobile && npx jest 2>&1 | grep -E '^(Test Suites|Tests):' -> 'Test Suites: 13 passed, 13 total' and 'Tests: 287 passed, 287 total' (278 + 9)",
+          "cd mobile && npx tsc --noEmit; echo $? -> 0",
+          "cd mobile && for each of the 9 new test names: npx jest -t NAME 2>&1 | grep -E '^Tests:' -> 9 lines, each with '1 passed' and none with 'failed'",
+          "grep -c 'hosts\\[0\\]' mobile/src/link/controller.ts -> 0",
+          "git diff main...HEAD -- mobile/src/link/provider.tsx mobile/src/app mobile/src/constants | wc -l -> 0 (provider and screen API untouched)",
+          "grep -c 'most recently paired' protocol/README.md -> at least 1, and grep -c 'previous record' protocol/README.md -> at least 1",
+          "the s1 mutation command, rerun -> 'mutant_exit=1' then 0",
+          "git diff --name-only over the commits of this slice -> only the five files listed"
+        ]
+      },
+      {
+        "slice": "s3",
+        "intent": "Item 5, per F4 and F5. F4: change copy.pair_auth_failed in mobile/src/constants/copy.ts to the approved wording (recommended: 'This code did not work with the desktop at that address, or the connection dropped. Show a new code on the desktop and scan it again.'). The LinkFailure union, the controller and pair.tsx are unchanged; pair.test.tsx already reads the string through copy.pair_auth_failed. F5: in client.ts the onerror handler only records errorText and never settles; onclose maps reason plus errorText through closedBy in every phase, including opening. The open timer (t.openMs) still turns an error with no close into Unreachable. Reason: RN 0.86.3 (node_modules/react-native/Libraries/WebSocket/WebSocket.js:273-286) handles websocketFailed by dispatching a bare Event('error') with no message, then a CloseEvent with code 1006 and reason = the OkHttp exception message (ReactAndroid WebSocketModule.kt:170-172, 330-338). Today client.ts:248-252 fails at once with an empty errorText in opening, so on a device a 404 at /pair (a used or closed code) shows Unreachable instead of PairWindowClosed (G6 (1)); the close carrying the 404 reason is ignored. Nothing new is guessed: the HTTP_404 string the tests already use is the existing assumption. fake-host.ts: a script can emit an error event with no message property, and a host drop after msg1 shaped like RN (error with no message, then close 1006 with a reason such as 'Connection reset'). Tests, client.test.ts (+3): 'close after msg1 gives PairAuthFailed on /pair' (silentAfter msg1); 'an RN-shaped drop after msg1 gives PairAuthFailed, whatever the reason text'; 'an RN-shaped 404 (error with no message, then a close with the 404 reason) gives PairWindowClosed'. Every existing client test stays green unchanged. protocol/README.md G6 bullet: /pair closed after message 1 joins /pair message 2 failing to decrypt: a wrong code, a wrong host key at that address, a window that closed, or a network drop. The host sends no close frame after a failed handshake (core/src/link/conn.rs) and RN reports every drop as error then close 1006 with an exception message, so the phone cannot tell them apart and shows one message naming both causes; close reason text never drives behaviour beyond the existing 404 rule.",
+        "files": [
+          "orchestra/mobile/src/link/client.ts",
+          "orchestra/mobile/src/__tests__/client.test.ts",
+          "orchestra/mobile/src/__tests__/fake-host.ts",
+          "orchestra/mobile/src/constants/copy.ts",
+          "orchestra/protocol/README.md"
+        ],
+        "risk": "high",
+        "risk_reason": "changes failure classification on a device from a reading of RN 0.86.3 source, not a device run; shares fake-host.ts with s1 and README with s2 and s4",
+        "depends_on": [
+          "s2"
+        ],
+        "done_when": [
+          "cd mobile && npx jest 2>&1 | grep -E '^(Test Suites|Tests):' -> 'Test Suites: 13 passed, 13 total' and 'Tests: 290 passed, 290 total' (287 + 3)",
+          "cd mobile && npx tsc --noEmit; echo $? -> 0",
+          "cd mobile && for each of the 3 new test names: npx jest src/__tests__/client.test.ts -t NAME 2>&1 | grep -E '^Tests:' -> 3 lines, each '1 passed', none 'failed'",
+          "The RN-404 test fails against the client.ts of main, run after the slice commit with a clean tree: cd mobile && git show main:mobile/src/link/client.ts > src/link/client.ts; npx jest src/__tests__/client.test.ts -t 'an RN-shaped 404' >/dev/null 2>&1; echo old_exit=$?; git checkout -- src/link/client.ts; git status --porcelain | wc -l -> 'old_exit=1' then 0",
+          "grep -c 'connection dropped' mobile/src/constants/copy.ts -> 1 (or the distinctive phrase of the approved wording)",
+          "grep -c 'after message 1' protocol/README.md -> at least 1",
+          "git diff --name-only over the commits of this slice -> only the five files listed (no mobile/src/app, provider.tsx or controller.ts)"
+        ]
+      },
+      {
+        "slice": "s4",
+        "intent": "Item 6, per F6 (recommended option a), plus the stale count in orchestra/CLAUDE.md. core/src/link/noise.rs: extract one private fn that returns the configured snow Builder (params, local key, prologue, remote key if any, psk at slot 2 if any), used by build() and by the cfg(test) with_ephemeral, which then only adds fixed_ephemeral_key_for_testing_only and builds. Same calls in the same order; no public signature changes; fixed_ephemeral_key_for_testing_only stays inside the #[cfg(test)] impl only. The committed vectors must be byte-identical with no regeneration. protocol/README.md: reword the two places that say the vectors and the msg2/transport replay go through a cfg(test) copy of build() (about lines 401 and 423): they go through the same builder as production, with only the fixed ephemeral added under cfg(test). orchestra/CLAUDE.md Commands: '253 core' -> '255 core' (the scout measured 255). If the gate picks F6 (b) or (c) instead, s4 shrinks to the CLAUDE.md count line (b), or that plus one test-only cross-check in core/src/link/vectors.rs (c, which adds that file and +1 core test), and noise.rs production lines stay untouched.",
+        "files": [
+          "orchestra/core/src/link/noise.rs",
+          "orchestra/protocol/README.md",
+          "orchestra/CLAUDE.md"
+        ],
+        "done_when": [
+          "cargo test --workspace --locked 2>&1 | grep -E '^test result:' -> 4 lines, all ok, passed counts 44, 255, 30, 4 (333 total, unchanged), 0 failed",
+          "cargo test -p orchestra-core --locked --lib link::vectors 2>&1 | grep -E '^test result:' -> ok, 0 failed (vectors_match_committed_files and vectors_open_on_the_production_host_path pass without ORCHESTRA_WRITE_VECTORS)",
+          "cargo check -p orchestra-core --tests --locked; echo $? -> 0",
+          "git diff --exit-code main -- protocol/fixtures; echo $? -> 0",
+          "grep -c 'Builder::new(params(mode)' core/src/link/noise.rs -> 1",
+          "grep -n 'fixed_ephemeral_key_for_testing_only' core/src/link/noise.rs -> exactly 1 line, and its line number is greater than that of the last '#[cfg(test)]' line before it, inside the cfg(test) impl Handshake block (grep -n '#\\[cfg(test)\\]' core/src/link/noise.rs to compare)",
+          "grep -c 'copy of `build()`' protocol/README.md -> 0",
+          "grep -c '253 core' CLAUDE.md -> 0 and grep -c '255 core' CLAUDE.md -> 1",
+          "git diff --name-only over the commits of this slice -> only core/src/link/noise.rs, protocol/README.md, CLAUDE.md"
+        ],
+        "risk": "high",
+        "risk_reason": "edits the production Noise handshake builder used by every pairing and reconnect, and relaxes the prior run s1 no-production-line rule; shares README with s2 and s3",
+        "depends_on": [
+          "s3"
+        ]
+      }
+    ],
+    "edges": [
+      "s1 -> s2 because the s2 cancel-during-re-pair test needs the s1 fake host that answers /link with KK and /pair with IKpsk2 (a real artifact)",
+      "s2 -> s3: serialization only (shared protocol/README.md G6 bullet, one branch); no artifact flows",
+      "s3 -> s4: serialization only (shared protocol/README.md, one branch); no artifact flows. s4 is last so the mobile slices land before the core refactor and a failing core slice cannot hold them up"
+    ],
+    "decisions_for_gate": [
+      {
+        "id": "F1",
+        "topic": "Which stored host the controller loads (item 1; amends the G5 text that the A1 UI shows the first host)",
+        "recommend": "The largest paired_at; a tie goes to the later index entry. paired_at already exists in every record (store.ts:14, set at controller.ts:270), so no schema change and no migration. A re-pair of an existing id updates its paired_at in place, so the host paired last is always the one loaded. It also fixes the s3-review edge where a transiently hidden host A came back ahead of a just-paired B. Forget still returns to unpaired until the next start (see NOT DOING).",
+        "alternatives": [
+          "Last connected: a new last_connected_at field written on every goLive; a record schema change and a SecureStore write per connect. Better if two live desktops are normal; not needed for the one-host A1 UI.",
+          "Keep the first host (status quo): a reinstalled desktop shows Not paired after every restart until Forget."
+        ]
+      },
+      {
+        "id": "F2",
+        "topic": "Cancel during a re-pair of the same host id (item 3; closes a G6 violation)",
+        "recommend": "Before saveHost, read the stored record with that host_id through listHosts (HostStore unchanged). On a cancel after the save: restore it with saveHost(previous); if there was none, forgetHost(new id) as today; if the lookup threw, do neither. A failed restore deletes nothing: the store then holds the new record, which the desktop has confirmed and which works, while memory keeps the old one until restart. The desktop keeps a confirmed client entry either way (inherent, already accepted in A1). This also covers re-pairing a stored host that is not the current one, which a this.record snapshot would miss.",
+        "alternatives": [
+          "Null this.record and forget the id (the other reviewer suggestion): loses the old keys, which is the G6 violation itself.",
+          "Check pairCancelled before saveHost only: shrinks the window, but a Cancel during the save still lands after the overwrite.",
+          "Add getHost to HostStore: one more interface method and a provider edit for the same result."
+        ]
+      },
+      {
+        "id": "F3",
+        "topic": "A corrupt host index (item 4)",
+        "recommend": "Salvage, no UI copy. A value that is not a JSON array of host ids is read as the distinct 32-hex ids found in its text; array entries that are not host ids are dropped; the next save or forget rewrites a clean array. An id with no record is already harmless (skipped). This never blocks Pair or Forget, needs no new screen, and recovers every id whose text survived. What is lost: a value with no recognisable id reads as empty and its records stay unreachable, because SecureStore cannot enumerate keys. A throwing read stays strict on write paths, as today.",
+        "alternatives": [
+          "Strict: refuse to write over a present but unparseable index, plus a Reset paired desktops action. Needs a new controller method (a provider API change), a screen element and copy, for example: 'Orchestra cannot read its list of paired desktops on this phone. Reset it, then pair again. [Reset]'. Blocks Pair and Forget until the user acts.",
+          "Status quo and document it: the next save orphans every other record and its secret."
+        ]
+      },
+      {
+        "id": "F4",
+        "topic": "/pair closed after message 1 (item 5): the copy",
+        "recommend": "One message for PairAuthFailed that names both causes: 'This code did not work with the desktop at that address, or the connection dropped. Show a new code on the desktop and scan it again.' Both paths (msg2 does not decrypt; a close after msg1) need the same action, the host sends no close frame (conn.rs:190-192, 248-300), and RN gives no stable signal (F5), so behaviour stays and only the wording widens. No new LinkFailure kind, so the provider, controller and screen API is unchanged.",
+        "alternatives": [
+          "A new kind (for example PairDropped) for the msg1-close case with its own copy, keeping 'does not match' for a msg2 decrypt failure (a definite wrong code). More precise; touches client.ts, the LinkFailure union, pair.tsx and its test, so it is an API change.",
+          "Keep 'This code does not match...' (status quo): wrong for a network drop, which the A1 review accepted as recoverable."
+        ]
+      },
+      {
+        "id": "F5",
+        "topic": "RN onerror and onclose (the item 5 check) and the fix it turns up",
+        "recommend": "Include in s3. Read from RN 0.86.3 source, not run on a device: on Android every failure, a host drop or a network drop alike, arrives as a bare error Event with no message followed by a close with code 1006 and reason = the OkHttp exception text (WebSocket.js:273-286, WebSocketModule.kt:170-172 and 330-338). So the close code never separates the causes and the reason text is an exception message, not a contract; nothing new keys off it. But client.ts:248-252 fails at once in opening with errorText empty (the RN error event has no message), so the close that carries the 404 reason is ignored and a used or closed code at /pair shows Unreachable on a device, not PairWindowClosed (G6 (1)). The fix lets onclose do the mapping in every phase; the existing tests stay green and a new RN-shaped test pins it.",
+        "alternatives": [
+          "Leave it and add an owner device check for the 404 path: G6 (1) stays broken on Android until then.",
+          "Defer to a separate follow-up run: same code, same files as s3."
+        ]
+      },
+      {
+        "id": "F6",
+        "topic": "The cfg(test) copy of build() in core (item 6)",
+        "recommend": "(a) Extract one private builder-configuring fn used by both build() and with_ephemeral; the fixed-ephemeral hook stays in cfg(test) code. Production lines move, which relaxes the prior run s1 intent 'changes no non-test line', but no test hook enters production and the calls are the same in the same order. The committed vectors staying byte-identical, vectors_open_on_the_production_host_path and all 333 workspace tests are the proof. After it, msg2, the handshake hash and the transport replay go through the production builder configuration, and the drift risk the s1 review named is gone.",
+        "alternatives": [
+          "(b) Leave the copy and document it: README (about lines 401 and 423) already says so; s4 shrinks to the CLAUDE.md count. The drift risk stays: an edit to build() that touches only msg2 behaviour would not fail.",
+          "(c) Leave the copy and add a test-only cross-check in vectors.rs: the production responder_pair and responder_link write msg2 for the committed msg1 and a with_ephemeral initiator reads it, then both exchange transport frames. Keeps the no-production-line rule and catches most drift, but the replay still runs through the copy.",
+          "(d) A cfg-gated ephemeral parameter on build() itself: a test-only argument in a production signature. Not recommended."
+        ]
+      },
+      {
+        "id": "F7",
+        "topic": "How the dispose test pins the attempt() guard (item 2)",
+        "recommend": "Reach a live KK link first, then pair, dispose, and drive retryNow, foreground and network after dispose; prove by mutation that it fails without the :402 guard. Record that the guard is defence in depth: on HEAD no production path reaches attempt() after dispose except those entry points (finish, failed, scheduleRetry and start each check disposed; dispose clears timers and unsubscribes), so the scout note that the mutant orphans a link when a live connection is reachable does not hold by itself.",
+        "alternatives": [
+          "Remove the guard as unreachable: a late AppState or network callback, or a stale Try now, could then dial after unmount.",
+          "Inject a connect stub instead of the fake host: does not reach welcome, which the goal asks for."
+        ]
+      },
+      {
+        "id": "F8",
+        "topic": "Branch push for CI",
+        "recommend": "Push only branch a1-followups to origin, at most 4 pushes, no force push, no PR, no tag, never main. The first push after s4 (or after s3 if s4 is still in review) runs test.yml: core on Linux x64 and arm64, the Windows workspace, the macOS core check, and both npm jobs. Merging to main and pushing main stay with the orchestrator after the reviews.",
+        "alternatives": [
+          "No push: Linux, arm64 and macOS are unproven for the s4 core change until main is pushed.",
+          "Push after every slice: spends the 4 pushes on intermediate states."
+        ]
+      },
+      {
+        "id": "F9",
+        "topic": "Items 7 and 8",
+        "recommend": "Item 7 is a ROADMAP wording fix only, owned by the orchestrator; no builder touches app.json. Commit be2b6aa removed ios.icon ('./assets/expo.icon', a path that no longer exists); the top-level expo.icon at mobile/app.json:7 points at assets/images/icon.png, which exists, and passed expo-doctor 21/21 at 90ad894. Correct the A0 note (ROADMAP.md:464) and close the A1 follow-up (:494) as not a bug. Item 8 stays deferred to R2: release cleartext and the merged release manifest need a release gradle or EAS build behind the ops gate.",
+        "alternatives": [
+          "Remove the top-level icon to match the note: the wrong fix; it removes the launcher icon source."
+        ]
+      }
+    ],
+    "push_decision": "F8: only branch a1-followups to origin, at most 4 pushes, no force push, no PR, no tag, never main.",
+    "not_doing": [
+      "ROADMAP.md edits of any kind (item 7 A0 note, closing the A1 follow-ups): the orchestrator owns ROADMAP. For the orchestrator: ROADMAP.md:464 names the wrong key (ios.icon was removed in be2b6aa; the top-level expo.icon is valid), and the :494 follow-up is not a bug.",
+      "mobile/app.json, eas.json, any config plugin or native dependency; no npx expo install, no new package.",
+      "Release-build cleartext and the merged release manifest (item 8): R2, ops gate.",
+      "A last_connected_at field or any record schema change (F1 alternative).",
+      "Forget falling back to the next stored host without a restart, and any host switcher (A5).",
+      "Sweeping orphaned records whose ids are unrecoverable: SecureStore cannot enumerate keys.",
+      "Telling a network drop from a host drop by close code or reason text; a host-side close frame after a failed handshake (a core and protocol behaviour change).",
+      "A new LinkFailure kind or any provider, public controller or screen change (unless the gate picks the F3 strict or F4 new-kind alternative).",
+      "fleet/ (vendored, never hand-edited), desktop/, protocol/fixtures (must stay byte-identical), protocol TypeScript.",
+      "Other notes from the prior run that are not in this list: a seal_order field in the vectors, latching a failed readMessage2, wrapping noble DH errors, downward jitter at the 30 s cap.",
+      "The README write-order line (scout fact [doc]): already fixed by 3329af2; protocol/README.md:429 says the index entry is written before the record. No action."
+    ],
+    "flags_on_scout": [
+      "fact [doc] is stale: protocol/README.md:429 already says index first (commit 3329af2). Not acted on.",
+      "fact [2], that the mutant orphans a link only when a live connection is reachable: on HEAD no production path reaches attempt() after dispose except retryNow and the network and foreground callbacks. The s1 test is designed around that (F7). Not a contradiction of the plan, a refinement.",
+      "unknown [2] resolved: ikpsk2.json and kk.json have fully equal client_static_secret_hex, client_static_public_hex, client_ephemeral_secret_hex and host_static_public_hex (compared in full), so one Deps.random serves both paths.",
+      "unknown [5] partly resolved from RN 0.86.3 source (not a device): every failure is an error event without a message, then close 1006 with the exception text. See F5."
+    ],
+    "owner_checks_after_merge": [
+      "human-read, device (Expo Go): scan a used or closed pairing code and see the pair_window_closed copy (F5), not Cannot reach.",
+      "human-read, device: with two desktops paired, restart the app and see the one paired last (F1)."
+    ],
+    "notes": "Baseline (orchestrator, main checkout after npm ci): mobile jest 13 suites / 277, tsc 0; cargo test --workspace 333 (44 + 255 + 30 + 4). Expected after each slice: s1 278, s2 287, s3 290, s4 cargo 333 (334 with F6 c). The named tests are the contract; the totals are the cross-check, and a builder whose count differs states why."
+  },
+  "approved_by_human": true,
+  "scope_exceptions": [
+    "ORCHESTRATOR-OWNED, normally empty. Paths a builder may write that the approved plan does not list. guard-builder-scope.py DENIES a builder's Write/Edit outside architect.plan[].files, and this is the only way through it. Adding one is a deliberate, recorded act: pair it with deviation_from_approved_plan on the slice that needed it, and say why the gate's file set was wrong. Never add a path to silence the guard on work the human did not approve."
+  ],
+  "builders": {
+    "s1": {
+      "written_by": "builder",
+      "status": "done",
+      "branch": "a1-followups",
+      "commit": "aeeb53c",
+      "changed": [
+        "orchestra/mobile/src/__tests__/fake-host.ts",
+        "orchestra/mobile/src/__tests__/controller.test.ts"
+      ],
+      "notes": "",
+      "results": {
+        "jest_full": "Test Suites: 13 passed, 13 total / Tests: 278 passed, 278 total",
+        "tsc": "tsc=0",
+        "dispose_test": "Tests: 29 skipped, 1 passed, 30 total",
+        "guard_grep_count": "1",
+        "mutant_exit": "mutant_exit=1",
+        "tree_after_restore": "git status --porcelain | wc -l -> 0",
+        "diff_names": "mobile/src/__tests__/controller.test.ts, mobile/src/__tests__/fake-host.ts"
+      },
+      "gate_results": [
+        {
+          "cmd": "cd mobile && npx jest --watchAll=false | grep Test Suites/Tests",
+          "output": "Test Suites: 13 passed, 13 total\nTests: 278 passed, 278 total"
+        },
+        {
+          "cmd": "cd mobile && npx tsc --noEmit; echo $?",
+          "output": "0"
+        },
+        {
+          "cmd": "npx jest controller.test.ts -t 'dispose during pair' | grep ^Tests:",
+          "output": "Tests: 29 skipped, 1 passed, 30 total"
+        },
+        {
+          "cmd": "mutation: grep -c guard; sed remove disposed; jest -t 'dispose during pair'; echo mutant_exit; git checkout -- src/link/controller.ts; git status --porcelain | wc -l",
+          "output": "1\nmutant_exit=1\n0"
+        },
+        {
+          "cmd": "git diff --name-only main...HEAD",
+          "output": "mobile/src/__tests__/controller.test.ts\nmobile/src/__tests__/fake-host.ts"
+        }
+      ],
+      "deviation_from_approved_plan": "setup() in controller.test.ts gained optional vectors and random options, because the global random counter needs link ephemeral, then pair static, then pair ephemeral; vectorRandom alone cannot serve both paths. Within the approved files. fake-host's header had no stale self-test comment, so none was changed. Added an exported Vectors type."
+    },
+    "s2": {
+      "written_by": "builder",
+      "status": "done",
+      "branch": "a1-followups",
+      "commit": "597d46d",
+      "changed": [
+        "orchestra/mobile/src/link/store.ts",
+        "orchestra/mobile/src/link/controller.ts",
+        "orchestra/mobile/src/__tests__/store.test.ts",
+        "orchestra/mobile/src/__tests__/controller.test.ts",
+        "orchestra/protocol/README.md"
+      ],
+      "notes": "",
+      "results": {
+        "jest_full": "Test Suites: 13 passed, 13 total / Tests: 287 passed, 287 total",
+        "tsc": "tsc 0",
+        "new_tests_each": "9 runs, each 'Tests: 286 skipped, 1 passed, 287 total'",
+        "hosts0_count": "0",
+        "readme_greps": "most recently paired=1, previous record=1",
+        "protected_diff": "git diff main...HEAD -- provider.tsx src/app src/constants | wc -l -> 0",
+        "diff_names": "5 files listed only (aeeb53c..HEAD)",
+        "mutant": "mutant_exit=1 with guard removed at controller.ts:420; after git checkout the dispose test: Tests: 34 skipped, 1 passed, 35 total, exit 0; tree clean (0)"
+      },
+      "gate_results": [
+        {
+          "cmd": "cd mobile && npx jest --watchAll=false",
+          "output": "Test Suites: 13 passed, 13 total\nTests: 287 passed, 287 total"
+        },
+        {
+          "cmd": "cd mobile && npx tsc --noEmit; echo $?",
+          "output": "0"
+        },
+        {
+          "cmd": "for each of 9 new test names: npx jest -t NAME | grep ^Tests:",
+          "output": "9 lines, each: Tests: 286 skipped, 1 passed, 287 total"
+        },
+        {
+          "cmd": "grep -c 'hosts\\[0\\]' mobile/src/link/controller.ts",
+          "output": "0"
+        },
+        {
+          "cmd": "git diff main...HEAD -- mobile/src/link/provider.tsx mobile/src/app mobile/src/constants | wc -l",
+          "output": "0"
+        },
+        {
+          "cmd": "grep -c 'most recently paired' / 'previous record' protocol/README.md",
+          "output": "1 / 1"
+        },
+        {
+          "cmd": "mutation: sed -i '420s/this.disposed || //' controller.ts; jest -t 'dispose during pair'; echo mutant_exit; git checkout -- src/link/controller.ts (after commit)",
+          "output": "mutant_exit=1; restored run exit 0; git status --porcelain | wc -l -> 0"
+        },
+        {
+          "cmd": "git diff --name-only aeeb53c HEAD",
+          "output": "mobile/src/__tests__/controller.test.ts\nmobile/src/__tests__/store.test.ts\nmobile/src/link/controller.ts\nmobile/src/link/store.ts\nprotocol/README.md"
+        }
+      ],
+      "deviation_from_approved_plan": "Test 'cancel while pairing a new host beside a stored one' adds the stored host after start() (shared mutable hosts array) because a stored host with a different id fails its /link dial with ProtocolError and consumes the fake-host scripts. Restore on cancel is awaited (not void) so a failed restore is observable. Mutation guard line is controller.ts:420 now."
+    },
+    "s3": {
+      "written_by": "builder",
+      "status": "done",
+      "branch": "a1-followups",
+      "commit": "94a19ce",
+      "changed": [
+        "mobile/src/link/client.ts",
+        "mobile/src/__tests__/client.test.ts",
+        "mobile/src/__tests__/fake-host.ts",
+        "mobile/src/constants/copy.ts",
+        "protocol/README.md"
+      ],
+      "notes": "",
+      "results": {
+        "F4": "copy.pair_auth_failed is the approved wording, verbatim.",
+        "F5": "onerror only records errorText; onclose maps reason+errorText through closedBy in every phase. Telling a 404 from an unreachable host: only by the close reason text containing 404 on /pair (RN reason = OkHttp exception message, e.g. \"Expected HTTP 101 response but was 404 Not Found\" vs \"Failed to connect to ...\" for a refused host). A refused or timed-out host sends error then close 1006 with a non-404 reason, so it maps to Unreachable; a host that never closes is caught by the openMs timer. Evidence: node_modules/react-native/Libraries/WebSocket/WebSocket.js:273-286 (websocketFailed dispatches bare Event(error) then CloseEvent code CLOSE_ABNORMAL 1006, reason ev.message); WebSocketModule.kt sends websocketFailed at lines 234,261,288,315,338. The exact OkHttp text of a refused connection is not verified on a device; only that it lacks 404.",
+        "fake_host": "Script gains rnShaped (error event with no message; with openFail it replaces the error event, with silentAfter msg1 it drops RN-style) and rnReason (default Connection reset).",
+        "tests": "3 added to client.test.ts pair-only block; every existing test unchanged."
+      },
+      "gate_results": [
+        {
+          "cmd": "cd mobile && npx jest --watchAll=false | grep Test Suites/Tests",
+          "output": "Test Suites: 13 passed, 13 total / Tests: 290 passed, 290 total"
+        },
+        {
+          "cmd": "cd mobile && npx tsc --noEmit; echo $?",
+          "output": "0"
+        },
+        {
+          "cmd": "jest client.test.ts -t NAME for each of the 3 new tests",
+          "output": "Tests: 39 skipped, 1 passed, 40 total (x3)"
+        },
+        {
+          "cmd": "RN-404 test against main client.ts, after commit, then git checkout",
+          "output": "old_exit=1; git status --porcelain | wc -l = 0"
+        },
+        {
+          "cmd": "grep -c 'connection dropped' mobile/src/constants/copy.ts",
+          "output": "1"
+        },
+        {
+          "cmd": "grep -c 'after message 1' protocol/README.md",
+          "output": "2"
+        },
+        {
+          "cmd": "git diff --name-only 597d46d HEAD",
+          "output": "the five listed files only"
+        }
+      ],
+      "deviation_from_approved_plan": "none (repo root of wt/oa1f is the orchestra app, so paths lack the orchestra/ prefix)",
+      "followup_1": {
+        "commit": "97dfcaf",
+        "branch": "a1-followups",
+        "changed": [
+          "mobile/src/link/client.ts",
+          "mobile/src/__tests__/client.test.ts",
+          "mobile/src/__tests__/fake-host.ts",
+          "protocol/README.md"
+        ],
+        "changes": [
+          "MEDIUM: closedBy 404 match is now /\bwas '404\b/ (OkHttp checkUpgradeSuccess text \"Expected HTTP 101 response but was '404 Not Found'\"); the planned /but was '404\b/ broke controller.test.ts (outside the file set) whose reason is \"was '404 Not Found'\", so the leading word 'but' is dropped",
+          "LOW: comment at arm(openMs) that it must stay below OkHttp's 10 s connectTimeout (timeout text carries the local ephemeral port)",
+          "LOW: README wrap fixed",
+          "fake-host rnShaped openFail now dispatches error and close synchronously",
+          "2 tests added: :4040 refused -> Unreachable; empty/unknown reasons -> Unreachable (real 404 text -> PairWindowClosed was already covered)"
+        ],
+        "gate_results": [
+          {
+            "cmd": "cd mobile && npx tsc --noEmit; echo $?",
+            "output": "0"
+          },
+          {
+            "cmd": "cd mobile && npx jest --watchAll=false",
+            "output": "Test Suites: 13 passed, 13 total / Tests: 292 passed, 292 total"
+          }
+        ],
+        "notes": "protocol/fixtures/noise/*.json line-ending noise left unstaged."
+      }
+    },
+    "s4": {
+      "written_by": "builder",
+      "status": "done",
+      "branch": "a1-followups",
+      "commit": "f10486e",
+      "changed": [
+        "core/src/link/noise.rs",
+        "protocol/README.md",
+        "CLAUDE.md"
+      ],
+      "notes": "Working tree shows protocol/fixtures/noise/*.json modified after the ORCHESTRA_WRITE_VECTORS regen (LF vs CRLF autocrlf only; git diff main -- protocol/fixtures exits 0); not committed, not restored (outside file set).",
+      "gate_results": [
+        {
+          "cmd": "cargo test --workspace --locked | grep '^test result:'",
+          "out": "44 passed; 0 (doc); 255 passed; 30 passed; 4 passed; 0; 0 - all ok, 0 failed (333 total)"
+        },
+        {
+          "cmd": "cargo test -p orchestra-core --locked --lib link::vectors",
+          "out": "test result: ok. 2 passed; 0 failed (253 filtered)"
+        },
+        {
+          "cmd": "cargo check -p orchestra-core --tests --locked",
+          "out": "Finished, rc=0"
+        },
+        {
+          "cmd": "cargo check -p orchestra-core --locked (non-test)",
+          "out": "Finished, no warnings"
+        },
+        {
+          "cmd": "git diff --exit-code main -- protocol/fixtures",
+          "out": "exit 0 (before and after ORCHESTRA_WRITE_VECTORS=1 regen, which passed 2/2)"
+        },
+        {
+          "cmd": "grep -c 'Builder::new(params(mode)' noise.rs",
+          "out": "1"
+        },
+        {
+          "cmd": "grep -n fixed_ephemeral_key_for_testing_only noise.rs",
+          "out": "243 only; cfg(test) at 231 precedes it (impl Handshake)"
+        },
+        {
+          "cmd": "grep -c 'copy of `build()`' README",
+          "out": "0"
+        },
+        {
+          "cmd": "grep -c '253 core' / '255 core' CLAUDE.md",
+          "out": "0 / 1"
+        },
+        {
+          "cmd": "git diff --name-only HEAD~1",
+          "out": "CLAUDE.md, core/src/link/noise.rs, protocol/README.md"
+        }
+      ],
+      "deviation_from_approved_plan": "none"
+    }
+  },
+  "reviews": {
+    "s1": {
+      "$comment": "RE-REVIEWS NEST, and this is the rule every reader follows. The TOP LEVEL of reviews.<slice> IS attempt 1. A re-review writes attempt_2, then attempt_3, and so on, each with the same fields as the top level. Every attempt SURVIVES PERMANENTLY - history is never overwritten, flattened, or migrated up. The LATEST attempt supplies the verdict: that is what close-run.py, brief.py and verify-state.py resolve through, and what fleetview's finalVerdict() has always shown. `ever_rejected` - did ANY attempt REJECT - is DISPLAY ONLY, forever, so a rejection stays visible after it is fixed; it must never gate anything, or the fleet stops being able to loop. NO NODE MAY REWRITE AN EARLIER ATTEMPT: a second reviewer writes its own attempt_N and leaves the ones before it alone, top-level verdict included - relocating that verdict would destroy the history the board keeps and leave a key stamped written_by:reviewer with someone else as its real author. The KEY INDEX numbers an attempt, not the `attempt` field inside it; the field is display. An EMPTY attempt_N is not a re-review, it is a key nobody wrote - write the whole attempt or none of it. The walk STOPS AT THE FIRST GAP, so an attempt_3 with no attempt_2 is ignored and the earlier verdict stands: A GAP IS MALFORMED AND NO NODE MAY LEAVE ONE. Write the next UNUSED N and never skip - a mis-numbered re-review is not reported anywhere, it is simply unread, and a REJECT nobody reads is a REJECT nobody acts on. The cap is attempt_9, matching fleetview's `for (i = 2; i < 10; i++)` exactly so the two readers cannot disagree; attempt_10 and beyond is reported loudly and resolved by nobody.",
+      "written_by": "reviewer",
+      "verdict": "PASS",
+      "attempt": 1,
+      "summary": "PASS. In of-r1 at aeeb53c (after npm ci) I re-ran every done_when: full jest 13/13 suites, 278/278 tests; tsc exit 0; -t 'dispose during pair' 1 passed; diff vs 37537f1 touches only the two test files; author njcurtis3, no attribution. The rewritten test goes live over /link with KK (welcome received, sockets[0] ends /link, msg1Matches true), reaches pairStep confirm over /pair, disposes, then calls retryNow, foreground, network(false), network(true). My own mutants: removing the :402 disposed check fails it (2 vs 3 sockets), and so does removing :402 while adding the check to retryNow, so the callbacks are pinned too, not just retryNow. Removing the disposed check at :499, :224 or :461 on its own survives the full suite: :402 still blocks each one, so these are masked defence-in-depth layers that the plan scoped out. I checked the fixtures myself: the client static and ephemeral keys and the host static key match between ikpsk2 and kk, so the deviation's draw order (link eph, pair static, pair eph) is sound. Tree clean after every mutant.",
+      "findings": [
+        {
+          "file": "orchestra/mobile/src/__tests__/fake-host.ts",
+          "line": 261,
+          "severity": "low",
+          "origin": "",
+          "issue": "An unknown path is not rejected. Any URL that does not end in /pair gets the link vector, and a /pair URL with a query string would too. This is not an escaped bug: the prologue binds the path, so a wrong path makes msg1Matches false, and both new tests assert it. Throwing on an unknown suffix would make the fake fail loudly instead."
+        },
+        {
+          "file": "orchestra/mobile/src/link/controller.ts",
+          "line": 499,
+          "severity": "note",
+          "origin": "",
+          "issue": "Removing the disposed check at :499 (scheduleRetry), :224 (finish) or :461 (failed) on its own survives the whole suite (278/278). Each one is masked by the :402 guard or cannot be reached after dispose, because the epoch and conn checks return first. Only :402 is pinned, which matches the slice intent (\"the test pins it through those entry points\"). A double mutant (:402 plus :224) is caught."
+        },
+        {
+          "file": "orchestra/mobile/src/__tests__/controller.test.ts",
+          "line": 501,
+          "severity": "note",
+          "origin": "",
+          "issue": "twoPaths hard-codes the draw order: the 2nd random call is the static key. If the link reconnected before pair() it would make an extra draw, and pairing would fail with msg1Matches false. That would be a loud failure, not a silent one. The deviation (optional vectors/random setup options) stays inside the approved files and leaves the other setup() callers unchanged. The single-Vector caller in client.test.ts is untouched."
+        }
+      ],
+      "ran": [
+        "npm ci",
+        "npx jest --watchAll=false (13/13, 278/278)",
+        "npx tsc --noEmit (0)",
+        "jest -t 'dispose during pair' (1 passed)",
+        "jest -t 'own vector' (1 passed)",
+        "git diff --name-only 37537f1...aeeb53c (2 test files)",
+        "mutant :402 -> exit 1",
+        "mutant :402 removed + retryNow guarded -> fails",
+        "mutants :499/:224/:461 -> survive targeted and full suite",
+        "mutant :402+:224 -> exit 1",
+        "git status --porcelain -> 0 after each",
+        "fixture key equality ikpsk2 vs kk"
+      ]
+    },
+    "s3": {
+      "written_by": "reviewer",
+      "verdict": "PASS",
+      "attempt": 1,
+      "commit": "94a19ce",
+      "worktree": "C:/Users/natha/wt/of-r3",
+      "findings": [
+        {
+          "severity": "medium",
+          "origin": "architect",
+          "file": "mobile/src/link/client.ts:152",
+          "title": "The 404 match is an unanchored substring, and s3 makes it live on a device",
+          "detail": "closedBy tests reason.includes('404'). Before s3 this could not happen on Android, because onerror failed first with an empty errorText. Now it runs on the OkHttp exception text. In OkHttp 4.9.2 (the RN pin, gradle/libs.versions.toml:37), a refused connect is rewrapped as 'Failed to connect to /<ip>:<port>'. On /pair, a desktop on a configured port containing 404 (4040, 14040, 40400-40499, ...) that refuses the connection shows PairWindowClosed ('code already used') instead of Unreachable. Reproduced with a scratch test: reason 'Failed to connect to /1.2.3.4:4040' -> PairWindowClosed. IPv4 octets cannot form 404. The default port 47800 is unaffected and no key is touched, so this is a wrong message, not a G6 key breach. The F5 claim that refused text 'lacks 404' holds only for such ports. Suggested follow-up: match /but was '404\b/ or /\b404\b/.",
+          "blocking": false
+        },
+        {
+          "severity": "low",
+          "origin": "",
+          "file": "mobile/src/link/client.ts:236",
+          "title": "openMs < OkHttp connectTimeout is now load-bearing",
+          "detail": "A SocketTimeoutException from Android libcore is not rewrapped by OkHttp, and its text carries the local ephemeral port ('... from /x (port 40412) after 10000ms'). It never reaches closedBy only because openMs (5 s) fires before WebSocketModule's 10 s connectTimeout. Raising openMs to 10 s or more would let a random local port containing 404 misclassify. Worth a comment.",
+          "blocking": false
+        },
+        {
+          "severity": "low",
+          "origin": "",
+          "file": "mobile/src/__tests__/client.test.ts:183-195",
+          "title": "Two of the three new tests pass against main's client.ts too",
+          "detail": "'close after msg1' and 'RN-shaped drop after msg1' give old_exit=0 against main (re-run). They pin that the reason is ignored after msg1, which is what the plan asked for. Only the RN-404 test discriminates (old_exit=1). This is not a weakness of the slice; it is noted so nobody reads those two as regression proofs.",
+          "blocking": false
+        },
+        {
+          "severity": "low",
+          "origin": "",
+          "file": "mobile/src/__tests__/fake-host.ts:165-167",
+          "title": "The rnShaped openFail splits error and close across two microtasks",
+          "detail": "RN WebSocket.js:273-286 dispatches the error and the close synchronously, back to back. The fake fires close one microtask later via closeFromHost. This is benign because the client no longer acts on error. dropFromHost (fake-host.ts:186-193) is faithful.",
+          "blocking": false
+        },
+        {
+          "severity": "low",
+          "origin": "",
+          "file": "protocol/README.md:447",
+          "title": "Awkward wrap: '`/pair`' dangles at the end of the line before 'closed after the hello'",
+          "detail": "Cosmetic only. The bullet content is accurate: RN on iOS also routes didFail through websocketFailed, so 'RN reports every drop as error then close 1006' holds beyond Android.",
+          "blocking": false
+        }
+      ],
+      "checks": {
+        "reason_text": "Read RN 0.86.3 WebSocket.js:273-286 (bare Event('error'), then CloseEvent 1006 with reason=ev.message) and WebSocketModule.kt:170-172 (onFailure -> t.message), 330-338. OkHttp 4.9.2 RealWebSocket.checkUpgradeSuccess reads \"Expected HTTP 101 response but was '404 Not Found'\" (from OkHttp source knowledge; the jar is not on disk, but it matches the HTTP_404 test constant).",
+        "ios_web": "Scratch test: an iOS-like reason 'Received bad response code from server: 404.' -> PairWindowClosed; a web empty reason -> Unreachable; an RN 404 on /link -> Unreachable; an undefined error or close event -> Unreachable. These degrade safely.",
+        "g6": "Keys are deleted only on Revoked (decrypted) or Forget (controller.ts:197, 300, 489). No reason text can reach them. In opening, /link always maps to Unreachable, as before.",
+        "timer": "Scratch test: an error with no close in opening stays silent until 4999 ms, then Unreachable at 5000 ms. The arm/timer code is unchanged. The A1 rule that any throw in onmessage fails the connection is intact (client.ts:265-267).",
+        "f4": "copy.ts:32 matches the F4 recommended wording verbatim."
+      },
+      "ran": [
+        "npm ci in of-r3/mobile",
+        "npx jest --watchAll=false -> Test Suites 13/13, Tests 290/290",
+        "npx tsc --noEmit -> 0",
+        "3 new tests by -t -> 1 passed each",
+        "main client.ts swap: RN-404 old_exit=1 (the other two old_exit=0), git checkout, porcelain 0",
+        "grep connection dropped=1, after message 1=2",
+        "diff names = the 5 files; author and committer njcurtis3, no Claude trailers",
+        "scratch test file created and deleted, tree clean"
+      ],
+      "summary": "PASS. Re-ran every done_when in of-r3 at 94a19ce after npm ci: jest 290/290 across 13 suites, tsc 0, each new test passes alone, the main client.ts swap makes the RN-404 test fail (old_exit=1) and the tree is clean after restore, the greps hit, the diff is the five files, author njcurtis3, no attribution. I read RN WebSocket.js and WebSocketModule.kt myself. RN dispatches a bare error and then close 1006 with the OkHttp message, so moving the decision to onclose is correct and restores G6(1) on Android. Scratch tests confirm: an error with no close becomes Unreachable at exactly openMs; an absent or empty reason becomes Unreachable; reason text never reaches key deletion. The F4 copy is verbatim. Main note (medium, not blocking): the 404 check is an unanchored substring that s3 now exposes to real exception text, so a refused /pair to a configured port such as 4040 shows PairWindowClosed (reproduced). Default 47800 is unaffected; anchor the match on \"but was '404\" in a follow-up.",
+      "followup_1": {
+        "written_by": "reviewer",
+        "verdict": "PASS",
+        "commit": "97dfcaf",
+        "parent": "f10486e",
+        "worktree": "C:/Users/natha/wt/of-r3f",
+        "findings": [
+          {
+            "severity": "low",
+            "origin": "builder",
+            "file": "mobile/src/link/client.ts:236-237",
+            "issue": "The new openMs comment justifies the 5 s < 10 s connectTimeout ordering by saying a SocketTimeoutException's ephemeral port 'could contain 404 and misread as a closed window in closedBy'. Under the anchored /\bwas '404\b/ in the same commit that can no longer happen: 'failed to connect to /10.0.4.4 (port 4040) from /10.0.4.40 (port 40404) after 10000ms' tests false. The ordering facts are right (RN WebSocketModule.kt:89 connectTimeout(10, SECONDS); openMs 5_000), but the stated hazard is stale. Reword to say the regex already guards it, or drop the clause. Not a behaviour bug."
+          },
+          {
+            "severity": "low",
+            "origin": "",
+            "file": "protocol/README.md:447",
+            "issue": "The wrap is fixed and the meaning is unchanged: '`/pair`' no longer dangles after the 404-rule sentence and now starts its own clause. The new line is 102 characters, though, and the lines around it are at most 93, so the paragraph is still ragged. Cosmetic."
+          },
+          {
+            "severity": "info",
+            "origin": "",
+            "file": "mobile/src/link/client.ts:152",
+            "issue": "Residual surface: OkHttp 4.9.2 RealWebSocket's other 'but was' texts are the Connection, Upgrade and Sec-WebSocket-Accept header checks. They are reached only after a 101, and their quoted values come from the server. A host could forge one, e.g. a reason phrase or header value starting \"was '404\". The only effect is choosing PairWindowClosed over Unreachable on /pair, and the host is the peer being paired with. Acceptable."
+          }
+        ],
+        "checks": {
+          "real_404_matches": "yes: OkHttp 4.9.2 (react-native gradle/libs.versions.toml pins okhttp 4.9.2) prints \"Expected HTTP 101 response but was '404 Not Found'\", and with an empty message \"... but was '404 '\". Both match. WebSocketModule.kt:171 forwards t.message as the close reason.",
+          "stay_unreachable": "verified false: 'Failed to connect to /192.168.1.5:4040'; the SocketTimeout text with ports 4040/40404; \"was '4040 X'\"; \"was 404\" (no quote); '200 OK'; ''. A host name cannot reach the reason: offer.ts:33 accepts only IPv4:port.",
+          "rnShaped_fidelity": "faithful: WebSocket.js:273-286 (RN 0.86.3) sets CLOSED, dispatches an error with no message, then close(1006, ev.message), all synchronously. The fake now does error({}), closed=true, then onclose(1006, reason) in one later() tick.",
+          "commit_scope": "4 files, all s3 (client.ts, client.test.ts, fake-host.ts, protocol/README.md hunk). No protocol/fixtures. No CR in the README hunk. Worktree status clean.",
+          "author": "njcurtis3 <nathanjcurtis3@gmail.com>, no trailers or Claude attribution",
+          "controller_fixture": "controller.test.ts:459 \"was '404 Not Found'\" matches the regex, so the deviation from /but was '404\b/ is justified and equally tight in practice."
+        },
+        "ran": [
+          "git diff f10486e 97dfcaf",
+          "node regex probe over 9 strings",
+          "npx tsc --noEmit (exit 0)",
+          "npx jest --watchAll=false client+controller: 77/77",
+          "npx jest --watchAll=false full: 13 suites, 292/292"
+        ],
+        "summary": "PASS. The anchored /\bwas '404\b/ matches OkHttp 4.9.2's real upgrade failure (pinned by RN 0.86.3; WebSocketModule forwards t.message), including the empty-message form. A node probe re-derived that refused-connect and SocketTimeout texts with 4040/40404 ports stay Unreachable. Host names cannot enter the reason because offer.ts takes only IPv4:port. The rnShaped fake now mirrors WebSocket.js:273-286, error then close 1006 in one tick. The new port test would fail under the old includes('404'). The commit holds only the 4 s3 files, with no fixtures or CR noise, authored by njcurtis3 with no attribution. tsc is clean and jest passes 292/292 (re-run by me). Notes: the openMs comment's '404 misread' rationale is stale now that the regex is anchored, and the README fix leaves a 102-character line. Neither is a blocker."
+      }
+    },
+    "s4": {
+      "written_by": "reviewer",
+      "verdict": "PASS",
+      "attempt": 1,
+      "commit": "f10486e",
+      "parent": "94a19ce",
+      "worktree": "C:/Users/natha/wt/of-r4",
+      "findings": [
+        {
+          "severity": "low",
+          "origin": "",
+          "file": "core/src/link/noise.rs:166-167,244-245",
+          "title": "Builder-to-state tail is still duplicated",
+          "detail": "configured() covers params, local key, prologue, remote, psk(2). The two closing lines (build_initiator/build_responder pick and Init map) are still copied in build() and with_ephemeral(). A change to build()'s tail alone would not be seen by vectors_match_committed_files. vectors_open_on_the_production_host_path still covers the production responder tail. This is within plan, which only asked to extract the configured Builder."
+        },
+        {
+          "severity": "low",
+          "origin": "architect",
+          "file": "done_when[0]",
+          "title": "done_when says 4 test-result lines, the run prints 7",
+          "detail": "cargo test --workspace prints 7 '^test result:' lines: 44, 0 (doc), 255, 30, 4, 0, 0. All are ok with 0 failed, and the non-zero counts are 44/255/30/4 = 333 as intended. The '4 lines' wording is loose, not a failure."
+        },
+        {
+          "severity": "note",
+          "origin": "",
+          "file": "protocol/fixtures/noise/*.json (working tree, of-r4)",
+          "title": "Line-ending noise in the working tree after the regen",
+          "detail": "ORCHESTRA_WRITE_VECTORS=1 rewrote the three files with LF line endings, and git status shows them as M. git diff --exit-code 37537f1 -- protocol/fixtures exits 0, so the content is identical. I did not restore them, as instructed."
+        }
+      ],
+      "ran": [
+        "git diff 94a19ce f10486e (read line by line against 94a19ce:core/src/link/noise.rs build())",
+        "cargo test --workspace --locked -> ok: 44, 0, 255, 30, 4, 0, 0; 0 failed",
+        "cargo test -p orchestra-core --locked --lib link::vectors -> 2 passed",
+        "cargo check -p orchestra-core --tests --locked -> 0; cargo check -p orchestra-core --locked (non-test) -> Finished",
+        "ORCHESTRA_WRITE_VECTORS=1 vectors -> 2 passed; git diff --exit-code 37537f1 (=main) -- protocol/fixtures -> 0",
+        "greps: Builder::new(params(mode) =1; fixed_ephemeral at 243 only, after #[cfg(test)] 231; 'copy of `build()`' =0; '253 core' =0, '255 core' =1",
+        "diff --name-only = 3 files; author/committer njcurtis3, 0 Claude/Co-Authored lines"
+      ],
+      "summary": "PASS. I re-derived production build() from 94a19ce. It makes the same calls in the same order: Builder::new(params(mode)), local_private_key, prologue, then optional remote_public_key and psk(2), then initiator/responder, each failure mapped to NoiseError::Init. Now the first part lives in a private configured(). configured() takes no ephemeral or test input. fixed_ephemeral_key_for_testing_only appears once, at noise.rs:243, inside the #[cfg(test)] impl, and the non-test cargo check builds. The public signatures are unchanged. Both callers of with_ephemeral in vectors.rs now go through configured(). I re-ran every done_when item: workspace tests pass 44/255/30/4 (333) with 0 failed, and the vectors pass. A regen with ORCHESTRA_WRITE_VECTORS=1 matches 37537f1 byte for byte; it left LF-only working-tree noise, which I did not restore. I measured the CLAUDE.md count at 255 core. The two README rewordings are accurate, and no other README line mentions the copy. The diff touches only the 3 files, and the author is njcurtis3 with no attribution. Notes: the two-line build tail is still duplicated, and done_when's '4 lines' is really 7 (doc-test zeros)."
+    },
+    "s2": {
+      "verdict": "PASS",
+      "attempt": 1,
+      "written_by": "reviewer",
+      "summary": "PASS with notes. Re-ran in of-r2 at 597d46d: full jest 13/13 suites, 287/287 tests; tsc 0; each of the 9 new tests alone 1 passed; hosts[0] count 0; provider/app/constants diff vs 37537f1 empty; README greps 1/1; mutation at :420 gave mutant_exit=1, restored run passes, tree clean; diff is exactly the 5 files; author njcurtis3, no Claude trailer. Re-derived F1 (reduce lets ties and NaN/greater go to the later entry; NaN/Infinity cannot be stored since JSON writes null and isRecord requires a number), F2 (lookup before save, restore through the serialized saveHost, no deadlock, finish is safe after dispose) and F3 (lookarounds reject 64-hex secrets/keys, Set dedupes, rewrite only of ids, forget deletes only the named record). Main note: the real listHosts never throws, so the 'lookup threw -> leave it' branch is dead in production; a transient keystore read failure during the lookup gives previous=null and a cancel then forgets the re-paired host, same as before this slice. The 'beside a stored one' ordering hides no user path: the cancel branch does not read this.record.",
+      "findings": [
+        {
+          "severity": "medium",
+          "origin": "architect",
+          "file": "orchestra/mobile/src/link/controller.ts:276 with store.ts:112-119",
+          "issue": "The lookup's throw branch (previous=undefined, leave new record) is unreachable with the real store: listHosts reads the index and records non-strict and turns any SecureStore throw into absent. Input: re-pair stored host X, getItemAsync throws transiently during the lookup, Cancel lands during the save -> previous=null -> forgetHost(X) deletes X's record and index entry. Not a regression (pre-slice always forgot) and the plan mandated listHosts with HostStore unchanged, so not a blocker; the F2 third branch only works against a fake store. A fix would need a strict lookup (interface change)."
+        },
+        {
+          "severity": "low",
+          "origin": "",
+          "file": "orchestra/mobile/src/link/controller.ts:274-280",
+          "issue": "listHosts is not run through the store queue, so a forgetHost already queued for the same id (for example the void forget at :489 after revoked) can still be pending when the lookup reads the old record; a Cancel after the save then restores the record that was just forgotten. It heals itself (the next connect is revoked again and deleted) and needs a re-pair within milliseconds of the forget."
+        },
+        {
+          "severity": "low",
+          "origin": "",
+          "file": "orchestra/mobile/src/link/controller.ts:274-288",
+          "issue": "There is now an await (the lookup) between welcome and saveHost with no epoch check after it, so a dispose during the lookup still saves the new record and keeps it. The same was already true for a dispose during the save, and the desktop has confirmed the key, so the behaviour is consistent with what A1 shipped."
+        },
+        {
+          "severity": "low",
+          "origin": "",
+          "file": "orchestra/mobile/src/__tests__/controller.test.ts:640-653",
+          "issue": "'a failed restore deletes nothing' checks that forgotten is [] and that saveHost was called twice, but not the state afterwards: the store keeps the new record while memory keeps the old one until the next start, as F2 accepts. No test covers a listHosts that throws, which the plan's 9-test list did not ask for."
+        },
+        {
+          "severity": "note",
+          "origin": "",
+          "file": "orchestra/mobile/src/__tests__/controller.test.ts:620",
+          "issue": "The deviation (the stored host is added after start) hides no user path. The cancel branch never reads this.record, so with a current host A the only difference is that finish() resumes A. The ProtocolError comes from the fake host, which serves vectors only for the kk host id; it is not something a user can reach."
+        },
+        {
+          "severity": "note",
+          "origin": "",
+          "file": "orchestra/mobile/src/link/store.ts:60",
+          "issue": "The salvage can capture a 32-hex run that is not a host id, for example one with an uppercase or non-hex neighbour. Such an id has no record, so listHosts skips it and it stays in the index as a harmless entry. No secret can be captured: the client secret and the host key are 64 hex, which the lookarounds reject."
+        }
+      ],
+      "ran": [
+        "npx jest --watchAll=false -> 13/13, 287/287",
+        "npx tsc --noEmit -> 0",
+        "9x npx jest -t NAME -> each 1 passed",
+        "grep -c hosts[0] -> 0",
+        "git diff 37537f1 597d46d -- provider/app/constants | wc -l -> 0",
+        "README greps -> 1/1",
+        "mutation :420 -> mutant_exit=1, restored pass, porcelain 0",
+        "git diff --name-only aeeb53c 597d46d -> 5 files",
+        "git log author njcurtis3, grep -ic claude -> 0"
+      ]
+    }
+  },
+  "integrator": {
+    "written_by": "the node that wrote this key - here, always the string integrator",
+    "merged": [],
+    "conflicts": [],
+    "verification": "what command proved it works, and its output"
+  },
+  "ops": {
+    "written_by": "the node that wrote this key - here, always the string ops",
+    "gated": true,
+    "actions": []
+  },
+  "log": [
+    "orchestrator: opened. Items are the A1 review follow-ups in orchestra/ROADMAP.md (A1 section) and run 2026-10-18-orchestra-a1-pair-and-see reviews: medium - two stored hosts, restart loads the older one; lows - dispose regression test does not pin attempt() guard; cancel during re-pair of same host leaves nothing stored; corrupt host index read as empty; network drop after msg1 on /pair shows code-does-not-match with no /pair test; fixed_ephemeral replay runs msg2/transport through a cfg(test) copy of build(); app.json expo.icon vs A0 note; release-build cleartext waits for R2 (not actionable). orchestra main 37537f1 pushed.",
+    "orchestrator: HUMAN GATE passed 2026-10-20. Owner said 'approve' to F1-F9 as recommended (F3 salvage, F4 wording, F5 in s3, F6(a) shared private builder, F8 push only a1-followups max 4). Worktree C:/Users/natha/wt/oa1f on branch a1-followups from main 37537f1. Builders one per slice in order; reviewers in detached per-commit worktrees.",
+    "orchestrator: CLOSED 2026-10-20. s1-s4 PASS on attempt 1 (s3 + followup_1 anchoring the 404 match to OkHttp's upgrade text, PASS). Two reviewers (s2, s3 followup) stalled on the stream watchdog with nothing written; fresh reviewers re-ran them. CI run 39480602222 green 6/6 on 97dfcaf (push 1 of 4). Merged a1-followups --no-ff into orchestra main as e6f56ab (not pushed). close-run.py exit 0. Remaining: medium - listHosts never throws, so the F2 'lookup threw, delete nothing' branch is unreachable and a transient keystore read failure plus cancel during re-pair still deletes the old host (pre-existing); lows - :499/:224/:461 dispose checks are masked by :402; openMs comment reason is stale; one README line long. ROADMAP A0 icon note corrected by the orchestrator. Owner device checks: a used/closed code shows pair_window_closed; two desktops, restart loads the latest."
+  ]
+}
