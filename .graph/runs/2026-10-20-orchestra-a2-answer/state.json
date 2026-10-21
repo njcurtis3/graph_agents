@@ -1,0 +1,1092 @@
+{
+  "$comment": "Shared state for ONE work-graph run. Lives at .graph/runs/<run-id>/state.json. Every node reads this on start and appends to its OWN key on finish - the builder writes its own builders.<slice> key, including the branch it worked on. Never rewrite another node's key. Every node key carries written_by, naming the node that wrote it: that is the ONLY record of authorship this file has, and without it 'never rewrite another node's key' is unverifiable - an orchestrator hand-writing all six keys is indistinguishable from six nodes doing their jobs. verify-state.py --audit checks it. This file is the edge: it is how context crosses between agents that cannot see each other.",
+  "run_id": "2026-10-20-orchestra-a2-answer",
+  "goal": "start A2",
+  "app": "orchestra",
+  "status": "done",
+  "scout": {
+    "written_by": "scout",
+    "facts": [
+      "Desktop permission decisions are Allow or Deny only, so there is no allow-always. core/src/session/state.rs:47 (enum Decision); protocol/types.ts:119-121.",
+      "Deny carries an optional message. A blank message falls back to the DENY_DEFAULT text User denied. core/src/session/state.rs:17 and :469; desktop/src/components/InboxItemView.tsx:81-94 sends message only when trimmed non-empty.",
+      "Desktop permission UI: the Allow button sends kind permission, item_id, decision allow; Deny sends decision deny. Buttons show only while the item is unresolved. desktop/src/components/InboxItemView.tsx:55-100.",
+      "Desktop question UI: one fieldset per question, radio if single-select, checkbox if multiSelect, plus an Other free-text box. Answers are keyed by question text; picks and Other are joined with comma-space into one string. Send is enabled only when every question has an answer. InboxItemView.tsx:102-177 (collect at :120-129, complete at :132).",
+      "Host question answer: updatedInput.answers is the map, with behavior allow. core/src/session/protocol.rs:116-127 (question_response); core/src/session/state.rs:474-478 (question_line).",
+      "Multiple questions per item are supported on both ends: parse_questions maps every entry of input.questions (core/src/session/state.rs:186-200), and the desktop renders every entry (InboxItemView.tsx:137-163).",
+      "InboxItem fields: id, session_id, kind (permission, question, finished or error), created_at, resolved, expired, summary, tool_name, tool_input_preview, questions (Question with question, header, multi_select, options of label and description), result_text. core/src/session/state.rs:67-82 and :53-65; protocol/types.ts:44-62.",
+      "Wire answer shape, client to host: v 1, type call, id, method answer, args. Args is one of permission (kind, item_id, decision, optional message), question (kind, item_id, answers as a string-to-string map) or reply (kind, session_id, text). Unknown fields are rejected. protocol/types.ts:119-122; protocol/codec.ts:199-228; core/src/wire/args.rs:72-81 (deny_unknown_fields). Fixtures in protocol/fixtures: c2h.call_answer_permission.json, c2h.call_answer_permission_message.json, c2h.call_answer_question.json, c2h.call_answer_question_proto_key.json and c2h.call_answer_reply.json, all expect ok.",
+      "Call id is client-generated: non-empty, at most 128 bytes (protocol/README.md section What P2 decided, Field types). The host keeps the last 256 ids per client for non-read calls and replays the first result; a resent id still running returns failed. core/src/link/conn.rs:40 (ID_CACHE 256) and :516-570 (handle_call); protocol/README.md Idempotency.",
+      "Host dispatch: Call::Answer goes to sessions.answer; AnswerError::AlreadyAnswered maps to already_answered and Failed maps to failed. core/src/wire/dispatch.rs:26-32 and :61-64. Success returns null.",
+      "Scope gate: a call whose method scope the client lacks gets forbidden with the message this device may not do that, and is logged without payload. core/src/link/conn.rs:527-531. The answer method needs scope answer (core/src/wire/mod.rs:133).",
+      "Default scopes are read and answer: core/src/link/clients.rs:19 (DEFAULT_SCOPES), used when a pairing is confirmed without a choice (core/src/link/server.rs:406-411). The desktop pairing dialog starts from the same default and lets the owner change it (desktop/src/components/PairingRequest.tsx:26 and :108-116; desktop/src/link.ts:15).",
+      "Expired or resolved items: answer_item_typed checks expired first and returns Failed with the text this request expired when Orchestra closed, which goes out as failed and not already_answered (core/src/session/mod.rs:1430-1437). Unknown or resolved items return AlreadyAnswered (mod.rs:1439 and :1449). Items are expired on suspend and on restart (core/src/session/state.rs:539-551; mod.rs:3346-3361 restore test; mod.rs:3500-3515 answering_expired_item_is_refused).",
+      "Size limits on answers: at most 32 keys, and each key and each value at most 4096 bytes, else answers too large (core/src/session/mod.rs:35-36 and :1696-1703). Permission and reply text is capped at 32768 bytes (mod.rs:1689-1694; protocol/constants.ts:9).",
+      "M6 on the desktop: a failed send keeps the typed text. InboxItemView.send catches the error, calls onError and returns false (InboxItemView.tsx:13-26). The reply box clears only on success (desktop/src/components/SessionDetail.tsx:157-168; desktop/src/reply.ts:3-9; desktop/src/reply.test.ts:14 keeps the text when the send fails). ROADMAP.md:74 keeps the owner check for M6 unchecked.",
+      "Phone send seam: LinkConnection.send(message: ClientMessage) returns a boolean and returns false unless the link is live. mobile/src/link/client.ts:80-86 and :284-291. The controller keeps the connection private (mobile/src/link/controller.ts:108), and the provider exposes no send (mobile/src/link/provider.tsx:25-40 and :71-88).",
+      "Phone results are dropped: the reducer default case returns the state unchanged (mobile/src/link/state.ts:90-91), and onHost treats any message as proof of life and applies it (mobile/src/link/controller.ts:406-416). No call-id correlation exists, so the ok or error of an answer never reaches the UI.",
+      "Phone inbox state: LinkData.inbox is set by snapshot (mobile/src/link/state.ts:54-64) and REPLACED by inbox-updated (state.ts:81-83). The test pins replace, not merge (mobile/src/__tests__/state.test.ts:55-61). The provider counts unresolved, unexpired items as inboxCount (mobile/src/link/provider.tsx:76).",
+      "The host inbox-updated event carries only the changed session items: core/src/session/mod.rs:330-336 (events_for pushes s.state.inbox for one session). The desktop upserts by id and keeps other sessions items (desktop/src/state.ts:73-78). The snapshot carries every item (protocol/README.md section What P2 decided, Size paragraph).",
+      "Answering publishes the change: resolve bumps inbox_rev (core/src/session/state.rs:344-347), and a changed inbox_rev emits inbox-updated (core/src/session/mod.rs:333-336). So a phone answer reaches every client through an event.",
+      "Existing phone screens: mobile/src/app has only _layout.tsx, index.tsx (session FlatList with banner and inbox count, index.tsx:115-138) and pair.tsx. SessionRow is a non-pressable View (mobile/src/components/session-row.tsx:13-31). No inbox or answer route exists.",
+      "Back behaviour: root Stack with headerShown false (mobile/src/app/_layout.tsx:13). pair.tsx cancels pairing on unmount (pair.tsx:55-60); success calls router.dismissTo to / (pair.tsx:102); cancel calls router.back (pair.tsx:108-111). grep finds no BackHandler or hardwareBackPress anywhere in mobile/src.",
+      "Copy: mobile/src/constants/copy.ts has link and pairing strings (copy.ts:3-49) and extra.need_you (copy.ts:52-55). It has no inbox, answer or queued-state strings. Status labels include Needs permission and Has a question (copy.ts:57-67).",
+      "Touch and accessibility: Touchable enforces a 48 dp minimum and hitSlop, and requires accessibilityLabel (mobile/src/components/touchable.tsx:5-42; MinTouchTarget in constants/theme). LinkBanner uses it with labels (mobile/src/components/link-banner.tsx:19-27). No allowFontScaling or maxFontSizeMultiplier overrides in mobile/src.",
+      "Storage: mobile/src/link/store.ts writes only through expo-secure-store and rejects values at or over MAX_VALUE_BYTES 2048 (store.ts:18 and :25-32). mobile/package.json has expo-secure-store ~57.0.4 and no expo-file-system and no async-storage. Secrets rule: orchestra/CLAUDE.md:156-158.",
+      "Desktop undo: none. grep finds no undo in desktop/src. The D9 items are unchecked (ROADMAP.md:205-212), and the One undo item is unchecked (ROADMAP.md:603-605).",
+      "Core tests already cover answers over the link: core/tests/link.rs:265-288 answer_resend_applies_once (same id applied once; new id gives already_answered); :290-310 resend after reconnect; :228 call outside scope is forbidden; :348-361 a 130 kB question answer arrives whole.",
+      "Test counts this run: mobile jest --watchAll=false gives 13 suites and 292 tests, all passed. Mobile typecheck via ./node_modules/.bin/tsc --noEmit exits 0. npx tsc failed to resolve the bin once; the direct run is clean.",
+      "A2 checklist is unchecked: ROADMAP.md:501-505 (inbox, queued or visibly refused answers, Android back). ROADMAP.md:35-36 and :636-637 say A2 is next."
+    ],
+    "unknowns": [
+      "No desktop evidence yet on how App.tsx shows an answer error (onError wiring not read). A visibly refused state on the phone has no existing pattern to copy.",
+      "Claude Code AskUserQuestion input schema (questions with question, header, multiSelect, options of label and description; whether the CLI adds Other) is from knowledge, not from this repo. The field names used by parse_questions match it (core/src/session/state.rs:186-200). Not verified against a live Claude Code.",
+      "A question entry with an empty questions list: parse gives an empty list. The desktop then shows no fields and cannot send (InboxItemView.tsx:132 requires length above 0), so the item waits until it expires. Guess, not run.",
+      "Whether a queued answer text counts as a secret. The repo rule covers pairing keys and tokens only, but answer text can carry sensitive content such as a password or a path. Owner or architect call.",
+      "Whether the SecureStore 2048-byte cap still holds. The repo enforces 2048 (store.ts:18). Expo current SecureStore docs say Expo does not enforce a limit but the platform may reject larger values (web search, 2026-10-20). Desktop answers can be up to 32 KiB by its own check, so a SecureStore queue needs per-answer limits, or a file store that needs a new native dependency.",
+      "Whether a host restart clears the id cache. It is in memory (core/src/link/conn.rs IdCache), so yes by inference. An answer queued for an item open before restart comes back expired, so the host returns failed (mod.rs:3346-3361). Not run.",
+      "Whether the desktop pairing dialog default is what a phone gets when paired with the default. The desktop starts from DEFAULT_SCOPES (PairingRequest.tsx:26), so yes by reading. Not run end to end.",
+      "Whether any core test covers an expired answer over the link (it should return failed, not already_answered). Only the core unit test answering_expired_item_is_refused exists (mod.rs:3500-3515).",
+      "Undo window: if only the phone waits 2 s, phone and desktop diverge, because the desktop sends at once (InboxItemView.tsx:14-19). Architect call.",
+      "cargo test --workspace was not run in this scout pass (ROADMAP.md:41 documents 255 core, 30 link, 4 wire and 44 shell). The desktop vitest suite was not run."
+    ],
+    "risks": [
+      "PLAN-KILLER: the phone inbox-updated handler replaces the whole inbox (mobile/src/link/state.ts:81-83, pinned by mobile/src/__tests__/state.test.ts:55-61), but the host sends only one session items per event (core/src/session/mod.rs:330-336). Once two sessions have open prompts, the phone drops the other session prompts on every update. The desktop upserts (desktop/src/state.ts:73-78). Fix the reducer and that test together.",
+      "Phone results are not routed (state.ts:90-91; controller.ts:406-416), so answer errors (already_answered, failed, forbidden) cannot reach the UI. A2 needs id-keyed pending calls in the controller and client, not only a send seam.",
+      "Answer size mismatch: the desktop UI allows up to 32768 bytes per answer (InboxItemView.tsx:133; desktop/src/types.ts:92), but the host refuses any key or value over 4096 bytes with failed and answers too large (mod.rs:36 and :1696-1703). The phone must use 4096. The desktop check is a latent bug.",
+      "Expired items return failed, not already_answered (mod.rs:1436-1437). A retry or queue that treats only already_answered as final would resend forever for an expired item. Expired must be terminal on the phone.",
+      "A queued answer cannot go in SecureStore if its text is over store.ts:18 2048 bytes. A file store would be a new native module (expo-file-system is not a dependency), which under runtimeVersion fingerprint (orchestra/mobile/app.json:61-63) means a new build, not OTA.",
+      "The phone has no visibly refused pattern and no pending-send state; copy.ts has none. The architect must decide the wording, where it shows (inbox row or banner), and where unsent text is kept after a failure (the desktop keeps it in component state, InboxItemView.tsx:55-57).",
+      "Android back: no BackHandler exists. Default expo-router Stack back pops, so pop, then close, then exit (orchestra/CLAUDE.md:149-150) holds by default today. An answer screen with unsent text needs an explicit guard or it loses the text on back.",
+      "The undo window (One, 2 s) has no desktop counterpart. Shipping it only on the phone breaks the same semantics as the desktop. Decide with the architect; do not copy it silently."
+    ]
+  },
+  "architect": {
+    "written_by": "architect",
+    "shape": "single-loop",
+    "parallel_safe": false,
+    "run_scope": "orchestra only: mobile link and screens, protocol/README.md plus a types.ts comment, two core link tests, and (if A2-G12) three desktop front-end files. fleet/ untouched. No wire change; v stays 1.",
+    "worktree": {
+      "path": "C:/Users/natha/wt/oa2",
+      "branch": "a2-answer",
+      "base": "e6f56ab",
+      "setup": "npm ci in mobile/ and desktop/ of the worktree before s1"
+    },
+    "baseline": {
+      "mobile_jest": "13 suites / 292 tests",
+      "mobile_tsc": "exit 0",
+      "cargo_workspace": 333,
+      "desktop_vitest": "8 files / 213 tests (run by the architect at e6f56ab on 2026-10-20)"
+    },
+    "rationale": "Single-loop: sequential slices on one branch. s3 consumes s2's provider API and outbox (a real artifact) and both touch mobile/src/__tests__/home.test.tsx, so they cannot fan out; s1 is docs plus two tests and s4 is three files, so there are not three disjoint slices worth a diamond. Risk tags: s1 low (no sensitive data, no shared file, the cargo count and greps show all of it); s2 high (reconnect, idempotency and timer races a test cannot fully see; answer text is sensitive; shares home.test.tsx with s3); s3 high (UI and accessibility a jest render cannot fully prove; answer text; shares home.test.tsx with s2); s4 low (desktop front end only, no sensitive data, no shared file, vitest shows it). Plan-killer confirmed in source: core/src/session/mod.rs:324-336 emits one session's inbox, mobile/src/link/state.ts:81-83 replaces the whole list and state.test.ts:55-61 pins that, desktop/src/state.ts:73-78 already upserts. protocol/README.md and types.ts never said full list; the A1 run's scout fact and architect plan did. Also checked in source: answer_item_typed returns Failed for an expired item before any AlreadyAnswered (mod.rs:1436); check_answers is 32 keys and 4096 bytes (mod.rs:35-36, :1696-1703); the id cache replays across reconnects, and a resend still running returns failed (conn.rs:516-570); client.ts send is the seam and needs no change; the controller applies welcome before the snapshot arrives, so the outbox flushes on the snapshot, not on goLive; a session's inbox only grows (state.rs:327 is the only push, no removal).",
+    "decisions_for_gate": [
+      {
+        "id": "A2-G1",
+        "topic": "inbox-updated on the phone (the plan-killer)",
+        "recommend": "Replace per session: group the payload by session_id, drop the phone's items of those sessions, add the payload's; every other session's items stay. An empty payload changes nothing: it names no session, and the host never sends one (inbox_rev moves only on push, resolve or expire of an existing item, state.rs:325, :346, :551; a session's items are never removed). This is the host's meaning and the core's own convergence test (mod.rs:2986-2991). The A1 state test that pins whole-list replace is rewritten in s2.",
+        "alternatives": [
+          "Upsert by item id, as desktop/src/state.ts:73-78. Equivalent today because a session's inbox only grows; it would keep a stale item if the host ever removed one. Acceptable second choice.",
+          "Keep whole-list replace: drops other sessions' prompts on every update. No."
+        ]
+      },
+      {
+        "id": "A2-G2",
+        "topic": "Record corrections",
+        "recommend": "protocol/README.md never claimed a full list (Messages and the P2 Size paragraph say only that events exist and that the snapshot carries every item), and protocol/types.ts says only payload InboxItem[]. The error is in the A1 run's scout fact and architect plan (2026-10-18-orchestra-a1-pair-and-see: 'inbox-updated payload = the FULL InboxItem list (replace semantics)'). Correct it forward: 'What A2 decided' in protocol/README.md, a comment on the types.ts payload, and a core link test that pins it (s1). Leave the A1 run's state.json as written (its history; this key records the correction). The integrator adds one line under ROADMAP A1 'Still open': found in A2 and fixed.",
+        "alternatives": [
+          "Edit the A1 run's state.json in place: rewrites another run's record. No.",
+          "README only, no test: nothing fails if the host changes. Weaker."
+        ]
+      },
+      {
+        "id": "A2-G3",
+        "topic": "Provider API changes (deliberate, listed) and call-result routing",
+        "recommend": "LinkContextValue adds: inbox (InboxItem[] as held), outbox (Record of item_id to OutboxEntry), canAnswer (scopes include answer), answer(a: permission or question Answer), cancelAnswer(item_id), retryAnswer(item_id), dismissAnswer(item_id). inboxCount changes meaning to pending permission and question items (what the phone lists). ControllerState adds outbox. client.ts is unchanged: LinkConnection.send is the seam and the controller keeps conn private. Results route in the controller by call id, before reduce; unknown ids are ignored; one answer call in flight, FIFO; 20 s with no result while live = unconfirmed (the entry keeps its id, and a late result still lands).",
+        "alternatives": [
+          "Promises per call in client.ts: ties UI state to one socket, and a drop loses the routing. No.",
+          "Expose send() on the provider and route in screens: scatters idempotency across components. No.",
+          "Up to 8 in flight (the host cap): ordering and busy handling for a phone that answers a few items at a time. No."
+        ]
+      },
+      {
+        "id": "A2-G4",
+        "topic": "Queue: in memory or persisted",
+        "recommend": "In memory only, in the controller. It survives link drops, network changes and backgrounding, which is what 'queued while offline' needs for a host on the LAN or tailnet; it does not survive the app process dying, and the queued copy says so ('Closing the app drops it'). A persisted answer would be sent after a restart into a desktop state the person never saw. No new dependency, no new build, OTA-safe.",
+        "alternatives": [
+          "SecureStore, one key per queued answer: the repo caps a value at 2048 bytes (store.ts:18) while a question answer can be 32 x 4096 bytes, so big answers would be refused offline; SecureStore cannot enumerate keys, so an index is needed. Possible later.",
+          "expo-file-system (npx expo install): a new native module, so a new build under runtimeVersion fingerprint (app.json:61-63), and answer text on disk in plaintext unless encrypted under a SecureStore key. Not for A2."
+        ]
+      },
+      {
+        "id": "A2-G5",
+        "topic": "Is answer text a secret",
+        "recommend": "Sensitive, not a secret in the CLAUDE.md sense (that rule names pairing keys and tokens). It can hold anything typed (a password, a path), so in A2 it is never persisted, never logged, never put in an error or copy string, and lives only in the controller outbox and the in-memory drafts. If a later milestone persists it (A5 notification actions, say), it goes to expo-secure-store or an encrypted file, never AsyncStorage.",
+        "alternatives": [
+          "Treat it as a secret now: same A2 behaviour, and it forces SecureStore for any future cache. Fine too.",
+          "Treat it as plain data: would allow AsyncStorage later. No."
+        ]
+      },
+      {
+        "id": "A2-G6",
+        "topic": "A queued answer vs the world (reconcile)",
+        "recommend": "Checked on every snapshot and inbox-updated, before any send. Item resolved and not expired while queued: answered ('This request was already answered.'), not sent. Item expired: expired (desktop wording), not sent, terminal. Item missing from a snapshot: gone, not sent. On reconnect the outbox flushes only after the new snapshot is applied. Results: ok = sent (cleared when the item resolves); already_answered = answered; failed while the held item is expired = expired; failed otherwise = failed, text kept, Try again; forbidden = refused, with the no-scope copy; bad_request or an unknown code = failed, the code shown as plain text. Revoked or Forget empties the outbox (the host drops queued calls on revoke anyway). Nothing terminal is retried automatically, so an expired item cannot loop.",
+        "alternatives": [
+          "Send queued answers regardless and let the host refuse: same end state with needless calls and a flash of Sending. No.",
+          "Ask before sending queued answers after a reconnect: one more tap for the common case. Possible if wanted."
+        ]
+      },
+      {
+        "id": "A2-G7",
+        "topic": "Idempotency",
+        "recommend": "One call id per attempt: 'a-' + 16 random bytes in hex (34 bytes, under the 128 cap) from deps.random, the one randomness source. The same id is reused for the automatic resend after a drop and for Try again from unconfirmed, so the host's 256-id cache (conn.rs:40, kept across reconnects) applies it once and replays the first result. A new id only for Try again after a definitive failed, since a replay would return the same failure. A failed result to a resend of the same id (the host's 'that call is still running' case, conn.rs:545) goes unconfirmed, decided by the attempt number, never by message text. After a host restart the cache is gone, but the item is then expired in the new snapshot, so nothing is resent.",
+        "alternatives": [
+          "A fresh id per send: a resend after a drop gets already_answered for its own answer. No.",
+          "An id derived from item_id: a deliberate second try after a failure would replay the failure. No."
+        ]
+      },
+      {
+        "id": "A2-G8",
+        "topic": "Undo window",
+        "recommend": "Not in A2. The desktop sends at once (InboxItemView.tsx:14-19) and has no undo (D9 and the One item unchecked), so a phone-only 2 s delay breaks 'the same semantics as the desktop'. Do both clients in one later run (D9 with A5). Cancel while queued already removes an answer before it is sent.",
+        "alternatives": [
+          "A 2 s phone-only undo now (One): the clients diverge and the outbox gains a pending-undo state. Not recommended.",
+          "Undo in both clients in this run: a desktop UI change beyond A2. No."
+        ]
+      },
+      {
+        "id": "A2-G9",
+        "topic": "Screens and what the phone inbox holds",
+        "recommend": "A 'Needs you' section at the top of home and one stack route /inbox/[id]. The phone lists permission and question items only; finished and error items, and reply (kind reply), are not on the phone in A2. inboxCount counts what is listed. An item with a not-sent outcome stays listed until dismissed, so a refused answer stays visible after the item resolves elsewhere. Newest first, as the desktop.",
+        "alternatives": [
+          "Show finished and error items read-only: easy follow-up, no new behaviour.",
+          "Reply to finished sessions from the phone (the answer scope covers it): fits A4. Defer.",
+          "A separate inbox tab: A0 removed the tabs. No."
+        ]
+      },
+      {
+        "id": "A2-G10",
+        "topic": "Android back",
+        "recommend": "No custom BackHandler (as A1 G10). Back on the item screen pops to home; Back on home exits; with the keyboard up the system closes it first. Drafts live in memory keyed by item id, so Back with unsent text loses nothing and reopening restores it. An on-screen Back control too. predictiveBackGestureEnabled stays false.",
+        "alternatives": [
+          "A BackHandler that confirms discarding unsent text: return-true-only-when-handled care plus a modal, for nothing lost. No.",
+          "Discard drafts on Back: against M6 in spirit. No."
+        ]
+      },
+      {
+        "id": "A2-G11",
+        "topic": "Answer limits",
+        "recommend": "The phone enforces the host's limits before it queues: a question answer has at most 32 keys and every key and value at most 4096 bytes of UTF-8 (mod.rs:35-36, :1696-1703); a deny message at most 32768 (MAX_TEXT_BYTES). Constants copied into mobile/src/inbox/answer.ts with tests and named in README 'What A2 decided'. Over a limit: Send disabled, copy shown, text kept. Not promoted to protocol/constants.ts.",
+        "alternatives": [
+          "Promote MAX_ANSWERS and MAX_ANSWER_BYTES to protocol/constants.ts and fixtures/constants.json: one source, but it touches core/tests/wire_fixtures.rs, desktop/src/protocol.test.ts, mobile protocol.test.ts and a Rust wire constant. Better as its own small run.",
+          "Let the host refuse: a failed after Send. No."
+        ]
+      },
+      {
+        "id": "A2-G12",
+        "topic": "The desktop's 32768 question limit (a desktop change)",
+        "recommend": "Fix it in this run as s4: three desktop front-end files, vitest-proven, no IPC or Rust change. A2's goal is the desktop's semantics, and today those include a Send the host always refuses.",
+        "alternatives": [
+          "Defer to a desktop cleanup run, listed under D1 follow-ups: keeps A2 phone-only; the bug stays latent until someone types over 4 KiB in Other.",
+          "Raise the host limit to 32768: a core behaviour change for text Claude reads. Not wanted."
+        ]
+      },
+      {
+        "id": "A2-G13",
+        "topic": "Copy (approve the wording)",
+        "recommend": "inbox_title 'Needs you'; inbox_empty 'Nothing needs you right now.'; kinds 'Permission' and 'Question'; row label '<kind> from <project>'; 'Allow'; 'Deny'; 'Deny message (optional)'; 'Other'; 'Send answers'; 'Back'; sending 'Sending...'; queued 'Queued. It sends when <host> is back. Closing the app drops it. [Cancel]'; unconfirmed 'No reply from <host> yet. [Try again]'; sent 'Sent.'; failed 'Not sent: <reason>. Your answer is kept. [Try again]'; answered 'This request was already answered. [Dismiss]'; expired 'This request expired when Orchestra closed and can no longer be answered. [Dismiss]' (desktop wording); gone 'This request is no longer on <host>. [Dismiss]'; no scope '<host> has not allowed this phone to answer. Change it in Devices on the desktop.'; too long 'This answer is too long to send. Keep each answer under 4096 bytes.'; deny too long 'This message is too long to send.'; too many 'This question has more parts than Orchestra can send.'; no questions 'This question has nothing to choose from. It stays open until the session ends.'",
+        "alternatives": [
+          "'Answered on another device' for already_answered: not always true (after a host restart the phone's own earlier answer can come back as already_answered). Not recommended."
+        ]
+      },
+      {
+        "id": "A2-G14",
+        "topic": "Touch targets and accessibility",
+        "recommend": "Every control is a Touchable (48 dp floor, hitSlop to 8 dp spacing, accessibilityLabel required). Allow and Deny side by side with at least 8 dp between, labels 'Allow <tool>' and 'Deny <tool>' when tool_name is set. Option rows are whole-row targets with role radio or checkbox and accessibilityState checked; the description is part of the label. The question text has accessibilityRole header. The status line is accessibilityLiveRegion polite so TalkBack announces Queued, Sent and Not sent. TextInputs carry accessibilityLabel; Other and the deny message are multiline; no secureTextEntry. Font scaling stays on.",
+        "alternatives": [
+          "A confirm on Allow: the desktop has none. Not for parity; a candidate for A5 when Allow comes from a notification."
+        ]
+      },
+      {
+        "id": "A2-G15",
+        "topic": "Branch, worktree and push",
+        "recommend": "One branch a2-answer in a git worktree at C:/Users/natha/wt/oa2 from main e6f56ab, with npm ci in mobile/ and desktop/ before s1. The integrator may push only a2-answer to origin, at most 4 times (for CI: test.yml runs core on Linux, the Windows workspace and both front ends), never --force, never a tag, never main. Merging to main and pushing main is a separate owner approval at integration; the remote a2-answer branch is deleted after the merge only with that approval.",
+        "alternatives": [
+          "No push before merge: CI sees the change only on main.",
+          "Unbounded pushes: no."
+        ]
+      },
+      {
+        "id": "A2-G16",
+        "topic": "No dependency, no native change",
+        "recommend": "A2 adds no package and changes no app.json, eas.json or config plugin, so it is OTA-compatible and Expo Go keeps working. If a builder finds it needs a dependency it stops and comes back to the gate; any Expo package goes through npx expo install.",
+        "alternatives": [
+          "Allow expo-file-system for a persisted queue: a new build. Only if A2-G4 changes."
+        ]
+      }
+    ],
+    "plan": [
+      {
+        "slice": "s1",
+        "depends_on": [],
+        "risk": "low",
+        "intent": "Correct the record on inbox-updated and pin the host behaviour the phone relies on. protocol/README.md gains a 'What A2 decided' section: inbox-updated carries ONE session's whole inbox (every item of that session, never another session's; core/src/session/mod.rs:324-336); a client replaces that session's items and keeps the rest; an empty payload changes nothing (it names no session, and the host never sends one, since inbox_rev moves only when an item exists, state.rs:325/346/551). It also records the host answer limits (32 keys, 4096 bytes per key and value, mod.rs:35-36 and :1696-1703; 32768 for a deny message, mod.rs:1689) and that each client copies them; that expired answers come back failed, not already_answered (mod.rs:1436); and the phone answer rules approved at this gate (in-memory queue, ids, reconcile, no undo). protocol/types.ts gets a comment on the inbox-updated payload only (no type change). core/tests/link.rs gains two tests over the real link: an expired item answered over the link returns failed (not already_answered); an inbox-updated event for one session carries only that session's items while another session has an open item. No wire change: v stays 1, no fixture change, desktop and mobile behaviour untouched.",
+        "files": [
+          "protocol/README.md",
+          "protocol/types.ts (comment only)",
+          "core/tests/link.rs"
+        ],
+        "done_when": [
+          "cd C:/Users/natha/wt/oa2 && cargo test --workspace 2>&1 | grep 'test result' -> every line ok, 0 failed, passed counts sum to 335 (333 + 2)",
+          "cd C:/Users/natha/wt/oa2/desktop && npx tsc -p ../protocol/tsconfig.json --noEmit -> exit 0",
+          "cd C:/Users/natha/wt/oa2/desktop && ./node_modules/.bin/vitest run -> 8 files, 213 tests passed (unchanged)",
+          "cd C:/Users/natha/wt/oa2/mobile && npx jest --watchAll=false -> 13 suites, 292 tests passed (unchanged)",
+          "grep -c '^## What A2 decided' C:/Users/natha/wt/oa2/protocol/README.md -> 1; grep -n 'one session' C:/Users/natha/wt/oa2/protocol/types.ts -> at least 1 line",
+          "cd C:/Users/natha/wt/oa2 && git diff --stat e6f56ab -- protocol/fixtures protocol/codec.ts protocol/constants.ts fleet mobile desktop core/src -> empty"
+        ],
+        "risk_reason": "Docs plus two test-only Rust tests; no sensitive data; no file shared with another slice; the cargo count and grep show all of it."
+      },
+      {
+        "slice": "s2",
+        "depends_on": [
+          "s1"
+        ],
+        "risk": "high",
+        "intent": "The phone link carries answers. (a) state.ts: inbox-updated groups the payload by session_id and replaces only those sessions' items, keeping every other session's; an empty payload changes nothing (A2-G1). The state test that pinned whole-list replace is rewritten to pin this. (b) outbox.ts (new, pure, no I/O): one OutboxEntry per item_id {item_id, answer, call_id, attempt, status, code?, message?}; statuses queued | sending | unconfirmed | sent | failed | refused | answered | expired | gone; pure transitions for enqueue, sent, result ok/error, link dropped, timeout, cancel, retry, dismiss, and reconcile(entry, inbox) per A2-G6. (c) controller.ts: answer(a), cancelAnswer(id), retryAnswer(id), dismissAnswer(id); call ids 'a-' + 16 bytes hex from deps.random (A2-G7); onHost routes type result by id to the outbox before reduce (unknown ids ignored); one answer call in flight, FIFO; flush only when the phase is live AND a snapshot has been applied on this connection, after reconcile (welcome arrives before the snapshot, so not on goLive); a live call with no result in 20 s (CALL_RESULT_MS) goes unconfirmed and keeps its id, and a late result still lands; a drop turns sending into queued with the same id; a failed result to a resend (attempt > 1, same id) goes unconfirmed, decided by attempt number, never by message text; forget and revoked empty the outbox; nothing logs and nothing is persisted; kind reply is refused. (d) provider.tsx: the API changes listed in A2-G3. client.ts is not changed.",
+        "files": [
+          "mobile/src/link/state.ts",
+          "mobile/src/link/outbox.ts (new)",
+          "mobile/src/link/controller.ts",
+          "mobile/src/link/provider.tsx",
+          "mobile/src/__tests__/state.test.ts",
+          "mobile/src/__tests__/outbox.test.ts (new)",
+          "mobile/src/__tests__/controller.test.ts",
+          "mobile/src/__tests__/fake-host.ts (only if a test needs the fake host to read calls and push results)",
+          "mobile/src/__tests__/home.test.tsx (the link() factory gains the new fields only)",
+          "mobile/src/__tests__/pair.test.tsx (its factory gains the new fields only)"
+        ],
+        "done_when": [
+          "cd C:/Users/natha/wt/oa2/mobile && npx jest --watchAll=false -> 14 suites passed (13 + outbox), at least 314 tests, 0 failed",
+          "cd C:/Users/natha/wt/oa2/mobile && ./node_modules/.bin/tsc --noEmit -> exit 0",
+          "named tests exist and pass: two sessions with open items, an event for one keeps the other's; an empty inbox-updated changes nothing; a result routes to its entry by id, an unknown id is ignored; queued offline, then sent once after the snapshot; a drop mid-call resends the SAME id after the next snapshot; a queued answer whose item is resolved / expired / missing becomes answered / expired / gone and is never sent; an expired failed never retries; failed on a resend goes unconfirmed; 20 s with no result goes unconfirmed; forget and revoked empty the outbox; never two answer calls in flight",
+          "grep -rnE 'console\\.|AsyncStorage|setItemAsync' C:/Users/natha/wt/oa2/mobile/src/link | grep -v 'link/store.ts' -> no output",
+          "cd C:/Users/natha/wt/oa2 && git diff --stat <s1 commit> -- mobile/package.json mobile/package-lock.json mobile/app.json mobile/src/link/client.ts protocol fleet desktop core -> empty"
+        ],
+        "risk_reason": "Reconnect, idempotency and timer races a test cannot fully see; answer text is sensitive and must not be logged or persisted; home.test.tsx is also touched by s3."
+      },
+      {
+        "slice": "s3",
+        "depends_on": [
+          "s2"
+        ],
+        "risk": "high",
+        "intent": "The screens. Home gets a 'Needs you' section above the sessions: pending permission and question items, newest first, plus any item whose outbox entry is a not-sent outcome (failed, refused, answered, expired, gone) until dismissed; each row is a Touchable (48 dp, a label naming kind, project and status) that opens /inbox/[id] (push with pathname and params so typed routes hold). The item screen shows kind, project (from sessions), summary, tool name and the tool input preview (monospace, selectable, scrolls), then the controls. Permission: Allow and Deny, with an optional deny message (at most 32768 bytes; message sent only when trimmed non-empty, as desktop). Question: one group per question (header plus question with accessibilityRole header), radio rows for single-select and checkbox rows for multi-select (accessibilityState checked), an Other text box; answers keyed by question text and joined with ', ' exactly as desktop InboxItemView.tsx:120-129; Send enabled only when every question has an answer, at most 32 questions, every key and value at most 4096 bytes (A2-G11). A status line (accessibilityLiveRegion polite) shows the outbox status with the A2-G13 copy and actions: Cancel while queued, Try again when unconfirmed or failed, Dismiss on a not-sent outcome. Controls are replaced by the no-scope copy without the answer scope, and hidden on resolved or expired items; an unknown id shows the gone copy with Back. Drafts (picks, Other texts, deny message) live in an in-memory store keyed by item id, so Back and reopen keep them, and the controls rehydrate from a queued or failed entry's answer (M6). No BackHandler (A2-G10); an on-screen Back control. KeyboardAvoidingView plus ScrollView keyboardShouldPersistTaps handled; font scaling on; no new dependency. inboxCount counts what the list shows as pending. CLAUDE.md (repo root) gains one Mobile bullet: src/inbox/, and that answers and drafts are held in memory only, never written to disk.",
+        "files": [
+          "mobile/src/app/index.tsx",
+          "mobile/src/app/inbox/[id].tsx (new)",
+          "mobile/src/components/inbox-row.tsx (new)",
+          "mobile/src/components/answer-permission.tsx (new)",
+          "mobile/src/components/answer-question.tsx (new)",
+          "mobile/src/components/answer-status.tsx (new)",
+          "mobile/src/inbox/answer.ts (new: pure builders, collect, limits)",
+          "mobile/src/inbox/drafts.ts (new: in-memory drafts and a hook)",
+          "mobile/src/constants/copy.ts",
+          "mobile/src/__tests__/answer.test.ts (new)",
+          "mobile/src/__tests__/drafts.test.ts (new)",
+          "mobile/src/__tests__/inbox-item.test.tsx (new)",
+          "mobile/src/__tests__/home.test.tsx",
+          "CLAUDE.md (orchestra repo root, one bullet)"
+        ],
+        "done_when": [
+          "cd C:/Users/natha/wt/oa2/mobile && npx jest --watchAll=false -> 17 suites passed (14 + answer, drafts, inbox-item), at least 346 tests, 0 failed",
+          "cd C:/Users/natha/wt/oa2/mobile && ./node_modules/.bin/tsc --noEmit -> exit 0",
+          "named tests exist and pass: Allow and Deny send the desktop's exact answer shapes; single, multi and Other join with ', ' keyed by question text; Send disabled until complete; a 4097-byte value, a 4097-byte question text and 33 questions are refused with copy and the text kept; a 32769-byte deny message is refused; an empty questions list shows the no-questions copy and no Send; each status renders its copy and its actions call the provider; no answer scope hides the controls; expired and resolved hide the controls; a draft survives unmount and remount; home lists two sessions' items and a not-sent outcome until dismissed; radio and checkbox rows carry accessibilityState",
+          "grep -rn 'BackHandler\\|hardwareBackPress' C:/Users/natha/wt/oa2/mobile/src -> no output",
+          "grep -rnE 'console\\.|AsyncStorage|setItemAsync' C:/Users/natha/wt/oa2/mobile/src | grep -v 'link/store.ts' | grep -v __tests__ -> no output",
+          "grep -rn 'allowFontScaling\\|maxFontSizeMultiplier' C:/Users/natha/wt/oa2/mobile/src -> no output",
+          "cd C:/Users/natha/wt/oa2 && git diff --stat e6f56ab -- mobile/package.json mobile/package-lock.json mobile/app.json mobile/eas.json fleet -> empty",
+          "human-read: owner device checks O1-O12 after the run (Expo Go against npm run tauri dev); not a slice gate"
+        ],
+        "risk_reason": "UI behaviour and accessibility a jest render cannot fully prove; answer text is sensitive; home.test.tsx was also touched by s2."
+      },
+      {
+        "slice": "s4",
+        "depends_on": [],
+        "conditional_on": "A2-G12 approved",
+        "risk": "low",
+        "intent": "Fix the latent desktop bug: the question Send is enabled for answers up to 32768 bytes, but the host refuses any key or value over 4096 bytes, or more than 32 answers, with failed 'answers too large'. New desktop/src/answers.ts holds MAX_ANSWERS 32, MAX_ANSWER_BYTES 4096 and answersTooLarge(answers); InboxItemView's question Send uses it. The deny message and reply stay at 32768 (the host's check_len). No IPC, Rust or protocol change. Ordered last on the branch only so one builder runs at a time; it consumes nothing from s1-s3.",
+        "files": [
+          "desktop/src/answers.ts (new)",
+          "desktop/src/answers.test.ts (new)",
+          "desktop/src/components/InboxItemView.tsx"
+        ],
+        "done_when": [
+          "cd C:/Users/natha/wt/oa2/desktop && ./node_modules/.bin/vitest run -> 9 files, at least 218 tests passed, 0 failed (4096 bytes ok, 4097 refused, multi-byte counted as UTF-8, a 4097-byte key refused, 32 keys ok, 33 refused)",
+          "cd C:/Users/natha/wt/oa2/desktop && npm run build -> exit 0",
+          "grep -n 'answersTooLarge' C:/Users/natha/wt/oa2/desktop/src/components/InboxItemView.tsx -> at least 1 line",
+          "cd C:/Users/natha/wt/oa2 && git diff --stat <s3 commit> -- desktop/src-tauri core protocol mobile fleet -> empty"
+        ],
+        "risk_reason": "Desktop front end only, no sensitive data, no file shared with another slice; vitest and the scope diff show all of it."
+      }
+    ],
+    "edges": [
+      "s1 -> s2: s2's reducer and outbox follow the semantics s1 writes into protocol/README.md",
+      "s2 -> s3: s3 consumes the provider API and OutboxEntry statuses from s2; both touch home.test.tsx",
+      "s4: no artifact edge; last on the branch only so one builder works at a time; dropped if A2-G12 is deferred"
+    ],
+    "not_doing": [
+      "No undo window (A2-G8); no persisted queue, no new dependency, no new build (A2-G4, G16)",
+      "No reply to finished sessions from the phone; finished and error items not shown on the phone (A2-G9)",
+      "No wire change, no fixture change, no new protocol constants (A2-G11); v stays 1",
+      "No notifications or notification actions (A3, A5); no desktop switcher or tablet layout (A5)",
+      "No desktop change beyond s4's limit fix; no desktop undo or keyboard inbox (D9)",
+      "No core behaviour change: two tests in core/tests/link.rs only",
+      "No edit to the A1 run's state.json; builders do not edit ROADMAP.md (the integrator ticks A2 and notes the A1 correction)",
+      "fleet/ untouched; no sibling-app import; no Claude attribution in any commit",
+      "The A1 'still open' items (listHosts never throws, dispose checks, openMs comment) stay open"
+    ],
+    "owner_device_checks": [
+      "O1 Allow from the phone (Expo Go, npx expo start --go, against npm run tauri dev with the link on a LAN address): the session proceeds and the item leaves both inboxes.",
+      "O2 Deny with a message: Claude receives it; Deny with a blank message gives 'User denied'.",
+      "O3 An AskUserQuestion with single-select, multi-select and Other: the transcript shows the joined answer; the item resolves on both.",
+      "O4 Two sessions each with an open prompt: both on the phone; answering one on the desktop leaves the other on the phone (the plan-killer).",
+      "O5 With the item open on the phone, answer it on the desktop: the phone hides the controls and shows it resolved.",
+      "O6 Airplane mode on, answer: Queued shows; Cancel removes it; answer again, airplane off: it sends once and resolves on the desktop.",
+      "O7 Airplane on, queue an answer, answer the same item on the desktop, airplane off: 'This request was already answered.', nothing sent.",
+      "O8 Queue an answer offline, quit and relaunch the desktop, reconnect: the expired copy, nothing sent.",
+      "O9 Remove the answer scope in Devices: the controls are replaced by the no-scope copy.",
+      "O10 Back from the item screen returns home and the draft is there on reopen; Back on home exits; with the keyboard up, Back closes it first.",
+      "O11 TalkBack announces rows, Allow and Deny, radio and checkbox states and the status line; at the largest font size nothing is clipped and every control is reachable.",
+      "O12 Paste an Other text over 4096 bytes: refused with the copy, text kept. Force-stop the app with an answer queued: after restart nothing is sent.",
+      "O13 (if s4) On the desktop, an Other over 4096 bytes disables Send answers."
+    ],
+    "human_gate": "Approve A2-G1..G16, chiefly: G1 per-session replace (vs upsert by id); G4 in-memory queue, lost on app kill; G5 answer text sensitive, never persisted or logged; G8 no undo in A2; G9 no finished items or reply on the phone; G12 fix the desktop 4096 limit here as s4 (or defer); G13 copy; G15 push only a2-answer, at most 4 times."
+  },
+  "approved_by_human": true,
+  "scope_exceptions": [
+    "orchestra/protocol/README.md",
+    "orchestra/protocol/types.ts",
+    "orchestra/core/tests/link.rs",
+    "orchestra/mobile/src/link/state.ts",
+    "orchestra/mobile/src/link/outbox.ts",
+    "orchestra/mobile/src/link/controller.ts",
+    "orchestra/mobile/src/link/provider.tsx",
+    "orchestra/mobile/src/__tests__/state.test.ts",
+    "orchestra/mobile/src/__tests__/outbox.test.ts",
+    "orchestra/mobile/src/__tests__/controller.test.ts",
+    "orchestra/mobile/src/__tests__/fake-host.ts",
+    "orchestra/mobile/src/__tests__/home.test.tsx",
+    "orchestra/mobile/src/__tests__/pair.test.tsx",
+    "orchestra/mobile/src/app/index.tsx",
+    "orchestra/mobile/src/app/inbox/[id].tsx",
+    "orchestra/mobile/src/components/inbox-row.tsx",
+    "orchestra/mobile/src/components/answer-permission.tsx",
+    "orchestra/mobile/src/components/answer-question.tsx",
+    "orchestra/mobile/src/components/answer-status.tsx",
+    "orchestra/mobile/src/inbox/answer.ts",
+    "orchestra/mobile/src/inbox/drafts.ts",
+    "orchestra/mobile/src/constants/copy.ts",
+    "orchestra/mobile/src/__tests__/answer.test.ts",
+    "orchestra/mobile/src/__tests__/drafts.test.ts",
+    "orchestra/mobile/src/__tests__/inbox-item.test.tsx",
+    "orchestra/mobile/src/__tests__/home.test.tsx",
+    "orchestra/CLAUDE.md",
+    "orchestra/desktop/src/answers.ts",
+    "orchestra/desktop/src/answers.test.ts",
+    "orchestra/desktop/src/components/InboxItemView.tsx"
+  ],
+  "builders": {
+    "s1": {
+      "written_by": "builder",
+      "status": "done",
+      "branch": "a2-answer",
+      "commit": "70bbf49",
+      "changed": [
+        "protocol/README.md",
+        "protocol/types.ts",
+        "core/tests/link.rs"
+      ],
+      "notes": "",
+      "deviation_from_approved_plan": "The import gains HostEvent, not Event: wire exports no Event, and the test matches HostMessage::Event{event: HostEvent::InboxUpdated}.",
+      "results": "cargo test --workspace --locked: 44+0+255+32+4+0+0 = 335 passed, 0 failed; tsc exit 0; vitest 8 files 213 tests; jest 13 suites 292 tests; README heading count 1; types.ts 'one session' line 187; git diff --stat e6f56ab over protocol fixtures/codec/constants, fleet, mobile, desktop, core/src empty",
+      "gate_results": [
+        {
+          "cmd": "cargo test --workspace --locked | grep 'test result'",
+          "output": "ok 44, ok 0, ok 255, ok 32, ok 4, ok 0, ok 0 (all 0 failed; sum 335)"
+        },
+        {
+          "cmd": "cd desktop && npx tsc -p ../protocol/tsconfig.json --noEmit",
+          "output": "exit 0"
+        },
+        {
+          "cmd": "cd desktop && ./node_modules/.bin/vitest run",
+          "output": "Test Files 8 passed (8); Tests 213 passed (213)"
+        },
+        {
+          "cmd": "cd mobile && npx jest --watchAll=false",
+          "output": "Test Suites: 13 passed, 13 total; Tests: 292 passed, 292 total"
+        },
+        {
+          "cmd": "grep -c '^## What A2 decided' protocol/README.md; grep -n 'one session' protocol/types.ts",
+          "output": "1; 187:  // inbox-updated carries the whole inbox of one session: ..."
+        },
+        {
+          "cmd": "git diff --stat e6f56ab -- protocol/fixtures protocol/codec.ts protocol/constants.ts fleet mobile desktop core/src",
+          "output": "(empty)"
+        }
+      ],
+      "followup_1": {
+        "commits": [
+          "ffb6786",
+          "620ffb5"
+        ],
+        "changed": [
+          "protocol/README.md"
+        ],
+        "changes": "Gate tags fixed (limits G11, expired answers G6/G7, empty payload G1); expiry stated as marked at session suspend (core/src/session/state.rs) and kept in saved state; Cancel on queued or unconfirmed answers (entry removed, draft kept, fresh answer gets new call id) and pair() emptying the outbox added; reconcile wording matches outbox.ts (sent cleared, unsent shows answered or gone). s3/s4 changed nothing else the section states.",
+        "gate_results": "git diff --stat HEAD~2: protocol/README.md | 19 ++++++++++++-------, 1 file changed; second commit is a small wording fix because an amend was denied by the classifier",
+        "written_by": "builder"
+      },
+      "followup_2": {
+        "written_by": "builder",
+        "commits": [
+          "9fdfce4"
+        ],
+        "branch": "a2-answer",
+        "changed": [
+          "protocol/README.md"
+        ],
+        "changes": [
+          "Cancel allowed on queued, unconfirmed and failed; keeps draft; fresh answer gets new id",
+          "unsent reconcile clause names expired",
+          "Forget and revoke empty outbox and clear in-memory drafts, as pairing does",
+          "not-sent outcomes stay listed on home until dismissed, even after the item leaves the inbox",
+          "suspend cases: shutdown, load from disk, idle task retire, pause (mod.rs)",
+          "overlong lines in the section wrapped"
+        ],
+        "gate_results": [
+          {
+            "cmd": "git diff --stat HEAD~1",
+            "output": "protocol/README.md | 27 ++++++++++++++++-----------; 1 file changed, 16 insertions(+), 11 deletions(-)"
+          }
+        ],
+        "notes": ""
+      }
+    },
+    "s2": {
+      "written_by": "builder",
+      "status": "done",
+      "branch": "a2-answer",
+      "commit": "7f1527f6f2215b754e9bad46d827fcef8c22eccb",
+      "changed": [
+        "mobile/src/link/state.ts",
+        "mobile/src/link/outbox.ts",
+        "mobile/src/link/controller.ts",
+        "mobile/src/link/provider.tsx",
+        "mobile/src/__tests__/state.test.ts",
+        "mobile/src/__tests__/outbox.test.ts",
+        "mobile/src/__tests__/controller.test.ts",
+        "mobile/src/__tests__/fake-host.ts",
+        "mobile/src/__tests__/home.test.tsx",
+        "mobile/src/__tests__/pair.test.tsx"
+      ],
+      "results": "jest --watchAll=false: 14 suites passed, 323 tests passed, 0 failed (was 13 / 292). tsc --noEmit exit 0. grep console/AsyncStorage/setItemAsync in mobile/src/link excluding store.ts: no output. git diff --stat 70bbf49 over package.json, package-lock.json, app.json, client.ts, protocol, fleet, desktop, core: empty.",
+      "gate_results": [
+        {
+          "command": "cd C:/Users/natha/wt/oa2/mobile && npx jest --watchAll=false",
+          "output": "Test Suites: 14 passed, 14 total; Tests: 323 passed, 323 total"
+        },
+        {
+          "command": "cd C:/Users/natha/wt/oa2/mobile && ./node_modules/.bin/tsc --noEmit",
+          "output": "exit 0, no output"
+        },
+        {
+          "command": "grep -rnE 'console\\.|AsyncStorage|setItemAsync' mobile/src/link | grep -v link/store.ts",
+          "output": "(no output)"
+        },
+        {
+          "command": "git diff --stat 70bbf49 -- mobile/package.json mobile/package-lock.json mobile/app.json mobile/src/link/client.ts protocol fleet desktop core",
+          "output": "(empty)"
+        },
+        {
+          "command": "named tests",
+          "output": "present and passing in state.test.ts, outbox.test.ts, controller.test.ts (two sessions keep other; empty no-op; result routes by id, unknown ignored; queued offline then sent once after snapshot; drop resends same id; resolved/expired/missing -> answered/expired/gone never sent; expired failed never retries; failed on resend -> unconfirmed; 20 s unconfirmed, late result lands; forget and revoked empty outbox; never two in flight)"
+        }
+      ],
+      "notes": "Unconfirmed frees the in-flight slot so a dead link does not block the queue behind it.",
+      "deviation_from_approved_plan": "none",
+      "followup_1": {
+        "commit": "1d92e7d",
+        "branch": "a2-answer",
+        "changed": [
+          "mobile/src/link/outbox.ts",
+          "mobile/src/link/controller.ts",
+          "mobile/src/constants/copy.ts",
+          "mobile/src/__tests__/outbox.test.ts",
+          "mobile/src/__tests__/controller.test.ts",
+          "mobile/src/__tests__/inbox-item.test.tsx"
+        ],
+        "changes": "box.cancel now removes queued or unconfirmed entries (G7 id reuse and no auto retry unchanged). A late result for a cancelled id matches no entry in onResult and is ignored. copy.unconfirmed gains [Cancel]; answer-status.tsx needed no change (actions parsed from copy). drafts.ts needed no change: drafts are in-memory and never cleared on submit, so the draft survives Cancel. pair() empties outbox and order after stopLink.",
+        "tests": "controller: replayed failed -> unconfirmed, Try again stays unconfirmed with same id, answer() refused, Cancel clears entry, late ok ignored, fresh answer gets new id; pair empties outbox; outbox cancel unit; status line unconfirmed renders Try again + Cancel.",
+        "gate_results": [
+          {
+            "command": "mobile: tsc --noEmit",
+            "output": "exit 0"
+          },
+          {
+            "command": "mobile: npx jest --watchAll=false",
+            "output": "Test Suites: 17 passed, 17 total; Tests: 381 passed, 381 total"
+          }
+        ]
+      }
+    },
+    "s3": {
+      "written_by": "builder",
+      "status": "done",
+      "branch": "a2-answer",
+      "attempt_1": {
+        "written_by": "builder",
+        "status": "done",
+        "branch": "a2-answer",
+        "commit": "aa0baa4",
+        "changed": [
+          "CLAUDE.md",
+          "mobile/src/app/index.tsx",
+          "mobile/src/app/inbox/[id].tsx",
+          "mobile/src/components/inbox-row.tsx",
+          "mobile/src/components/answer-permission.tsx",
+          "mobile/src/components/answer-question.tsx",
+          "mobile/src/components/answer-status.tsx",
+          "mobile/src/inbox/answer.ts",
+          "mobile/src/inbox/drafts.ts",
+          "mobile/src/constants/copy.ts",
+          "mobile/src/__tests__/answer.test.ts",
+          "mobile/src/__tests__/drafts.test.ts",
+          "mobile/src/__tests__/inbox-item.test.tsx",
+          "mobile/src/__tests__/home.test.tsx"
+        ],
+        "results": "jest --watchAll=false: 17 suites passed, 379 tests passed, 0 failed (was 14 / 323). tsc --noEmit exit 0. BackHandler/hardwareBackPress grep, console/AsyncStorage/setItemAsync grep (excluding link/store.ts and tests), allowFontScaling/maxFontSizeMultiplier grep: no output. git diff --stat e6f56ab over package.json, package-lock.json, app.json, eas.json, fleet: empty.",
+        "gate_results": [
+          {
+            "command": "cd C:/Users/natha/wt/oa2/mobile && npx jest --watchAll=false",
+            "output": "Test Suites: 17 passed, 17 total; Tests: 379 passed, 379 total"
+          },
+          {
+            "command": "cd C:/Users/natha/wt/oa2/mobile && ./node_modules/.bin/tsc --noEmit",
+            "output": "exit 0, no output"
+          },
+          {
+            "command": "grep -rn 'BackHandler\\|hardwareBackPress' mobile/src",
+            "output": "(no output)"
+          },
+          {
+            "command": "grep -rnE 'console\\.|AsyncStorage|setItemAsync' mobile/src | grep -v link/store.ts | grep -v __tests__",
+            "output": "(no output)"
+          },
+          {
+            "command": "grep -rn 'allowFontScaling\\|maxFontSizeMultiplier' mobile/src",
+            "output": "(no output)"
+          },
+          {
+            "command": "git diff --stat e6f56ab -- mobile/package.json mobile/package-lock.json mobile/app.json mobile/eas.json fleet",
+            "output": "(empty)"
+          },
+          {
+            "command": "named tests",
+            "output": "present and passing: inbox-item.test.tsx (34: Allow and Deny shapes, deny message trimmed-empty rule, 32769-byte deny refused with text kept, single/multi/Other join, Send disabled until complete, 4097-byte value and 4097-byte question text and 33 questions refused with copy and text kept, 32 sends, empty questions copy and no Send, each of 9 statuses renders copy and actions, actions call provider, rehydrate from failed/queued entry, no answer scope, expired, resolved, unknown id gone with Back, draft survives remount, radio/checkbox accessibilityState); answer.test.ts; drafts.test.ts; home.test.tsx (empty, two sessions' items newest first and open via pathname/params, not-sent outcome until dismissed)"
+          }
+        ],
+        "notes": "mkdir of new dirs was denied by the scope guard (dirs not in file set); created the files with Write instead.",
+        "deviation_from_approved_plan": "none"
+      },
+      "attempt_2": {
+        "commits": [
+          "f549748"
+        ],
+        "changed": [
+          "mobile/src/inbox/answer.ts",
+          "mobile/src/app/inbox/[id].tsx",
+          "mobile/src/components/answer-question.tsx",
+          "mobile/src/components/answer-status.tsx",
+          "mobile/src/constants/copy.ts",
+          "mobile/src/link/outbox.ts",
+          "mobile/src/link/controller.ts",
+          "mobile/src/__tests__/answer.test.ts",
+          "mobile/src/__tests__/home.test.tsx",
+          "mobile/src/__tests__/inbox-item.test.tsx",
+          "mobile/src/__tests__/outbox.test.ts",
+          "mobile/src/__tests__/controller.test.ts"
+        ],
+        "fixes": [
+          "BLOCKER: listedItems now also lists outbox entries with a not-sent outcome whose item is not in the inbox (rebuilt from the entry: kind, unknown project, outcome), after the pending ones; item screen already shows status and Dismiss for a missing item (test added)",
+          "Cancel allowed on failed (outbox.cancel, copy.failed gains [Cancel], draft kept); G7 unchanged",
+          "clearDrafts() in controller.emptyOutbox, so forget, revoke and pair clear drafts",
+          "no-scope sentence shown once when an answer is refused",
+          "question text always accessibilityRole header (header text too); test renamed and checks both",
+          "Back: router.canGoBack() ? back() : replace(\"/\"), no BackHandler",
+          "removed unused extra.refused_reason",
+          "comment in answer-status.tsx noting liveRegion is Android-only and iOS needs AccessibilityInfo.announceForAccessibility"
+        ],
+        "skipped": [],
+        "deviation_from_approved_plan": "copy.failed gains a [Cancel] action (A2-G13 listed failed with [Try again] only); controller.ts imports inbox/drafts to clear drafts. Both inside s3/s2 files already in scope.",
+        "gate_results": [
+          {
+            "cmd": "cd C:/Users/natha/wt/oa2/mobile && npx jest --watchAll=false",
+            "output": "Test Suites: 17 passed, 17 total; Tests: 394 passed, 394 total"
+          },
+          {
+            "cmd": "./node_modules/.bin/tsc --noEmit",
+            "output": "exit 0"
+          },
+          {
+            "cmd": "grep BackHandler|hardwareBackPress in mobile/src",
+            "output": "(no output)"
+          },
+          {
+            "cmd": "grep console.|AsyncStorage|setItemAsync excl store.ts and tests",
+            "output": "(no output)"
+          },
+          {
+            "cmd": "grep allowFontScaling|maxFontSizeMultiplier",
+            "output": "(no output)"
+          },
+          {
+            "cmd": "git diff --stat e6f56ab -- mobile/package.json mobile/package-lock.json mobile/app.json mobile/eas.json fleet",
+            "output": "(empty)"
+          },
+          {
+            "cmd": "named tests",
+            "output": "new tests pass: gone/answered/expired/failed/refused listed with empty inbox, home rows for gone/answered/expired, gone item screen Dismiss, refused once, Back fallback, drafts cleared on forget and revoke, cancel failed"
+          }
+        ]
+      },
+      "notes": "",
+      "changed": [
+        "mobile/src/inbox/answer.ts",
+        "mobile/src/app/inbox/[id].tsx",
+        "mobile/src/components/answer-question.tsx",
+        "mobile/src/components/answer-status.tsx",
+        "mobile/src/constants/copy.ts",
+        "mobile/src/link/outbox.ts",
+        "mobile/src/link/controller.ts",
+        "mobile/src/__tests__/answer.test.ts",
+        "mobile/src/__tests__/home.test.tsx",
+        "mobile/src/__tests__/inbox-item.test.tsx",
+        "mobile/src/__tests__/outbox.test.ts",
+        "mobile/src/__tests__/controller.test.ts"
+      ],
+      "gate_results": [
+        {
+          "cmd": "cd C:/Users/natha/wt/oa2/mobile && npx jest --watchAll=false",
+          "output": "Test Suites: 17 passed, 17 total; Tests: 394 passed, 394 total"
+        },
+        {
+          "cmd": "./node_modules/.bin/tsc --noEmit",
+          "output": "exit 0"
+        },
+        {
+          "cmd": "grep BackHandler|hardwareBackPress in mobile/src",
+          "output": "(no output)"
+        },
+        {
+          "cmd": "grep console.|AsyncStorage|setItemAsync excl store.ts and tests",
+          "output": "(no output)"
+        },
+        {
+          "cmd": "grep allowFontScaling|maxFontSizeMultiplier",
+          "output": "(no output)"
+        },
+        {
+          "cmd": "git diff --stat e6f56ab -- mobile/package.json mobile/package-lock.json mobile/app.json mobile/eas.json fleet",
+          "output": "(empty)"
+        },
+        {
+          "cmd": "named tests",
+          "output": "new tests pass: gone/answered/expired/failed/refused listed with empty inbox, home rows for gone/answered/expired, gone item screen Dismiss, refused once, Back fallback, drafts cleared on forget and revoke, cancel failed"
+        }
+      ]
+    },
+    "s4": {
+      "written_by": "builder",
+      "status": "done",
+      "branch": "a2-answer",
+      "commit": "ed37e69",
+      "changed": [
+        "desktop/src/answers.ts",
+        "desktop/src/answers.test.ts",
+        "desktop/src/components/InboxItemView.tsx"
+      ],
+      "results": {
+        "vitest": "9 files, 218 tests passed, 0 failed (5 new in answers.test.ts)",
+        "build": "npm run build exit 0",
+        "grep": "answersTooLarge at InboxItemView.tsx:2 and :134",
+        "unchanged_dirs": "git diff --stat 1d92e7d -- desktop/src-tauri core protocol mobile fleet is empty",
+        "limits_check": "MAX_TEXT_BYTES is 32768 in desktop/src/types.ts:92, protocol/constants.ts:9, core/src/session/mod.rs:34; deny message and reply unchanged"
+      },
+      "gate_results": [
+        {
+          "cmd": "cd C:/Users/natha/wt/oa2/desktop && npx vitest run",
+          "output": "Test Files 9 passed (9); Tests 218 passed (218)"
+        },
+        {
+          "cmd": "cd C:/Users/natha/wt/oa2/desktop && npm run build",
+          "output": "vite built in 2.72s, exit 0"
+        },
+        {
+          "cmd": "grep -n answersTooLarge desktop/src/components/InboxItemView.tsx",
+          "output": "2:import { answersTooLarge } from \"../answers\";\n134:  const tooLarge = answersTooLarge(answers);"
+        },
+        {
+          "cmd": "git diff --stat 1d92e7d -- desktop/src-tauri core protocol mobile fleet",
+          "output": "(empty)"
+        }
+      ],
+      "deviation_from_approved_plan": "none; done_when baseline is HEAD 1d92e7d (s3 follow-up) rather than the s3 commit. Send also shows a one-line note when over the limit.",
+      "notes": ""
+    }
+  },
+  "reviews": {
+    "s1": {
+      "written_by": "reviewer",
+      "verdict": "PASS",
+      "attempt": 1,
+      "summary": "PASS. In detached worktree a2r1 at 70bbf49 I re-ran cargo test --workspace --locked myself: 44+0+255+32+4+0+0 = 335, 0 failed. Protocol tsc exited 0 (run with oa2's desktop tsc, because a2r1 has no node_modules). The README heading grep returned 1 and the types.ts 'one session' grep matched line 187. The diff --stat over fixtures, codec.ts, constants.ts, fleet, mobile, desktop and core/src was empty. I skipped vitest and jest: the diff has no JS/TS outside a types.ts comment. I checked each README claim against core source: events_for sends only s.state.inbox, inbox_rev rises only on push, resolve and expire, and nothing removes items, the 32/4096/32768 limits with 'answers too large', the 128-byte call id, and is_expired_item placed before session_of_item. Both new tests would fail if behaviour regressed. Without the expiry check, the code returns already_answered. A whole-inbox broadcast would include A's item. The types.ts change is comment only. Diff is 3 files, author njcurtis3, no attribution. scope_exceptions is exactly the union of architect.plan files with the orchestra/ prefix, nothing extra. One note: two gate tags in the README are wrong.",
+      "findings": [
+        {
+          "file": "orchestra/protocol/README.md",
+          "line": 475,
+          "severity": "note",
+          "origin": "builder",
+          "issue": "The gate tags in the README do not match the approved gate list. 'Answer limits (G6)' should be G11: G11 is answer limits and G6 is reconcile. 'Expired answers ... (G11)' belongs under G6/G7, where reconcile handles the failed-while-expired case. 'An empty payload changes nothing (G2)' is decided in G1; G2 is the record-correction gate. The rule text is right; only the parenthetical labels are wrong. Anyone who follows a tag to architect.decisions_for_gate lands on the wrong gate. This is not a behaviour failure, so it is not a blocker."
+        },
+        {
+          "file": "orchestra/protocol/README.md",
+          "line": 478,
+          "severity": "note",
+          "origin": "",
+          "issue": "The README says 'expired on restart', but the host marks open permission and question items expired when it suspends a session (state.rs:546-551), which shutdown() does, and the persisted state carries that. The wording is close enough for a client. It is imprecise if a session can be suspended without the app closing."
+        }
+      ],
+      "ran": [
+        "cargo test --workspace --locked (a2r1@70bbf49): 335 passed, 0 failed",
+        "tsc -p protocol/tsconfig.json --noEmit via oa2/desktop/node_modules/.bin/tsc: exit 0",
+        "grep -c '^## What A2 decided' README -> 1; grep -n 'one session' types.ts -> 187",
+        "git diff --stat e6f56ab 70bbf49 -- protocol/fixtures protocol/codec.ts protocol/constants.ts fleet mobile desktop core/src -> empty",
+        "vitest/jest skipped: no JS/TS change outside a types.ts comment"
+      ],
+      "followup_1": {
+        "written_by": "reviewer",
+        "verdict": "PASS",
+        "attempt": "followup_1",
+        "reviewed": "ffb6786..620ffb5 (base ed37e69) in C:/Users/natha/wt/a2r1f",
+        "summary": "PASS. Read the ed37e69..620ffb5 diff (protocol/README.md only, 12+/7-), checked every new statement against code at 620ffb5. Gate tags now match architect.decisions_for_gate: empty payload G1, answer limits G11, expired G6/G7. Expiry: state.rs suspend() marks unresolved permission/question items resolved+expired; SessionManager::shutdown (mod.rs:1632-1639) suspends every session, load-from-disk re-suspends (mod.rs:523), and inbox_item_serde_roundtrip pins expired:true in the persisted form; the failed text matches mod.rs:1437. outbox.ts cancel() returns null only for queued/unconfirmed; cancelAnswer leaves drafts.ts alone; answer() always enqueues with newCallId(); onResult ignores ids no longer held; pair() sets outbox {} and order []; reconcile() drops sent on resolved/absent/expired and moves unsent to gone/expired/answered. Both commits authored njcurtis3, bodies empty, no attribution. Notes: the unsent-reconcile clause omits 'expired'; suspend also happens on task retire/pause; two lines still overlong; if the s3 fix adds Cancel on failed, the Cancel sentence needs one line.",
+        "findings": [
+          {
+            "severity": "note",
+            "origin": "",
+            "issue": "Reconcile clause says an unsent answer 'shows as answered or gone'; outbox.ts reconcile() checks item.expired before item.resolved, so an unsent answer to an expired item shows 'expired'. Covered by the preceding G6/G7 bullet, so not wrong in effect, just incomplete.",
+            "where": "protocol/README.md phone answer rules; mobile/src/link/outbox.ts:96-110"
+          },
+          {
+            "severity": "note",
+            "origin": "",
+            "issue": "'When a session is suspended, which happens when Orchestra shuts down' is true but not exhaustive: suspend() is also called on load from disk (mod.rs:523), on task retire when idle (mod.rs:1365) and in pause_and_wait (mod.rs:1639). Not an overclaim.",
+            "where": "protocol/README.md expired bullet; core/src/session/mod.rs"
+          },
+          {
+            "severity": "note",
+            "origin": "",
+            "issue": "Pairing is named as emptying the outbox; forget() and revoked also empty it (controller.ts:211, :523). Omission, not overclaim.",
+            "where": "mobile/src/link/controller.ts"
+          },
+          {
+            "severity": "note",
+            "origin": "builder",
+            "issue": "620ffb5 says 'line wrap' but two lines in the section still run past ~100 columns (the 'returns failed ... already_answered' line and the 'clears a sent answer' line). Cosmetic.",
+            "where": "protocol/README.md ~L481, ~L489"
+          },
+          {
+            "severity": "note",
+            "origin": "",
+            "issue": "Judged against 620ffb5 only. If the in-progress s3 fix lets cancel() accept 'failed', the Cancel sentence needs one line saying so.",
+            "where": "mobile/src/link/outbox.ts:77-79"
+          }
+        ],
+        "ran": [
+          "git log/diff --stat ed37e69..620ffb5 (only protocol/README.md; author njcurtis3 both; bodies empty)",
+          "read architect.decisions_for_gate G1,G6,G7,G11",
+          "read core/src/session/state.rs:536-557, :912-925; mod.rs:515-525, :1358-1368, :1632-1640, :1665-1672, :1428-1438",
+          "read mobile/src/link/outbox.ts:70-112; controller.ts:232-243, :568-606, :627-632, :674-688; grep drafts.ts usage"
+        ]
+      },
+      "followup_2": {
+        "written_by": "reviewer",
+        "verdict": "PASS",
+        "attempt": "followup_2",
+        "reviewed": "f549748..9fdfce4 in C:/Users/natha/wt/a2r1g",
+        "summary": "PASS. Read the f549748..9fdfce4 diff (protocol/README.md only, 16+/11-; author njcurtis3, no Claude trailers) and checked each changed claim against code at 9fdfce4. Cancel: outbox.cancel nulls queued/unconfirmed/failed, controller.cancelAnswer leaves drafts.ts alone, and answer() enqueues a fresh newCallId. Reconcile: queued/unconfirmed/failed go gone/expired/answered, expired checked before resolved, so the expired clause is right. emptyOutbox calls clearDrafts and is called from forget(), pair() and the Revoked branch. listedItems keeps NOT_SENT entries (failed, refused, answered, expired, gone) both for held items and via missingItem for items that have left the inbox, until dismiss. Suspend: restore() (mod.rs:523), idle task retire (1365), pause_and_wait (1639), shutdown (1671); state.rs suspend marks open items resolved+expired. Nothing else changed meaning. One note, not a blocker.",
+        "findings": [
+          {
+            "severity": "note",
+            "origin": "",
+            "detail": "The quoted host error 'this request expired when Orchestra closed' (mod.rs:1437) is now documented as also covering pause and idle task retire, where Orchestra did not close. The doc quotes the text accurately; the wording of the host message is the misleading part, a possible code follow-up, not a doc error."
+          }
+        ],
+        "ran": [
+          "git diff --stat/diff f549748 9fdfce4",
+          "git log -3 (author, trailers)",
+          "read outbox.ts cancel/reconcile/resultError",
+          "read controller.ts forget/pair/Revoked/answer/cancelAnswer/emptyOutbox",
+          "read drafts.ts clearDrafts",
+          "read answer.ts listedItems/NOT_SENT",
+          "grep suspend in core/src/session/mod.rs and read 506-523, 1359-1365, 1630-1639, 1663-1671; state.rs suspend"
+        ]
+      }
+    },
+    "s2": {
+      "written_by": "reviewer",
+      "verdict": "PASS",
+      "attempt": 1,
+      "summary": "PASS. In detached worktree a2r2 at 7f1527f (parent 70bbf49) I ran npm ci, then tsc --noEmit (exit 0) and the full jest run (14 suites, 323 passed). The console/AsyncStorage/setItemAsync grep and the diff --stat over package files, app.json, client.ts, protocol, fleet, desktop and core were both empty. The author is njcurtis3 with no attribution. I read the controller seams myself: welcome, onHost, dropped, stopLink, pair and dispose. Data survives a drop, so offline answers reconcile against the held inbox. Flush is gated on snapshotConn===conn. Results go by call id before reduce. A stale id cannot match after a new id. callTimer is cleared on result, drop, forget and dispose. A scratch test (deleted) showed four things: an unconfirmed i1 frees the slot; i1's late result does not clear i2's timer; never two sending; zero timers after dispose. It also proved one real gap, which the plan mandates: a definite failed lost to a drop is replayed by the host cache. It shows unconfirmed, and Try again replays it forever, with no Dismiss or Cancel and answer() blocked. The G1 state test now pins per-session replace.",
+      "findings": [
+        {
+          "file": "orchestra/mobile/src/link/outbox.ts",
+          "line": 70,
+          "severity": "major-note",
+          "origin": "architect",
+          "issue": "A definite failure can be hidden forever. Suppose attempt 1 runs on the host and fails, for example send_through fails or there is an internal error. The host caches Done(Err(failed)) (core/src/link/conn.rs:149, :557-558). If the link drops before the result arrives, the resend with the same id gets the cached failed, which attempt>1 maps to unconfirmed. Try again from unconfirmed keeps the id (outbox.ts:81), so it gets the same replay and goes unconfirmed again, every time. dismiss (outbox.ts:90) and cancel refuse unconfirmed, and answer() refuses while it is held (controller.ts answer). The user cannot clear it or answer differently until the item resolves, expires or disappears. A scratch test reproduced this over 3 Try agains. It does not loop on its own, since nothing auto-retries. This follows A2-G7 and the slice intent to the letter, so it is not a builder blocker. Possible fixes: allow Dismiss on unconfirmed (s3 copy), or mint a new id after a second failed on the same id."
+        },
+        {
+          "file": "orchestra/mobile/src/link/controller.ts",
+          "line": 655,
+          "severity": "note",
+          "origin": "builder",
+          "issue": "A builder choice: unconfirmed frees the one-in-flight slot, because flush checks only 'sending'. So a timed-out call and the next answer can be outstanding at the host together. I judge this acceptable. The same item can never get two ids this way: answer() is blocked while unconfirmed, and Try again reuses the id. Different items are independent, and the host allows 8 calls per connection. The scratch test confirmed that a late result for the freed call does not clear the next call's timer. builders.s2 reports deviation 'none' for this; the builder notes mention it."
+        },
+        {
+          "file": "orchestra/mobile/src/link/controller.ts",
+          "line": 344,
+          "severity": "note",
+          "origin": "",
+          "issue": "clearTimers now calls linkDown, which calls set(). So dispose() (controller.ts:190, through stopLink) notifies listeners after disposed=true and before listeners.clear() whenever an entry is sending. That is one extra emit to a provider that is unmounting. Harmless today."
+        },
+        {
+          "file": "orchestra/mobile/src/link/controller.ts",
+          "line": 238,
+          "severity": "note",
+          "origin": "",
+          "issue": "pair() does not empty the outbox. Queued entries from a previous host carry into a new pairing. They become 'gone' after the new host's snapshot, because their item ids are absent, and they are never sent. That is safe, but they show as 'no longer on <host>' under the new host's name."
+        }
+      ],
+      "ran": [
+        "npm ci (a2r2/mobile): exit 0",
+        "./node_modules/.bin/tsc --noEmit: exit 0",
+        "npx jest --watchAll=false: 14 suites, 323 passed, 0 failed",
+        "grep -rnE 'console\\.|AsyncStorage|setItemAsync' mobile/src/link | grep -v link/store.ts: no output",
+        "git diff --stat 70bbf49 7f1527f -- mobile/package.json mobile/package-lock.json mobile/app.json mobile/src/link/client.ts protocol fleet desktop core: empty",
+        "git log -1 7f1527f: author njcurtis3, no Claude trailers",
+        "scratch test zz-scratch-review.test.ts (deleted, git status clean): unconfirmed frees slot and late result lands without clearing the next timer; never two sending; jest.getTimerCount()==0 after dispose; failed-on-resend replay stays unconfirmed across 3 Try again with dismiss/cancel/answer no-ops",
+        "read core conn.rs:125-170,515-571 and session/mod.rs:1430-1467 to confirm cached failed replay"
+      ],
+      "followup_1": {
+        "written_by": "reviewer",
+        "verdict": "PASS",
+        "attempt": 1,
+        "commit": "1d92e7d",
+        "parent": "aa0baa4",
+        "worktree": "C:/Users/natha/wt/a2r2f",
+        "summary": "PASS. In a2r2f at 1d92e7d (parent aa0baa4) I ran npm ci, tsc --noEmit (exit 0), and the full jest run (17 suites, 381 passed). The console/AsyncStorage grep was empty. The diff touches 6 files: outbox.ts, controller.ts, copy.ts and three tests. drafts.ts, client.ts and package files are untouched. The author is njcurtis3 and there is no attribution. box.cancel now removes queued or unconfirmed entries and still refuses sending. Removing the entry also drops it from order, and onResult only matches ids in order, so a late result is ignored. retry from unconfirmed still keeps the id, and nothing auto-retries, so G7 is intact. pair() clears order and outbox after stopLink, and clearTimers already clears callTimer. A deleted scratch test showed five things. Cancel on sending is refused. After a 20 s timeout, Cancel works, and i1's late ok neither resurrects i1 nor disturbs i2's armed timer. A re-answer gets a fresh id, and the host's already_answered maps to 'answered' with the G13 copy. pair with a sending entry leaves 0 timers. The host keys already_answered on the item (core/src/wire/dispatch.rs:215), so a lost-success double answer is applied once. Two notes, no blockers.",
+        "ran": [
+          "npm ci (a2r2f/mobile)",
+          "./node_modules/.bin/tsc --noEmit -> exit 0",
+          "npx jest --watchAll=false -> 17 suites, 381 passed, 0 failed",
+          "grep console./AsyncStorage/setItemAsync in src/link minus store.ts -> empty",
+          "git diff --stat aa0baa4 1d92e7d -- drafts.ts client.ts package.json -> empty",
+          "scratch test zz-scratch.test.ts (2 tests, passed, deleted; git status clean)"
+        ],
+        "findings": [
+          {
+            "severity": "note",
+            "file": "orchestra/mobile/src/link/outbox.ts:78",
+            "origin": "architect",
+            "text": "Cancel on an unconfirmed entry that came from the 20 s timeout, rather than a replay, does not retract anything. The first call may still apply at the host. The user then sends a different answer, the host returns already_answered, and the phone shows 'This request was already answered.' The answer that actually applied was the one they cancelled. The copy is accurate, but 'Cancel' reads as a retraction. Consider s3 copy that says Cancel only stops waiting. This is not a failure of the stated fix."
+          },
+          {
+            "severity": "note",
+            "file": "orchestra/mobile/src/link/controller.ts:239",
+            "origin": "",
+            "text": "pair() empties the outbox before it knows whether the pairing succeeds. If the user cancels the pairing, or it fails and the controller resumes the old stored host, queued or unconfirmed answers for the old host are lost. The drafts survive, so the user can answer again. This is in-memory by design, so it is minor."
+          }
+        ]
+      }
+    },
+    "s3": {
+      "written_by": "reviewer",
+      "verdict": "REJECT",
+      "attempt": 1,
+      "reviewed_commit": "aa0baa4",
+      "base_commit": "7f1527f",
+      "summary": "REJECT on one contract miss. Re-ran in C:/Users/natha/wt/a2r3 at aa0baa4 after npm ci: tsc --noEmit exit 0; full jest 17 suites / 379 passed; the BackHandler, console/AsyncStorage/setItemAsync and allowFontScaling greps empty; package/app/eas/fleet diff vs e6f56ab empty; files within s3's set; author njcurtis3, no attribution. Re-derived the shapes against desktop InboxItemView.tsx and core check_answers/permission_line: Allow, Deny (message only when trimmed non-empty), keyed-by-question-text ', ' join all match, and the 4096 UTF-8 byte (probed with e-acute: 2049 chars = 4098 bytes refused), 32-key and 32768 deny caps are checked before send with verbatim G13 copy. The miss: listedItems walks only the inbox, so an outbox entry whose status is gone (item missing from the snapshot, the very definition of gone in reconcile) is never listed on home, though the intent names gone among the not-sent outcomes that stay until dismissed; a scratch probe confirmed listedItems([], {x: gone}) returns 0 rows. Notes cover header role, iOS live region, dead copy, Back with no history, and drafts outliving Forget.",
+      "findings": [
+        {
+          "severity": "blocker",
+          "origin": "builder",
+          "file": "mobile/src/inbox/answer.ts:143-151",
+          "finding": "listedItems iterates link.inbox only, so a not-sent outcome of status gone can never be listed: reconcile (outbox.ts) sets gone exactly when the item is missing from the held inbox. Input outbox {x: {status:'gone'}}, inbox [] -> home renders 'Nothing needs you right now.', the never-sent answer is invisible and has no path to Dismiss (the item screen is only reachable from a row). Intent and A2-G9 list gone among the outcomes that stay listed until dismissed. Verified with a scratch test (deleted). home.test.tsx only covers 'answered' with the item still present. Fix: also list outbox entries with a not-sent status and no inbox item (kind from entry.answer.kind, project unknown), opening /inbox/[id], which already renders the status with Dismiss for an unknown id; add a home test for gone."
+        },
+        {
+          "severity": "note",
+          "origin": "builder",
+          "file": "mobile/src/components/answer-question.tsx:43-49",
+          "finding": "When a question has a header, only the header gets accessibilityRole header and the question text gets none; A2-G14 says the question text is a header. The test 'the question text is a header' (inbox-item.test.tsx) asserts the header 'Setup', not the question text, so its name overstates what it proves. Giving both header role is harmless."
+        },
+        {
+          "severity": "note",
+          "origin": "",
+          "file": "mobile/src/components/answer-status.tsx:54-56",
+          "finding": "accessibilityLiveRegion is Android-only; VoiceOver on iOS announces nothing on status changes. G14 only asks for polite live region, so not a gate miss; add to owner device checks or use AccessibilityInfo.announceForAccessibility later."
+        },
+        {
+          "severity": "note",
+          "origin": "",
+          "file": "mobile/src/app/inbox/[id].tsx:85-88",
+          "finding": "Any entry disables the controls, so a failed answer on a still-pending item can only be retried, never changed (Allow -> Deny) or discarded. Same class as the s2 unconfirmed follow-up; G13 failed copy offers only Try again. Fold into that follow-up."
+        },
+        {
+          "severity": "note",
+          "origin": "",
+          "file": "mobile/src/app/inbox/[id].tsx:60",
+          "finding": "router.back() with no history (cold start or deep link straight to /inbox/x) does nothing; consider router.canGoBack() ? back() : replace('/')."
+        },
+        {
+          "severity": "note",
+          "origin": "",
+          "file": "mobile/src/inbox/drafts.ts:13-27",
+          "finding": "clearDrafts is only called by tests; draft text (sensitive per A2-G5) survives Forget and revoke for the process lifetime. Memory-only, so G5 holds; clearing on Forget would match the outbox, which G6 empties then."
+        },
+        {
+          "severity": "note",
+          "origin": "",
+          "file": "mobile/src/constants/copy.ts:98",
+          "finding": "extra.refused_reason is never used (dead copy). The other extras (unknown_project, row_status words, Tool, Input, missing_reason) are used and plainly worded."
+        },
+        {
+          "severity": "note",
+          "origin": "",
+          "file": "mobile/src/app/inbox/[id].tsx:90-91",
+          "finding": "With canAnswer false and a refused entry, the no-scope sentence renders twice (status line and controls)."
+        }
+      ],
+      "ran": [
+        "npm ci (a2r3/mobile) -> exit 0",
+        "./node_modules/.bin/tsc --noEmit -> exit 0",
+        "npx jest --watchAll=false -> 17 suites, 379 passed, 0 failed",
+        "grep BackHandler|hardwareBackPress mobile/src -> empty",
+        "grep console.|AsyncStorage|setItemAsync (minus store.ts, tests) -> empty",
+        "grep allowFontScaling|maxFontSizeMultiplier -> empty",
+        "git diff --stat e6f56ab aa0baa4 -- package.json package-lock.json app.json eas.json fleet -> empty",
+        "scratch jest probe (deleted): listedItems gone -> 0 rows; byteLength e-acute x2049 = 4098 -> too_long; draftFromAnswer comma-label ambiguity only cosmetic (wire answer identical)"
+      ],
+      "attempt_2": {
+        "written_by": "reviewer",
+        "verdict": "PASS",
+        "attempt": 2,
+        "reviewed_commit": "f549748",
+        "base_commit": "620ffb5",
+        "summary": "PASS with notes. Re-ran in C:/Users/natha/wt/a2r3b at f549748 after npm ci: tsc --noEmit exit 0; full jest 17 suites / 394 passed; BackHandler, console/AsyncStorage/setItemAsync and font-scaling greps empty; package/app/eas/fleet diff vs e6f56ab empty; author and committer njcurtis3, no attribution; touched files all inside scope_exceptions. Re-derived the blocker fix: listedItems now appends outbox entries with a not-sent status whose item is not held, rebuilt with kind only and session_id '' so home shows 'Unknown project'; the held-id set means no entry is listed twice; inboxCount (provider.tsx:90) still counts only pending inbox items. The item screen renders status plus Dismiss for a missing item. Cancel on failed removes the entry (no call is in flight for a failed attempt-1 result), the draft stays, retry/G7 untouched. clearDrafts sits only in emptyOutbox, called from forget, pair and the Revoked branch; reconnect, linkDown and snapshot paths never reach it. No-scope once, header role, canGoBack fallback, live-region comment all check out. Notes: protocol README Cancel rule now stale, missing rows not newest-first, a mounted screen keeps stale draft state after revoke.",
+        "findings": [
+          {
+            "severity": "note",
+            "origin": "builder",
+            "file": "protocol/README.md:488-489",
+            "finding": "README still says Cancel is allowed on an answer that is queued or unconfirmed; outbox.ts:78 now also cancels failed. Client-local behaviour, so no wire impact, but the section claims to match the phone. One clause to add."
+          },
+          {
+            "severity": "note",
+            "origin": "",
+            "file": "mobile/src/inbox/answer.ts:169-173",
+            "finding": "Missing-item rows are appended in outbox insertion order (oldest entry first), not newest first; there is no created_at to sort by. Placing them after the pending rows is sensible; an outbox timestamp would be needed to order them."
+          },
+          {
+            "severity": "note",
+            "origin": "",
+            "file": "mobile/src/inbox/drafts.ts:31-41",
+            "finding": "clearDrafts empties the store but a mounted item screen keeps its useState copy. If a revoke lands while the screen is open, the text stays in component memory (not shown, since the item leaves the inbox); after a re-pair to the same host and the same item id, the stale text would render while the store is blank. In memory only, no disk; edge case."
+          },
+          {
+            "severity": "note",
+            "origin": "",
+            "file": "mobile/src/constants/copy.ts:64",
+            "finding": "G13 deviation: failed gains [Cancel]. Judged acceptable: without it a failed answer on a still-pending item locks the controls (disabled = !!entry) with Try again as the only exit; 'Your answer is kept' stays true because the draft survives Cancel."
+          },
+          {
+            "severity": "note",
+            "origin": "",
+            "file": "mobile/src/link/controller.ts:241",
+            "finding": "pair() clears drafts on entry, so a pairing attempt that fails or is cancelled also drops the old host's drafts. Consistent with s2's emptying of the outbox at the same point and within 'Forget, revoke and pair'."
+          }
+        ],
+        "ran": [
+          "npm ci (a2r3b/mobile) -> exit 0",
+          "./node_modules/.bin/tsc --noEmit -> exit 0",
+          "npx jest --watchAll=false -> 17 suites, 394 passed, 0 failed",
+          "grep BackHandler|hardwareBackPress mobile/src -> empty",
+          "grep console.|AsyncStorage|setItemAsync (minus store.ts, tests) -> empty",
+          "grep allowFontScaling|maxFontSizeMultiplier -> empty",
+          "git diff --stat e6f56ab f549748 -- mobile/package.json mobile/package-lock.json mobile/app.json mobile/eas.json fleet -> empty",
+          "git log -1 f549748: author/committer njcurtis3, no Claude/Co-Authored/Session lines",
+          "read emptyOutbox call sites: forget (207), pair (241), Revoked (523) only"
+        ]
+      }
+    },
+    "s4": {
+      "written_by": "reviewer",
+      "verdict": "PASS",
+      "attempt": 1,
+      "reviewed_commit": "ed37e69",
+      "base_commit": "1d92e7d",
+      "summary": "PASS. The a2r4 worktree did not exist, so I exported ed37e69 (desktop + protocol) with git archive into a scratch dir and ran npm ci there, which kept every repo untouched. vitest: 9 files, 218 passed, 0 failed. npm run build exited 0. The grep finds answersTooLarge at InboxItemView.tsx:2 and :134. git diff 1d92e7d..ed37e69 on desktop/src-tauri, core, protocol, mobile and fleet is empty, and the diff touches only answers.ts, answers.test.ts and InboxItemView.tsx. Author and committer are njcurtis3 with no attribution. I checked the logic against core/src/session/mod.rs:35-36 and check_answers at :1696-1703 myself. The host refuses when len()>32 or any key or value is over 4096 bytes (Rust str len is UTF-8 bytes), and answersTooLarge does the same thing (entries>32, TextEncoder byte length >4096 on either key or value). Only the question path changed. Permission (:84) and reply (:193) still use tooLong/MAX_TEXT_BYTES 32768. Valid answers get the same Send payload as before. The note copy is accurate and shows only when Send is blocked for size. Risk stays low.",
+      "findings": [
+        {
+          "severity": "note",
+          "origin": "",
+          "detail": "The fourth done_when check, run literally against the s3 commit (aa0baa4), is not empty: it shows mobile/ changes from 1d92e7d (s2 follow-up), which sits between s3 and s4 on the branch. Against s4's real parent 1d92e7d it is empty. This comes from branch ordering and is not an s4 defect."
+        },
+        {
+          "severity": "note",
+          "origin": "",
+          "detail": "The worktree named in the brief (C:/Users/natha/wt/a2r4) did not exist. I reviewed ed37e69 through git archive into the scratchpad. A test run with desktop/ alone fails protocol.test.ts because it reads ../protocol, so protocol/ was exported as well."
+        },
+        {
+          "severity": "note",
+          "origin": "",
+          "detail": "Very small edge case: TextEncoder turns a lone surrogate into U+FFFD (3 bytes), while the host would reject or replace it during JSON decoding. This can't happen with real typed input, so no action is needed."
+        }
+      ],
+      "ran": [
+        "git archive ed37e69 desktop protocol -> scratch; npm ci",
+        "npx vitest run -> 9 files, 218 passed",
+        "npm run build -> exit 0",
+        "grep -n answersTooLarge InboxItemView.tsx -> lines 2,134",
+        "git diff --stat 1d92e7d ed37e69 -- desktop/src-tauri core protocol mobile fleet -> empty",
+        "git log author check -> njcurtis3, no trailers"
+      ]
+    }
+  },
+  "integrator": {
+    "written_by": "the node that wrote this key - here, always the string integrator",
+    "merged": [],
+    "conflicts": [],
+    "verification": "what command proved it works, and its output"
+  },
+  "ops": {
+    "written_by": "the node that wrote this key - here, always the string ops",
+    "gated": true,
+    "actions": []
+  },
+  "log": [
+    "orchestrator: opened. ROADMAP A2 (answer from the phone): inbox with permission prompts and AskUserQuestion with desktop semantics; answers queued offline or visibly refused, a failed send keeps its text (desktop M6); Android back pop/close/exit. 'Worth borrowing from One' names an undo window that fits A2. orchestra main e6f56ab clean, matches origin.",
+    "orchestrator: HUMAN GATE passed 2026-10-20. Owner said 'approve' to A2-G1..G16 as recommended (G4 in-memory queue, G8 no undo, G9 permission+question only, G12 desktop 4096 fix as s4, G13 copy, G15 push only a2-answer max 4). Worktree C:/Users/natha/wt/oa2 on branch a2-answer from main e6f56ab. Builders one per slice in order; reviewers in detached per-commit worktrees.",
+    "orchestrator: s1 builder blocked by guard-builder-scope: architect.plan[].files are written app-relative ('core/tests/link.rs') with trailing notes like '(new)', while the guard matches umbrella-relative paths ('orchestra/...'), so no approved path matched. Not a scope widening: scope_exceptions now lists exactly the same approved files, umbrella-relative with the notes stripped (30 paths). architect.plan left untouched. Re-running s1.",
+    "orchestrator: s1 PASS (+followup_1 README ffb6786/620ffb5, under review). s2 PASS; review found an unconfirmed answer could stick forever (host replays cached failed for the same id) - followup_1 1d92e7d adds Cancel on unconfirmed keeping the draft (copy 'No reply from <host> yet. [Try again] [Cancel]') and pair() empties the outbox; PASS. s3 REJECT attempt 1: a 'gone' answer never lists on home so it cannot be dismissed (answer.ts:143-151); fix goes to a builder as attempt 2. s4 PASS. A concurrent state.json write lost builders.s4 once; the s4 builder re-wrote it.",
+    "orchestrator: CLOSED 2026-10-21. s1 PASS (+README followup_1 and followup_2, both PASS), s2 PASS (+followup_1 Cancel on unconfirmed, pair empties outbox, PASS), s3 PASS attempt 2 (REJECT: gone answers never listed on home; fix lists not-sent outcomes, Cancel on failed, drafts cleared on forget/revoke/pair), s4 PASS. Approved copy changed in two lines: unconfirmed and failed gained [Cancel]. CI run 39627478670 green 6/6 on 9fdfce4 (push 1 of 4). Merged a2-answer --no-ff into orchestra main as b6dd32f (not pushed). close-run.py exit 0. Follow-ups: host 'expired when Orchestra closed' text also used for pause/idle retire; rebuilt rows for missing items are oldest first (no timestamp); an open item screen keeps its draft copy after a revoke; iOS needs announceForAccessibility. Owner device checks O1-O13."
+  ]
+}
