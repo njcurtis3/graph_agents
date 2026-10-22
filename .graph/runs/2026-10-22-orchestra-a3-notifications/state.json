@@ -1,0 +1,705 @@
+{
+  "$comment": "Shared state for ONE work-graph run. Lives at .graph/runs/<run-id>/state.json. Every node reads this on start and appends to its OWN key on finish - the builder writes its own builders.<slice> key, including the branch it worked on. Never rewrite another node's key. Every node key carries written_by, naming the node that wrote it: that is the ONLY record of authorship this file has, and without it 'never rewrite another node's key' is unverifiable - an orchestrator hand-writing all six keys is indistinguishable from six nodes doing their jobs. verify-state.py --audit checks it. This file is the edge: it is how context crosses between agents that cannot see each other.",
+  "run_id": "2026-10-22-orchestra-a3-notifications",
+  "goal": "start A3",
+  "app": "orchestra",
+  "status": "done",
+  "scout": {
+    "written_by": "scout",
+    "app": "orchestra",
+    "scope": "A3 on mobile/ (Android, Expo SDK 57, expo-router). Real push (FCM) is out of scope (PR3).",
+    "facts": [
+      {
+        "id": "F1",
+        "claim": "P1 decided no real push in v1: notifications arrive only while connected (app open or recently backgrounded). register_push and a push flag in welcome are reserved for A3.",
+        "evidence": [
+          "protocol/README.md:120-124"
+        ]
+      },
+      {
+        "id": "F2",
+        "claim": "A3 roadmap items: permission flow (rationale, denied path); local notifications while connected; real push only if P1 chose it (P1 did not). PR3 owns hosted relay and real push.",
+        "evidence": [
+          "ROADMAP.md:527-530",
+          "ROADMAP.md:603-608"
+        ]
+      },
+      {
+        "id": "F3",
+        "claim": "Protocol README mentions push only as reserved register_push. A notice event is reserved for H2/A3 (core notification decision forwarded by orchestrad).",
+        "evidence": [
+          "protocol/README.md:158-160",
+          "protocol/README.md:256"
+        ]
+      },
+      {
+        "id": "F4",
+        "claim": "expo-notifications is NOT in mobile/package.json and NOT installed in mobile/node_modules. Bundled SDK 57 pin is ~57.0.23.",
+        "evidence": [
+          "mobile/package.json:8-34 (no entry)",
+          "mobile/node_modules/expo/bundledNativeModules.json:73"
+        ]
+      },
+      {
+        "id": "F5",
+        "claim": "expo ~57.0.30, expo-camera ~57.0.6, expo-device, expo-network, expo-linking, expo-constants, expo-secure-store, expo-crypto present.",
+        "evidence": [
+          "mobile/package.json:10-30"
+        ]
+      },
+      {
+        "id": "F6",
+        "claim": "app.json: scheme orchestra. plugins = expo-router, expo-splash-screen, expo-secure-store, expo-camera (cameraPermission text, microphonePermission false), expo-build-properties (usesCleartextTraffic true). No notification plugin. No android.permissions key. android.blockedPermissions = [android.permission.RECORD_AUDIO]. runtimeVersion policy fingerprint.",
+        "evidence": [
+          "mobile/app.json:8",
+          "mobile/app.json:22",
+          "mobile/app.json:28-58",
+          "mobile/app.json:61-63"
+        ]
+      },
+      {
+        "id": "F7",
+        "claim": "Expo docs v57.0.0 notifications page: remote push unavailable in Expo Go on Android from SDK 53; local notifications remain available. Android 13: the prompt does not appear until at least one notification channel exists (setNotificationChannelAsync). If no channel is given, a fallback Miscellaneous channel is created. Tap listener is addNotificationResponseReceivedListener; the expo-router example reads notification.request.content.data.url and calls router.push.",
+        "evidence": [
+          "https://docs.expo.dev/versions/v57.0.0/sdk/notifications/"
+        ]
+      },
+      {
+        "id": "F8",
+        "claim": "Link lifecycle: LinkProvider starts the controller with onNetwork (expo-network) and onForeground (AppState change, calls cb only when state is active). No background branch, no close on background, no foreground service, no background task module in package.json.",
+        "evidence": [
+          "mobile/src/link/provider.tsx:63-72",
+          "mobile/src/link/provider.tsx:78-81",
+          "mobile/src/link/controller.ts:164-172",
+          "mobile/src/link/controller.ts:756-763"
+        ]
+      },
+      {
+        "id": "F9",
+        "claim": "Keep-alive is JS setTimeout: schedulePing every PING_EVERY_MS (25s); pong timer PONG_WITHIN_MS (15s) closes the conn and calls dropped(Closed). Backgrounding stalls these timers; the socket is reassessed only on the next active state (ping if live, else attempt).",
+        "evidence": [
+          "mobile/src/link/controller.ts:23-24",
+          "mobile/src/link/controller.ts:716-724",
+          "mobile/src/link/controller.ts:725-738",
+          "mobile/src/link/controller.ts:756-763"
+        ]
+      },
+      {
+        "id": "F10",
+        "claim": "Inbox events: onHost handles inbox-updated and snapshot by calling reconcileAll and flush. The reducer replaces one session items (filter out the touched session_ids, keep the rest). An empty payload is a no-op.",
+        "evidence": [
+          "mobile/src/link/controller.ts:431-449",
+          "mobile/src/link/state.ts:81-92"
+        ]
+      },
+      {
+        "id": "F11",
+        "claim": "Session status arrives as event session-updated (upsert into data.sessions). A snapshot message replaces all data.",
+        "evidence": [
+          "mobile/src/link/state.ts:50-60",
+          "mobile/src/link/state.ts:75-77"
+        ]
+      },
+      {
+        "id": "F12",
+        "claim": "Diff point for new item appeared: in onHost, this.state.data.inbox is the previous set; the reduce result from apply() (controller.ts:425-429, which calls reduce(this.state.data, msg)) gives the new set. The snapshot also goes through this path, so an initial-connect guard is needed or every existing item would notify on connect.",
+        "evidence": [
+          "mobile/src/link/controller.ts:425-429",
+          "mobile/src/link/controller.ts:431-449",
+          "mobile/src/link/state.ts:50-54"
+        ]
+      },
+      {
+        "id": "F13",
+        "claim": "A1 camera permission pattern: useCameraPermissions; a rationale screen (copy.rationale_title, rationale_body, rationale_button) shown before requestPermission; denied path shows denied_retry when canAskAgain, else denied_settings with Linking.openSettings().",
+        "evidence": [
+          "mobile/src/app/pair.tsx:48",
+          "mobile/src/app/pair.tsx:118-123",
+          "mobile/src/app/pair.tsx:160-179",
+          "mobile/src/constants/copy.ts:9-14"
+        ]
+      },
+      {
+        "id": "F14",
+        "claim": "No settings or about screen exists. Routes are mobile/src/app/_layout.tsx, index.tsx (home, with a forget action in a banner), pair.tsx and inbox/[id].tsx.",
+        "evidence": [
+          "mobile/src/app/index.tsx:87-88",
+          "mobile/src/app/_layout.tsx:1-18"
+        ]
+      },
+      {
+        "id": "F15",
+        "claim": "Inbox item route is /inbox/[id] with param id, pushed from home by router.push with pathname /inbox/[id] and params id. File: mobile/src/app/inbox/[id].tsx. Scheme orchestra gives orchestra://inbox/<id>.",
+        "evidence": [
+          "mobile/src/app/index.tsx:151",
+          "mobile/src/app/inbox/[id].tsx:1-30",
+          "mobile/app.json:8"
+        ]
+      },
+      {
+        "id": "F16",
+        "claim": "Jest: package.json jest block uses preset jest-expo, moduleNameMapper for css and the @/ alias, testPathIgnorePatterns, and transformIgnorePatterns that allow @noble. No setupFiles. No jest.mock calls under src/__tests__. The only file in __mocks__ is style.js. expo-camera and expo-crypto are not mocked by hand; they rely on the jest-expo preset.",
+        "evidence": [
+          "mobile/package.json:58-77",
+          "mobile/src/__tests__/__mocks__/style.js"
+        ]
+      },
+      {
+        "id": "F17",
+        "claim": "Protocol types: InboxItem {id, session_id, kind: permission|question|finished|error, created_at, resolved, expired, summary, tool_name, tool_input_preview, questions, result_text, host?}. SessionSummary {id, project_id, project_name, status, started_at, last_activity_at, ...}. SessionStatus includes waiting_permission, waiting_question, needs_attention, idle. Human-readable title: InboxItem.summary. Session context: SessionSummary.project_name.",
+        "evidence": [
+          "protocol/types.ts:14-34",
+          "protocol/types.ts:43-64"
+        ]
+      },
+      {
+        "id": "F18",
+        "claim": "The mobile source tree is mobile/src/app, not mobile/app as the owner guessed. Link files: mobile/src/link/{client,controller,provider,state,store,offer,outbox,noise,frame,keys,random,bytes}.ts. mobile/src/notify does not exist.",
+        "evidence": [
+          "mobile/src (directory listing)"
+        ]
+      },
+      {
+        "id": "F19",
+        "claim": "eas.json profiles: development (dev client, channel development), preview (apk, channel preview), production (channel production). A new native module changes the fingerprint, so it ships as a new build, not OTA.",
+        "evidence": [
+          "mobile/eas.json:4-26",
+          "orchestra/CLAUDE.md:142-145",
+          "orchestra/CLAUDE.md:155-156"
+        ]
+      },
+      {
+        "id": "F20",
+        "claim": "Baseline: npx jest --watchAll=false in mobile/ passes, 17 suites and 394 tests, 0 failing (run 2026-10-22).",
+        "evidence": [
+          "mobile/src/__tests__ (17 suites)",
+          "scratchpad jest-out.txt"
+        ]
+      }
+    ],
+    "unknowns": [
+      "Whether expo-notifications Android manifest adds POST_NOTIFICATIONS automatically on SDK 57, or android.permissions needs an explicit entry. Not verified; needs the package plugin docs or an expo prebuild grep.",
+      "Local-notification behaviour in Expo Go on SDK 57 is documented as available, but was not run on a device.",
+      "Whether expo-router consumes a notification tap by itself, or needs the root-layout listener. The docs say to register the listener in the root layout.",
+      "npx expo install --check was not run. The bundled pin ~57.0.23 comes from mobile/node_modules/expo/bundledNativeModules.json:73.",
+      "Docs drift: orchestra/README.md:55 and :158 say the Android remote does not work yet, while ROADMAP marks A1 and A2 done. Noted, not a plan-breaker."
+    ],
+    "risks": [
+      "PLAN-KILLER: nothing keeps the link alive in the background. AppState is observed only to reconnect on active (provider.tsx:68-70). Keep-alive uses JS setTimeout (controller.ts:716-738), which Android suspends. So notify-while-connected in practice means foreground, or a short window after backgrounding, unless a foreground service is added (a new native module and a new build). Owner decision needed; no fix designed here.",
+      "Adding expo-notifications is a native change. With runtimeVersion policy fingerprint (app.json:61-63) it ships as a new build, not OTA. This is an ops gate per orchestra/CLAUDE.md.",
+      "The initial connect sends a snapshot through the same onHost path as inbox-updated (controller.ts:443-447). A naive diff would notify every existing item on connect, so a snapshot guard is needed.",
+      "A local notification for a permission prompt should carry only the item id and summary, not answer content, to match the in-memory-only rule (orchestra/CLAUDE.md:169-171)."
+    ]
+  },
+  "architect": {
+    "written_by": "architect",
+    "shape": "single-loop",
+    "parallel_safe": false,
+    "rationale": "Single-loop. One app, one builder, three sequential slices on one branch of the orchestra git repo. Not a diamond: s1 owns package.json, package-lock.json and app.json (shared hotspots); s2 needs the installed expo-notifications from s1 for types and jest; s3 calls s2 notify/os.ts and notify/payload.ts. Every edge carries a real artifact, so it is a sequence, and the change fits one reviewable diff. Risk: s1 HIGH because it touches app.json (native config rule) and adds a native module plus config plugin, which changes the fingerprint runtimeVersion. s2 HIGH because it decides what text reaches the notification shade and lock screen (a test can assert data is only {id, kind} but cannot judge what a lock screen shows) and it edits controller.ts, the link core. s3 LOW: no sensitive data (the tap id is validated by s2 parseTap), no file shared with another slice, covered by jest plus owner checks. Owner decision, not reopened: local notifications only, while open or briefly backgrounded; no foreground service; no FCM, register_push or relay (PR3). The scout plan-killer (no background keep-alive) is accepted by that decision and stated in the rationale copy. Desktop, core and protocol untouched: snapshot and inbox-updated already carry everything needed. POST_NOTIFICATIONS is declared explicitly in app.json android.permissions (convention: declarations live in app.json; harmless if the library also declares it), and s1 proves it by prebuild plus a grep of the generated manifest. New build required: expo-notifications is a native module, so the fingerprint changes and it cannot ship OTA. No ops step in this run; the next EAS build is an ops follow-up. Local notifications work in Expo Go on Android (F7), so owner checks run in Expo Go.",
+    "design": {
+      "fresh_rule": "src/link/fresh.ts, pure. The controller keeps known = set of ids in the current inbox. On snapshot: known = ids(new inbox), notify nothing. On inbox-updated: fresh = items in the reduced inbox whose id is not in known, kind permission or question, not resolved, not expired; then known = ids(new inbox). Fires only when snapshotConn === conn, so an inbox-updated before this connection's snapshot notifies nothing. A reconnect or seq gap reseeds from the next snapshot, so items that arrived while disconnected are not notified (they show in Needs you). forget and revoke clear known. It also reports gone = previously notified ids no longer pending, so their notification is dismissed.",
+      "controller_hook": "Deps gains optional onInbox(e: {fresh: InboxItem[], gone: string[]}), called from onHost after apply(). The controller never imports expo-notifications.",
+      "payload": "src/notify/payload.ts, pure. content = title '<Kind> from <project>', body = summary cut to 100 chars with an ellipsis or the fallback, data = {id, kind}. Never tool_name, tool_input_preview, questions, result_text, host address, keys, answers or drafts. identifier = item id, so dismiss works and repeats collapse. parseTap(data) returns the id only if it is a non-empty string of at most 128 chars, else null.",
+      "os_adapter": "src/notify/os.ts is the only importer of expo-notifications. ensureChannel() calls setNotificationChannelAsync('needs-you', name 'Needs you', importance HIGH, lockscreenVisibility PRIVATE). request() calls ensureChannel first, then requestPermissionsAsync. Also getStatus, post, dismiss, dismissAll, and setNotificationHandler (banner and list shown, sound on, no badge). In memory only; nothing is written to disk or logged.",
+      "suppress_rule": "Do not post when AppState.currentState is 'active' AND the current route is '/' (home, where Needs you is shown) or '/inbox/<that id>'. Otherwise post: active on another screen (pair, a different item), or background or inactive. The root layout pushes the route into the notifier with usePathname.",
+      "tap": "The listener goes in the root layout _layout.tsx, inside LinkProvider: addNotificationResponseReceivedListener for warm taps plus useLastNotificationResponse for a cold start. parseTap, then router.push to pathname /inbox/[id] with params id; invalid data goes to '/'. A tap for an item that has gone lands on the existing inbox/[id] gone state (copy.gone), so no new code is needed. A tap also dismisses that notification.",
+      "settings_surface": "No settings screen. One compact Alerts card at the bottom of home (index.tsx), in components/alerts-card.tsx, shown only when paired. Undetermined: rationale title and body plus [Turn on alerts] [Not now]; Not now hides it for this app run only, in memory. Denied with canAskAgain: alerts_denied_retry. Denied without canAskAgain: alerts_denied_settings with Linking.openSettings(). Granted: the one-line alerts_on with [Notification settings], which calls Linking.openSettings(). Status is re-read on AppState active, after a return from Settings.",
+      "jest": "Screen tests use jest.mock('@/notify/os'), a hand mock of our own adapter. payload and fresh are pure and need no mock. The adapter test relies on the jest-expo preset stub if one exists for expo-notifications, as expo-camera and expo-crypto do; otherwise one jest.mock('expo-notifications') goes in that single test file. No global setupFiles."
+    },
+    "copy_for_approval": {
+      "alerts_title": "Get alerts when an agent needs you",
+      "alerts_body": "Orchestra can alert you when an agent asks for permission or has a question. Alerts only arrive while Orchestra is open or was used recently, and only while this phone is on the same network as your desktop, or on Tailscale. If the app is closed or the phone has been asleep for a while, no alert arrives.",
+      "alerts_button": "Turn on alerts",
+      "alerts_not_now": "Not now",
+      "alerts_denied_retry": "Alerts are off. You can still see what needs you when Orchestra is open. [Try again]",
+      "alerts_denied_settings": "Alerts are off. To get them, allow notifications for Orchestra in Settings. [Open settings]",
+      "alerts_on": "Alerts are on. They arrive only while Orchestra is open or recently used, on your desktop's network. [Notification settings]",
+      "notify_title": "<kind> from <project>  (kind = Permission or Question; project = project_name, else 'Unknown project')",
+      "notify_body": "<summary, at most 100 chars, with an ellipsis if cut>; if the summary is empty: 'Open Orchestra to answer.'",
+      "channel_name": "Needs you",
+      "channel_description": "An agent is asking for permission or has a question.",
+      "lock_screen": "Channel visibility PRIVATE: on a secure lock screen Android shows only Orchestra, with the contents hidden."
+    },
+    "plan": [
+      {
+        "slice": "s1",
+        "intent": "Run npx expo install expo-notifications (SDK 57 pin, ~57.0.x). Add the expo-notifications config plugin (icon ./assets/images/android-icon-monochrome.png, color #208AEF) and android.permissions [android.permission.POST_NOTIFICATIONS]. Keep blockedPermissions [RECORD_AUDIO], runtimeVersion fingerprint and every existing plugin unchanged. Prove the generated manifest, then delete android/.",
+        "files": [
+          "orchestra/mobile/package.json",
+          "orchestra/mobile/package-lock.json",
+          "orchestra/mobile/app.json"
+        ],
+        "done_when": [
+          "cd orchestra/mobile && grep -cE 'expo-notifications.: .~57[.]0[.]' package.json -> 1",
+          "cd orchestra/mobile && grep -c android.permission.POST_NOTIFICATIONS app.json -> 1; grep -c expo-notifications app.json -> at least 1; grep -c android.permission.RECORD_AUDIO app.json -> 1; grep -c fingerprint app.json -> 1",
+          "cd orchestra/mobile && npx expo install --check -> no mismatched packages",
+          "cd orchestra/mobile && npx expo prebuild --platform android --no-install --clean; grep -c POST_NOTIFICATIONS android/app/src/main/AndroidManifest.xml -> at least 1; grep -cE 'RECORD_AUDIO.*tools:node=.remove.' android/app/src/main/AndroidManifest.xml -> at least 1; then rm -rf android, and git status shows no android/",
+          "cd orchestra/mobile && npx tsc --noEmit -> exit 0; npx jest --watchAll=false -> 17 suites, 394 tests, 0 failing"
+        ],
+        "risk": "high",
+        "risk_reason": "touches app.json and adds a native module plus config plugin (new build, fingerprint changes)",
+        "depends_on": []
+      },
+      {
+        "slice": "s2",
+        "intent": "Notification core: the pure fresh-item tracker with the snapshot guard, the pure payload builder and tap parser, the expo-notifications adapter (channel before permission), the notifier with the suppress rule, the controller onInbox hook, and provider wiring (post fresh unless suppressed, dismiss gone, dismissAll on forget and revoke). Tests for all of it.",
+        "files": [
+          "orchestra/mobile/src/link/fresh.ts",
+          "orchestra/mobile/src/link/controller.ts",
+          "orchestra/mobile/src/link/provider.tsx",
+          "orchestra/mobile/src/notify/payload.ts",
+          "orchestra/mobile/src/notify/os.ts",
+          "orchestra/mobile/src/notify/notifier.ts",
+          "orchestra/mobile/src/__tests__/fresh.test.ts",
+          "orchestra/mobile/src/__tests__/payload.test.ts",
+          "orchestra/mobile/src/__tests__/notifier.test.ts",
+          "orchestra/mobile/src/__tests__/controller.test.ts",
+          "orchestra/mobile/src/__tests__/fake-host.ts"
+        ],
+        "done_when": [
+          "cd orchestra/mobile && npx jest --watchAll=false -> all suites pass, 0 failing, more than 394 tests. New tests prove: (a) a snapshot with N pending items gives 0 fresh; (b) an inbox-updated adding one id gives exactly that item; (c) a reconnect snapshot after a drop gives 0 fresh; (d) an inbox-updated before this connection snapshot gives 0 fresh; (e) resolved, expired, finished and error items are never fresh; (f) payload data keys are exactly id and kind, and the content never contains the fixture tool_input_preview, questions or result_text strings; (g) parseTap rejects a non-string, an empty string and more than 128 chars; (h) suppress is true only for active on / or active on /inbox/<same id>; (i) ensureChannel is called before requestPermissionsAsync; (j) gone ids are dismissed and forget calls dismissAll",
+          "cd orchestra/mobile && npx tsc --noEmit -> exit 0",
+          "cd orchestra/mobile && grep -rl expo-notifications src --include=*.ts --include=*.tsx | grep -v __tests__ -> exactly src/notify/os.ts"
+        ],
+        "risk": "high",
+        "risk_reason": "decides what reaches the notification shade and lock screen (privacy a test only partly sees) and edits the link core controller.ts",
+        "depends_on": [
+          "s1"
+        ]
+      },
+      {
+        "slice": "s3",
+        "intent": "UI: the root-layout tap listener (warm and cold start) routing to /inbox/[id], route tracking for the suppress rule, the home Alerts card with the rationale-first flow, the denied retry and settings paths and the granted status line, and the approved copy in copy.ts. Tests.",
+        "files": [
+          "orchestra/mobile/src/app/_layout.tsx",
+          "orchestra/mobile/src/app/index.tsx",
+          "orchestra/mobile/src/components/alerts-card.tsx",
+          "orchestra/mobile/src/constants/copy.ts",
+          "orchestra/mobile/src/__tests__/alerts-card.test.tsx",
+          "orchestra/mobile/src/__tests__/home.test.tsx"
+        ],
+        "done_when": [
+          "cd orchestra/mobile && npx jest --watchAll=false -> all suites pass, 0 failing. alerts-card tests prove: undetermined shows alerts_title and alerts_body, and request is NOT called until Turn on alerts is pressed; denied with canAskAgain shows Try again; denied without it shows Open settings and calls Linking.openSettings; granted shows alerts_on; Not now hides the card; every button has accessibilityRole, accessibilityLabel and a 48dp or larger target",
+          "cd orchestra/mobile && npx tsc --noEmit -> exit 0",
+          "cd orchestra/mobile && grep -cE 'alerts_title|alerts_denied_settings|alerts_on' src/constants/copy.ts -> 3"
+        ],
+        "risk": "low",
+        "risk_reason": "no sensitive data (tap id validated in s2) and no file shared with another slice; covered by jest and owner checks",
+        "depends_on": [
+          "s2"
+        ]
+      }
+    ],
+    "edges": [
+      {
+        "from": "s1",
+        "to": "s2",
+        "artifact": "installed expo-notifications (types and jest resolution) and the plugin and permission config"
+      },
+      {
+        "from": "s2",
+        "to": "s3",
+        "artifact": "notify/os.ts permission API, notify/payload.ts parseTap, and the notifier route setter"
+      }
+    ],
+    "not_doing": [
+      "Real push: FCM, register_push, a push flag in welcome, the hosted relay (PR3)",
+      "A foreground service, background fetch or task, or any background keep-alive change (owner decision)",
+      "Any desktop, core or protocol change; the reserved notice event stays unused",
+      "Notifications for finished or error items, or for items that arrived while disconnected",
+      "A settings screen, per-kind toggles, quiet hours, or persisting Not now (it lasts one app run, in memory)",
+      "Notification actions (Allow or Deny from the shade) or replying from a notification",
+      "Badges, app icon counts, grouping or summary notifications",
+      "iOS notification work (Android first; the plugin is cross-platform but iOS is not tested)",
+      "An EAS build or OTA publish in this run; the new build is an ops follow-up",
+      "Fixing the README drift the scout noted (README.md:55 and :158)"
+    ],
+    "owner_checks": [
+      "O1 In Expo Go with notification permission reset: connect; home shows the Alerts card with the approved rationale, and no OS prompt appears until Turn on alerts is pressed.",
+      "O2 Press Turn on alerts: the Android 13+ system prompt appears (proves the channel exists first). Allow: the card becomes the one-line alerts_on status.",
+      "O3 With items already pending on the desktop, kill and reopen the app, then toggle Wi-Fi off and on to force a reconnect: no notification for those existing items.",
+      "O4 On the pair screen or a different item, trigger a new permission prompt on the desktop: a notification shows Permission from <project> and the summary. A question shows Question from <project>.",
+      "O5 On home (Needs you) or on the item screen for that same item: no notification for a new item.",
+      "O6 Press Home to background the app and trigger a new item within about 30 s: it arrives. Leave it backgrounded for several minutes and trigger again: expect nothing (the documented limit).",
+      "O7 Tap a notification: it opens the answer screen for that item. Answer an item on the desktop first, then tap its notification if still shown: you land on This request is no longer on <host>, or the notification was already dismissed.",
+      "O8 Lock the phone with a secure lock and trigger an item: the lock screen shows Orchestra with the contents hidden.",
+      "O9 Deny the prompt (twice if needed): Try again, then Open settings opens the Orchestra app settings; turning it on there and returning flips the card to alerts_on.",
+      "O10 The status-bar icon renders as a monochrome glyph, not a white square; TalkBack reads the card and its buttons; the largest font does not clip the card."
+    ],
+    "human_gate": [
+      "Approve the copy in copy_for_approval (rationale, denied, on-state, notification title and body, channel name).",
+      "Approve the suppress rule (active AND on home or on that item) and that items arriving while disconnected are not notified.",
+      "Approve project name plus summary in the notification, with lock-screen visibility PRIVATE.",
+      "Approve the home Alerts card as the only place to see or change the setting (no settings screen; Not now lasts one app run).",
+      "Acknowledge that this needs a new EAS build (fingerprint change) after merge; Expo Go covers the owner checks until then."
+    ],
+    "open_to_verify": [
+      "POST_NOTIFICATIONS is declared explicitly either way; the s1 prebuild grep proves it is in our generated manifest.",
+      "expo-router handling taps on its own is not relied on; the root-layout listener is the mechanism."
+    ]
+  },
+  "approved_by_human": true,
+  "scope_exceptions": [
+    "orchestra/mobile/android",
+    "orchestra/mobile/src/notify/os.ts",
+    "orchestra/mobile/src/__tests__/os.test.ts"
+  ],
+  "builders": {
+    "s1": {
+      "written_by": "builder",
+      "status": "done",
+      "branch": "a3-notify",
+      "commit": "8c0d93d",
+      "files": [
+        "orchestra/mobile/package.json",
+        "orchestra/mobile/package-lock.json",
+        "orchestra/mobile/app.json"
+      ],
+      "notes": "Prebuild rewrites package.json android/ios scripts; restored them by hand in 8c0d93d.",
+      "gate_results": [
+        {
+          "cmd": "grep -cE 'expo-notifications.: .~57[.]0[.]' package.json",
+          "out": "1 (\"expo-notifications\": \"~57.0.24\")"
+        },
+        {
+          "cmd": "grep -c POST_NOTIFICATIONS / expo-notifications / RECORD_AUDIO / fingerprint app.json",
+          "out": "1 / 2 / 1 / 1 (expo-notifications count 2 incl. plugin line; POST_NOTIFICATIONS 1)"
+        },
+        {
+          "cmd": "npx expo install --check",
+          "out": "Found outdated dependencies (pre-existing on main): @expo/ui, expo, expo-network, expo-router; expo-notifications not flagged"
+        },
+        {
+          "cmd": "prebuild + manifest grep (rerun), then rm -rf android",
+          "out": "POST_NOTIFICATIONS 1; RECORD_AUDIO tools:node=remove 1; android/ removed, git status clean"
+        },
+        {
+          "cmd": "npx tsc --noEmit; npx jest --watchAll=false (rerun)",
+          "out": "tsc exit 0; 17 suites passed, 394 tests passed"
+        }
+      ],
+      "commits": [
+        "cbe8021",
+        "90d899b",
+        "8c0d93d"
+      ],
+      "deviation_from_approved_plan": "android/ deleted under orchestrator scope_exception. Unplanned expo install --fix bumps (@expo/ui, expo, expo-network, expo-router) reverted to main versions; diff vs b6dd32f in package.json is only expo-notifications ~57.0.24. expo install --check now reports pre-existing main drift: @expo/ui 57.0.25->~57.0.26, expo 57.0.30->~57.0.31, expo-network 57.0.2->~57.0.3, expo-router 57.0.28->~57.0.29; expo-notifications is not flagged."
+    },
+    "s2": {
+      "written_by": "builder",
+      "status": "done",
+      "branch": "a3-notify",
+      "commit": "dfbcbef",
+      "changed": [
+        "mobile/src/link/fresh.ts",
+        "mobile/src/link/controller.ts",
+        "mobile/src/link/provider.tsx",
+        "mobile/src/notify/payload.ts",
+        "mobile/src/notify/os.ts",
+        "mobile/src/notify/notifier.ts",
+        "mobile/src/__tests__/fresh.test.ts",
+        "mobile/src/__tests__/payload.test.ts",
+        "mobile/src/__tests__/notifier.test.ts",
+        "mobile/src/__tests__/controller.test.ts"
+      ],
+      "notes": "onInbox event also carries optional reset:true (forget/revoke) so the notifier calls dismissAll; fake-host.ts needed no change.",
+      "gate_results": [
+        {
+          "cmd": "cd mobile && npx jest --watchAll=false",
+          "output": "Test Suites: 20 passed, 20 total\nTests: 424 passed, 424 total (attempt 2)"
+        },
+        {
+          "cmd": "cd mobile && npx tsc --noEmit",
+          "output": "exit 0, no output"
+        },
+        {
+          "cmd": "cd mobile && grep -rl expo-notifications src --include=*.ts --include=*.tsx | grep -v __tests__",
+          "output": "src/notify/os.ts"
+        }
+      ],
+      "attempt_2": "Blocker: post() now awaits ensureChannel() first (test added: channel before schedule). Minor: body cut on a code point (surrogate test added). jest 20 suites, 424 tests, 0 failing; tsc exit 0."
+    },
+    "s3": {
+      "written_by": "builder",
+      "status": "done",
+      "branch": "a3-notify",
+      "commit": "ac27a11",
+      "changed": [
+        "mobile/src/app/_layout.tsx",
+        "mobile/src/app/index.tsx",
+        "mobile/src/components/alerts-card.tsx",
+        "mobile/src/constants/copy.ts",
+        "mobile/src/__tests__/alerts-card.test.tsx",
+        "mobile/src/__tests__/home.test.tsx",
+        "mobile/src/notify/os.ts",
+        "mobile/src/__tests__/os.test.ts"
+      ],
+      "deviation_from_approved_plan": "os.ts gained onTap (response listener returning unsubscribe) and takeLaunchTap (cold-start last response, cleared once read), and the needs-you channel now sets showBadge:false; new os.test.ts covers them. Both files entered via orchestrator scope_exceptions.",
+      "notes": "",
+      "gate_results": [
+        {
+          "cmd": "cd mobile && npx jest --watchAll=false",
+          "output": "Test Suites: 22 passed, 22 total\nTests: 437 passed, 437 total"
+        },
+        {
+          "cmd": "cd mobile && npx tsc --noEmit",
+          "output": "exit 0, no output"
+        }
+      ],
+      "attempt_2": "Blocker: onTap now clears the last notification response before cb (os.test: warm tap then takeLaunchTap is null). Notes: switched to sync getLastNotificationResponse/clearLastNotificationResponse (takeLaunchTap now sync); added pure tapRoute in os.ts, tested (valid id, empty, non-string, null, >128) in os.test.ts. Gone-screen behaviour unchanged. jest 22 suites, 437 tests, 0 failing; tsc exit 0."
+    }
+  },
+  "reviews": {
+    "s1": {
+      "$comment": "RE-REVIEWS NEST, and this is the rule every reader follows. The TOP LEVEL of reviews.<slice> IS attempt 1. A re-review writes attempt_2, then attempt_3, and so on, each with the same fields as the top level. Every attempt SURVIVES PERMANENTLY - history is never overwritten, flattened, or migrated up. The LATEST attempt supplies the verdict: that is what close-run.py, brief.py and verify-state.py resolve through, and what fleetview's finalVerdict() has always shown. `ever_rejected` - did ANY attempt REJECT - is DISPLAY ONLY, forever, so a rejection stays visible after it is fixed; it must never gate anything, or the fleet stops being able to loop. NO NODE MAY REWRITE AN EARLIER ATTEMPT: a second reviewer writes its own attempt_N and leaves the ones before it alone, top-level verdict included - relocating that verdict would destroy the history the board keeps and leave a key stamped written_by:reviewer with someone else as its real author. The KEY INDEX numbers an attempt, not the `attempt` field inside it; the field is display. An EMPTY attempt_N is not a re-review, it is a key nobody wrote - write the whole attempt or none of it. The walk STOPS AT THE FIRST GAP, so an attempt_3 with no attempt_2 is ignored and the earlier verdict stands: A GAP IS MALFORMED AND NO NODE MAY LEAVE ONE. Write the next UNUSED N and never skip - a mis-numbered re-review is not reported anywhere, it is simply unread, and a REJECT nobody reads is a REJECT nobody acts on. The cap is attempt_9, matching fleetview's `for (i = 2; i < 10; i++)` exactly so the two readers cannot disagree; attempt_10 and beyond is reported loudly and resolved by nobody.",
+      "written_by": "reviewer",
+      "verdict": "PASS",
+      "attempt": 1,
+      "commit_reviewed": "8c0d93d",
+      "summary": "PASS. Diff b6dd32f..8c0d93d touches only mobile/package.json (+expo-notifications ~57.0.24, scripts unchanged), package-lock.json (+expo-notifications 57.0.24 and its two new transitive deps badgin 1.2.3, expo-application 57.0.3; no other version moves) and app.json (+android.permissions POST_NOTIFICATIONS, +expo-notifications plugin with existing monochrome icon and #208AEF; blockedPermissions, fingerprint and other plugins untouched). After npm ci I re-ran every done_when: greps 1/1/1/1/1, tsc exit 0, jest 17 suites/394 tests green. Prebuilt both main and the branch: the only new app-manifest permission is POST_NOTIFICATIONS; RECORD_AUDIO tools:node=remove survives. expo install --check drift (@expo/ui, expo, expo-network, expo-router) reproduced identically on main; expo-notifications not flagged. Icon is 432px pure greyscale+alpha. Three commits, author njcurtis3, no attribution. Notes: the library manifest adds RECEIVE_BOOT_COMPLETED at gradle merge; pin is ~57.0.24 vs bundled ~57.0.23.",
+      "findings": [
+        {
+          "severity": "note",
+          "origin": "",
+          "title": "expo-notifications library manifest merges RECEIVE_BOOT_COMPLETED into the built APK",
+          "detail": "node_modules/expo-notifications/android/src/main/AndroidManifest.xml declares RECEIVE_BOOT_COMPLETED (and POST_NOTIFICATIONS). It does not appear in the prebuild app manifest, so the done_when cannot see it, but the gradle manifest merger will put it in the shipped APK. It is a normal (non-runtime) permission used to reschedule scheduled notifications after reboot; it is not a keep-alive and does not breach not_doing. If the owner wants a minimal permission list, add it to android.blockedPermissions in a later slice; flag it for the Play listing data-safety review."
+        },
+        {
+          "severity": "note",
+          "origin": "",
+          "title": "Pin ~57.0.24 is one patch above the installed expo 57.0.30 bundled pin ~57.0.23",
+          "detail": "node_modules/expo/bundledNativeModules.json:73 says ~57.0.23; the range came from the reverted expo --fix bump (expo 57.0.31 bundles 57.0.24). expo install --check accepts it and done_when matches ~57.0.x, so no failure; it simply resolves to the version the next expo bump expects."
+        },
+        {
+          "severity": "note",
+          "origin": "builder",
+          "title": "Builder gate output miscounts expo-notifications in app.json",
+          "detail": "Builder reported 2; grep -c gives 1 (one line). done_when needs at least 1, so it still passes."
+        },
+        {
+          "severity": "note",
+          "origin": "",
+          "title": "Prebuild rewrites package.json android/ios scripts",
+          "detail": "Re-observed during my prebuild; restored with git checkout. Anyone re-running the prebuild gate must restore package.json after it, as the builder did in 8c0d93d. Committed package.json has no scripts diff vs main."
+        }
+      ],
+      "evidence": [
+        "git diff b6dd32f 8c0d93d --stat: 3 files (app.json +8, package-lock.json +34, package.json +1), additions only",
+        "package-lock diff: only expo-notifications 57.0.24, badgin 1.2.3, expo-application 57.0.3 added; deps @expo/image-utils 0.11.6, abort-controller 3.0.0, expo-constants 57.0.22 already locked",
+        "npm ci ok; done_when greps: package.json 1; app.json POST_NOTIFICATIONS 1, expo-notifications 1, RECORD_AUDIO 1, fingerprint 1",
+        "npx expo install --check on 8c0d93d and on b6dd32f's package files: identical 4-package drift (@expo/ui, expo, expo-network, expo-router); expo-notifications not listed",
+        "prebuild --platform android --no-install --clean on main vs branch: uses-permission diff is exactly +POST_NOTIFICATIONS; RECORD_AUDIO tools:node=remove count 1; notification_icon drawables and #208AEF color generated; android/ removed, git status clean",
+        "assets/images/android-icon-monochrome.png: RGBA 432x432, every opaque pixel R=G=B",
+        "npx tsc --noEmit exit 0; npx jest --watchAll=false: 17 suites, 394 tests passed",
+        "git log b6dd32f..8c0d93d: 3 commits, author njcurtis3 <nathanjcurtis3@gmail.com>, no Claude/Co-Authored-By text"
+      ]
+    },
+    "s2": {
+      "verdict": "PASS",
+      "attempt": 2,
+      "commit_reviewed": "dfbcbef",
+      "written_by": "reviewer",
+      "summary": "PASS. Re-ran npm ci, jest (20 suites, 424 passed), tsc (exit 0) and the grep gate (only src/notify/os.ts) at dfbcbef; both commits njcurtis3, no trailers. Attempt 1's blocker is fixed: os.post() awaits ensureChannel() before scheduleNotificationAsync, and os.post is the only schedule path (notifier.ts:29), so the first post after a cold start with permission already granted lands on 'needs-you'. In expo-notifications 57.0.24, AndroidXNotificationsChannelManager applies lockscreenVisibility PRIVATE (enum 2 -> VISIBILITY_PRIVATE); re-creating an existing channel is an Android no-op except name and description, so it is idempotent. If setNotificationChannelAsync rejects, the await throws, nothing is scheduled and the notifier swallows it: it fails closed, never posts on the fallback channel. On API 24-25 there are no channels and the Notification default visibility is PRIVATE. The body is now cut at 100 code points (up to 200 UTF-16 units); the approved copy says '100 chars', which code points honour. Fix touched only os.ts and payload.ts, so the snapshot guard, {id,kind} data and the suppress rule are unchanged.",
+      "findings": [
+        {
+          "severity": "note",
+          "file": "mobile/src/notify/os.ts:10-18",
+          "origin": "architect",
+          "detail": "ensureChannel passes no showBadge, so the channel gets the Android default (NotificationChannel showBadge=true; expo only calls setShowBadge when the key is present, AndroidXNotificationsChannelManager.java:122-124). Result: a launcher dot, with no content and no count. The design's 'no badge' is about the handler's shouldSetBadge:false, which is set, and not_doing excludes badge work, so this is not a contract breach. If the owner wants no dot, add showBadge:false before first ship, because channel settings freeze once the channel exists."
+        },
+        {
+          "severity": "note",
+          "file": "mobile/src/notify/os.ts:35-37",
+          "origin": "",
+          "detail": "If channel creation fails, the alert is silently dropped: the await throws before schedule and notifier.swallow eats it. Failing closed is the right trade, since the alternative is the fallback channel with a public lock screen, and the design forbids logging. On iOS every post calls the stub setNotificationChannelAsync, which writes a constant console.debug line with no content. iOS is out of scope."
+        },
+        {
+          "severity": "note",
+          "file": "mobile/src/notify/payload.ts:19-21",
+          "origin": "",
+          "detail": "BODY_MAX counts code points (Array.from), so a cut body is 99 code points plus the ellipsis, at most 100 code points, which can be up to about 200 UTF-16 units. The approved copy ('at most 100 chars') is user-visible characters, so code points fit better than units, and nothing downstream caps on UTF-16 length. ZWJ sequences and flag pairs can still be split between code points. That renders as separate glyphs, not a lone surrogate. Cosmetic."
+        },
+        {
+          "severity": "note",
+          "file": "mobile/src/link/fresh.ts, controller.ts, provider.tsx",
+          "origin": "",
+          "detail": "The f03ba2b..dfbcbef diff touches only os.ts, payload.ts and two test files. I re-read the fresh tracker (seed only seeds, update notifies only on this conn's snapshot, clear plus reset:true on forget and revoke), the payload data {id, kind}, and isSuppressed. There is no regression from attempt 1's verified state."
+        }
+      ],
+      "attempt_1": {
+        "verdict": "REJECT",
+        "attempt": 1,
+        "commit_reviewed": "f03ba2b",
+        "written_by": "reviewer",
+        "summary": "Re-ran npm ci, jest (20 suites, 422 passed), tsc (exit 0) and the grep gate (only src/notify/os.ts) at f03ba2b; authorship njcurtis3, no trailers. Walked controller/fresh by hand: snapshot only seeds, inbox-updated before this conn's snapshot is skipped (linkDown nulls snapshotConn), reconnect and re-pair seed and dismiss notified ids missing from the new snapshot, forget/revoke clear and dismissAll; tracker is bounded by the inbox. reset:true is sound and minimal. Payload is {id,kind}, copy matches. REJECT: the 'needs-you' channel is only created inside request(). On Android 8-12 (permission granted at install, so the Alerts card goes straight to 'granted' and request() never runs), post() targets a channel that does not exist; expo's BaseNotificationBuilder falls back to its Miscellaneous channel with no lockscreen override and badges on, so title and summary show on a secure lock screen, against the approved lock_screen copy. Verified in node_modules/expo-notifications android source. Fix: ensureChannel() before scheduling in post() (or at setHandler). Minor: body cut splits surrogate pairs.",
+        "findings": [
+          {
+            "severity": "blocker",
+            "origin": "architect",
+            "file": "mobile/src/notify/os.ts:36-41 (ensureChannel only at :31)",
+            "issue": "post() schedules on channelId 'needs-you' but nothing guarantees the channel exists; ensureChannel runs only inside request(). Android <=12 grants POST_NOTIFICATIONS at install, so request() is never called (s3 card shows granted). expo-notifications BaseNotificationBuilder.kt:66-75 then logs \"Channel 'needs-you' doesn't exists\" and posts on expo_notifications_fallback_notification_channel, created at :113-122 with no setLockscreenVisibility and setShowBadge(true).",
+            "failure": "Android 12 phone, paired, app backgrounded, a question arrives -> notification 'Question from <project>' + summary shown in full on the secure lock screen (default user setting), and badge set; violates copy_for_approval.lock_screen and the 'no badge' design.",
+            "fix": "await ensureChannel() at the top of post() (idempotent), or call it once at startup next to setHandler(); add a test that post creates the channel first."
+          },
+          {
+            "severity": "minor",
+            "origin": "builder",
+            "file": "mobile/src/notify/payload.ts:19",
+            "issue": "s.slice(0, BODY_MAX - 1) cuts UTF-16 code units; an emoji straddling index 98/99 leaves a lone high surrogate before the ellipsis.",
+            "failure": "summary = 'a'*98 + U+1F600 + 'tail' -> body ends '\ud83d\u2026' (verified in node: lone surrogate present), rendered as a replacement glyph.",
+            "fix": "Back off one unit when the last kept unit is a high surrogate (or cut by code points); add a payload test."
+          },
+          {
+            "severity": "note",
+            "origin": "",
+            "file": "mobile/src/link/fresh.ts:25-26",
+            "issue": "Suppressed items are still added to notified, so a later gone calls dismiss on an id never posted. Harmless (dismiss of an unknown id is a no-op, rejection swallowed)."
+          },
+          {
+            "severity": "note",
+            "origin": "",
+            "file": "mobile/src/link/provider.tsx:76",
+            "issue": "Project name is looked up in sessions at emit time; if an inbox-updated precedes the session-updated for a new session the title reads 'Unknown project'. Matches the approved fallback, so not a defect."
+          },
+          {
+            "severity": "note",
+            "origin": "",
+            "file": "mobile/src/link/controller.ts:88-90",
+            "issue": "Unplanned reset:true on onInbox is sound and minimal: it is the only way the notifier can tell forget/revoke from ordinary gone ids, emitted from both forget() and the Revoked branch, and absent hooks are no-ops via optional chaining."
+          }
+        ],
+        "evidence": [
+          "npm ci ok",
+          "npx jest --watchAll=false -> 20 suites, 422 passed",
+          "npx tsc --noEmit -> exit 0",
+          "grep -rl expo-notifications src ... | grep -v __tests__ -> src/notify/os.ts",
+          "git log 8c0d93d^..f03ba2b: author njcurtis3, no attribution trailers",
+          "read node_modules/expo-notifications/android/.../BaseNotificationBuilder.kt:40-135 (fallback channel)",
+          "node: slice(0,99) of 98 'a' + emoji leaves lone 0xd83d"
+        ]
+      }
+    },
+    "s3": {
+      "verdict": "PASS",
+      "attempt": 2,
+      "commit_reviewed": "ac27a11",
+      "written_by": "reviewer",
+      "summary": "PASS. Attempt 1's blocker is fixed. onTap now clears the stored response before it routes, so a root remount in the same runtime reads null. A cold-start tap is still routed exactly once: it is read, cleared, then the listener subscribes. I traced this through expo-notifications 57.0.24. getLastNotificationResponseAsync is literally async wrapping the sync call, so the sync version can never return null where the old one would not. On both Android (NotificationManager pending extras) and iOS (NotificationCenterManager pendingResponses), the native module replays the launch tap into lastResponse inside its own OnCreate, which runs before any JS call into the module returns. tapRoute/parseTap send non-objects, a missing, empty or non-string id, or one over 128 characters home. The os.ts s2 guarantees still hold, and it is the only non-test importer. Card, copy and index are unchanged since attempt 1; the copy still matches word for word. I re-ran npm ci, tsc (exit 0), jest (22 suites, 437 tests), the copy grep (3) and authorship (njcurtis3, no trailers). Notes: a narrow double-route race, the web throw, and NotifyBridge still has no test.",
+      "findings": [
+        {
+          "severity": "note",
+          "where": "mobile/src/app/_layout.tsx:25-27",
+          "issue": "Narrow double-route race. Native sets lastResponse and then queues the JS event. If that lands while the effect runs, after native set it but before JS dispatches the event, takeLaunchTap routes and clears, and then the newly subscribed onTap fires on the queued event and pushes the same item again. The window is only during mount (the same window useLastNotificationResponse dedupes by request.identifier), and attempt 1's async version had it too. A fix: remember the last handled request.identifier in os.ts and skip repeats.",
+          "origin": ""
+        },
+        {
+          "severity": "note",
+          "where": "mobile/src/notify/os.ts:66-68",
+          "issue": "On web, NotificationsEmitterModule has no getLastNotificationResponse, so the sync call throws UnavailabilityError synchronously inside NotifyBridge's effect. That crashes the root under `npm run web`. Before, the async version rejected and the rejection was swallowed. Web is not a target (registry ui is native-desktop + native-mobile), so this is a note only.",
+          "origin": ""
+        },
+        {
+          "severity": "note",
+          "where": "mobile/src/app/_layout.tsx:11-31",
+          "issue": "NotifyBridge still has no test. The once-only and remount guarantees are proven only at the os.ts level, using a mock whose clear nulls mockLast. Nothing renders the bridge twice to show it does not re-route.",
+          "origin": "builder"
+        },
+        {
+          "severity": "note",
+          "where": "mobile/src/app/inbox/[id].tsx",
+          "issue": "Carried from attempt 1: a cold-start tap can show the gone copy briefly before the link snapshot arrives.",
+          "origin": "architect"
+        }
+      ],
+      "evidence": [
+        "expo-notifications/build/NotificationsEmitter.js: getLastNotificationResponseAsync(){return getLastNotificationResponse()}",
+        "NotificationsEmitter.kt OnCreate->NotificationManager.addListener replays pendingNotificationResponsesFromExtras -> lastNotificationResponseBundle",
+        "EmitterModule.swift OnCreate->addDelegate replays pendingResponses -> lastResponse",
+        "NotificationsEmitter.d.ts:83,105 declare sync get/clear (async marked deprecated)",
+        "tsc exit 0; jest 22/22 suites, 437/437 tests; copy grep 3; git log dfbcbef..ac27a11 authors njcurtis3, no Claude trailers; grep: only src/notify/os.ts imports expo-notifications outside tests"
+      ],
+      "attempt_1": {
+        "verdict": "REJECT",
+        "attempt": 1,
+        "commit_reviewed": "632553e",
+        "written_by": "reviewer",
+        "summary": "REJECT on one os.ts bug. A warm tap is never cleared: onTap only routes, and the native emitter stores every tap as lastNotificationResponse (NotificationsEmitter.kt:78). takeLaunchTap clears only on cold start. So when the root remounts in the same JS runtime, NotifyBridge's effect runs again and re-routes to an old item. That happens when the activity is recreated after a font-scale or locale change (Expo's configChanges leave both out), or on Android 11 and older after Back exits and the app is reopened. The fix is one line: clear the last response in onTap too. Everything else holds. os.ts is still the only importer. The API names match the 57.0.24 .d.ts. The listener unsubscribes. ensureChannel still runs before post and request, PRIVATE is kept, and showBadge is false. Route tracking feeds '/' and '/inbox/<id>' to isSuppressed, and nothing races a pair redirect. The card copy matches copy_for_approval word for word, and the card shows only when link.host is set. Touchable adds role and the 48dp clamp. I re-ran npm ci, tsc (exit 0), jest (22 suites, 435 tests), the copy grep (3) and authorship (njcurtis3, no trailers). The risk tag should be medium, not low.",
+        "findings": [
+          {
+            "severity": "blocker",
+            "origin": "builder",
+            "file": "mobile/src/notify/os.ts:55-60, mobile/src/app/_layout.tsx:23-34",
+            "issue": "A warm tap stays stored and is re-routed when the root remounts.",
+            "evidence": "NotificationsEmitter.kt:70-79 sets lastNotificationResponseBundle on every response, warm taps included, and only clearLastNotificationResponse resets it. onTap never clears it. NotifyBridge runs takeLaunchTap() every time it mounts. Repro: with the app backgrounded, tap the notification for item X. onTap pushes /inbox/X, and last stays X. Then change the system font size (fontScale is not in Expo's configChanges 'keyboard|keyboardHidden|orientation|screenSize|screenLayout|uiMode|smallestScreenSize'), so the activity is recreated. RN unmounts and remounts the root in the same JS runtime. takeLaunchTap returns X and router.push('/inbox/X') runs again, so the user lands on a stale item or the gone screen. Android 11 and older does the same after Back on home and a relaunch. The comment 'Cleared so it is handled once' is true only for cold start.",
+            "fix": "In onTap, call Notifications.clearLastNotificationResponse() before cb (or have open() clear). Add an os.test case: after a warm tap, takeLaunchTap() returns null."
+          },
+          {
+            "severity": "note",
+            "origin": "architect",
+            "file": "mobile/src/app/inbox/[id].tsx:80-86",
+            "issue": "A cold-start tap first shows the gone copy.",
+            "evidence": "On a cold start link.inbox is empty until the snapshot arrives, so /inbox/X renders copy.gone ('no longer on <host>') and then switches to the item. The design said 'no new code is needed' for the gone state, but did not cover the window before connect. O7 should look for this flash."
+          },
+          {
+            "severity": "note",
+            "origin": "builder",
+            "file": "mobile/src/app/_layout.tsx:12-41",
+            "issue": "NotifyBridge has no test.",
+            "evidence": "The slice intent says 'Tests', but nothing covers parseTap routing (valid id to /inbox/[id], bad data to '/'), the cold-start path or setRoute. done_when does not require these tests, so this is a note, not a blocker."
+          },
+          {
+            "severity": "note",
+            "origin": "",
+            "file": "mobile/src/notify/os.ts:63-66",
+            "issue": "Uses getLastNotificationResponseAsync and clearLastNotificationResponseAsync, both deprecated in 57.0.24.",
+            "evidence": "They still work: each wraps the sync version. The sync getLastNotificationResponse and clearLastNotificationResponse are the current names."
+          },
+          {
+            "severity": "note",
+            "origin": "",
+            "file": "mobile/src/app/_layout.tsx:21-25",
+            "issue": "A tap does not call dismiss explicitly.",
+            "evidence": "The design says 'a tap also dismisses that notification'. Android's default autoDismiss covers this, so behaviour is fine. O7 confirms it."
+          },
+          {
+            "severity": "note",
+            "origin": "architect",
+            "file": "state.json architect s3 risk",
+            "issue": "The risk tag should be medium.",
+            "evidence": "Cold-start and warm-tap native state lives in os.ts. The blocker above came from the os.ts part, not the UI."
+          }
+        ],
+        "evidence": {
+          "npm_ci": "ok",
+          "tsc": "exit 0",
+          "jest": "Test Suites: 22 passed, 22 total; Tests: 435 passed, 435 total",
+          "copy_grep": "3",
+          "expo_notifications_importers_non_test": "src/notify/os.ts only",
+          "author": "njcurtis3 <nathanjcurtis3@gmail.com>, committer same, no attribution trailers",
+          "diff_files": "the 6 planned s3 files plus os.ts and os.test.ts (both in scope_exceptions); deviation_from_approved_plan recorded in builders.s3",
+          "copy_compare": "all 7 alerts_* strings match copy_for_approval exactly"
+        }
+      }
+    }
+  },
+  "integrator": {
+    "written_by": "the node that wrote this key - here, always the string integrator",
+    "merged": [],
+    "conflicts": [],
+    "verification": "what command proved it works, and its output"
+  },
+  "ops": {
+    "written_by": "the node that wrote this key - here, always the string ops",
+    "gated": true,
+    "actions": []
+  },
+  "log": [
+    "orchestrator: opened run for ROADMAP A3 (notifications: permission flow with rationale and denied path, local notifications while connected; real push is PR3, not this run), 2026-10-22",
+    "orchestrator: scout done (plan-killer: link not kept alive in background). Owner chose: notifications while the app is open or briefly backgrounded only; no foreground service; asleep-phone alerts stay with PR3. 2026-10-22",
+    "orchestrator: owner approved plan as is (single-loop s1->s2->s3, copy, suppress rule, no notify for items arriving while disconnected, home card only, new EAS build needed after merge). 2026-10-22",
+    "orchestrator: s1 builder returned (cbe8021). Its approved done_when says rm -rf android after prebuild, but the guard denied it because android/ is not in plan files. Plan gap: added orchestra/mobile/android to scope_exceptions (deleting the gitignored generated dir only). Also: builder ran expo install --fix, bumping @expo/ui, expo, expo-network and expo-router, which was not approved. Sent back to revert those, keep only expo-notifications, and record that --check mismatches pre-existed on main. 2026-10-22",
+    "orchestrator: s2 PASS on attempt 2 (dfbcbef). s3 builder blocked: tap handling needs response-listener and last-response wrappers in src/notify/os.ts (the only file allowed to import expo-notifications by design), but os.ts is not in s3 files. Plan gap: added orchestra/mobile/src/notify/os.ts and orchestra/mobile/src/__tests__/os.test.ts to scope_exceptions. s3 also sets showBadge:false on the needs-you channel, per the approved not_doing (no badges), from the s2 attempt-2 reviewer note. s3 reviewer to treat the os.ts part as high risk. 2026-10-22",
+    "orchestrator: s3 PASS on attempt 2 (ac27a11). Merged a3-notify into orchestra main as 97179a0 (--no-ff, clean; merge tree equals ac27a11). On main: mobile jest 22 suites / 437 tests pass, tsc clean. Desktop and core untouched. 2026-10-22",
+    "orchestrator: closed 2026-10-22. A3 s1-s3 PASS (s2 and s3 each on attempt 2), merged 97179a0, not pushed yet. Plan gaps handled via scope_exceptions: mobile/android (prebuild cleanup), src/notify/os.ts and os.test.ts (tap wrappers + showBadge false). Dropped/follow-ups: cold-start tap may flash the gone screen until the snapshot; possible double route if a tap lands exactly at root mount; root crashes under web (not a target); no NotifyBridge render test; expo install --check drift on main (@expo/ui, expo, expo-network, expo-router); s3 risk tag should have been medium; new EAS build needed (fingerprint changed)."
+  ]
+}
