@@ -1,0 +1,411 @@
+{
+  "$comment": "Shared state for ONE work-graph run. Lives at .graph/runs/<run-id>/state.json. Every node reads this on start and appends to its OWN key on finish - the builder writes its own builders.<slice> key, including the branch it worked on. Never rewrite another node's key. Every node key carries written_by, naming the node that wrote it: that is the ONLY record of authorship this file has, and without it 'never rewrite another node's key' is unverifiable - an orchestrator hand-writing all six keys is indistinguishable from six nodes doing their jobs. verify-state.py --audit checks it. This file is the edge: it is how context crosses between agents that cannot see each other.",
+  "run_id": "2026-10-23-orchestra-r2-android",
+  "goal": "stary A2 (read as: start R2, the next roadmap item; A2 is already done)",
+  "app": "orchestra",
+  "status": "done",
+  "scout": {
+    "written_by": "scout",
+    "app": "orchestra",
+    "plan_killer": "none for the preview APK. Cleartext is enabled app-wide (app.json:56-62) and reaches every profile. The Play track is blocked by owner ops-gate work, not by the build: no privacy policy URL exists in the repo (ROADMAP.md:689-691, unchecked).",
+    "facts": [
+      "app.json:21 android.package = com.telosrg.orchestra; app.json:11 ios.bundleIdentifier = com.telosrg.orchestra",
+      "app.json:4 slug = orchestra; app.json:5 version = 1.0.0",
+      "app.json has no owner, no extra.eas.projectId, no updates.url, no android.versionCode",
+      "app.json:69-71 runtimeVersion.policy = fingerprint",
+      "app.json:7 icon ./assets/images/icon.png; app.json:14-18 adaptiveIcon foreground, background, monochrome; all six images exist under mobile/assets/images/",
+      "app.json:29-63 plugins: expo-router; expo-splash-screen (31-39); expo-secure-store (39); expo-notifications (40-46); expo-camera (47-55, barcodeScannerEnabled true, microphonePermission false); expo-build-properties (56-62, android.usesCleartextTraffic true at line 60)",
+      "No custom config plugin and no network security config file exist under mobile/",
+      "app.json:22 permissions POST_NOTIFICATIONS; app.json:23 blockedPermissions RECORD_AUDIO",
+      "eas.json:3-4 cli.version >= 16.0.0; appVersionSource remote",
+      "eas.json:7-11 development: developmentClient true, distribution internal, channel development",
+      "eas.json:12-18 preview: distribution internal, channel preview, android.buildType apk",
+      "eas.json:19-23 production: channel production, autoIncrement true; eas.json:25-27 submit.production is empty (no service account path)",
+      "eas.json matches graph_agents/conventions/native-mobile.md:27-29 (three profiles, each with a channel) and :74-77 (runtimeVersion explicit). Convention :81 says autoIncrement raises versionCode; preview has no autoIncrement",
+      "mobile/package.json:15 expo-dev-client ~57.0.20 present; :22 expo-notifications; :12 expo-camera; :7-9 @noble/ciphers, curves, hashes 2.4.0 (pure JS)",
+      "expo-updates is NOT installed: absent from mobile/package.json and node_modules. It appears only at node_modules/expo/package.json:104, inside devDependencies (block starts line 94). package-lock.json has only expo-updates-interface (lines 7222, 7733)",
+      "Cleartext mechanism: node_modules/expo-build-properties/build/android.js:203-215 sets android:usesCleartextTraffic on the main application element. It is applied from app.json, not per profile, so development, preview and production all get it",
+      "Client connects with plain ws: mobile/src/link/client.ts:233 builds the URL as ws:// plus the host address plus the path; test mobile/src/__tests__/client.test.ts:55 expects ws://192.168.1.20:47800",
+      "A1 decision, orchestra/CLAUDE.md:159-161: Cleartext is allowed app-wide (expo-build-properties, android.usesCleartextTraffic), because the link is ws:// to a LAN or Tailscale IP and Android 9+ blocks that by default. The Noise channel carries the security, not the transport. Also protocol/README.md:40 Decided: A. A WebSocket (ws://) served by orchestra-core",
+      "ROADMAP follow-up, orchestra/ROADMAP.md:575: Release-build cleartext and the merged manifest wait for R2 preview APK (A1 follow-ups, lines 568-575)",
+      "Verification route named by the repo, orchestra/CLAUDE.md:172-176: npx expo prebuild --platform android --no-install --clean, then grep android/app/src/main/AndroidManifest.xml, then delete android/. Not run here",
+      "RECORD_AUDIO blockedPermissions: node_modules/@expo/config-plugins/build/android/Permissions.js:93-97 adds tools:node=remove, matching orchestra/CLAUDE.md:163-164",
+      "Target SDK: app.json sets no targetSdkVersion. node_modules/expo-build-properties/build/pluginConfig.js:20 value 31 is a minimum-supported floor. The Expo gradle fallback is targetSdkVersion 36 and compileSdkVersion 36 (node_modules/expo-modules-core/android/ExpoModulesCorePlugin.gradle:65-69)",
+      "CI: .github/workflows/ has only desktop-release.yml and test.yml. test.yml:82-95 mobile-npm job (ubuntu-24.04: npm ci, tsc --noEmit, npm test). No Android or EAS job anywhere. ROADMAP R2 (ROADMAP.md:671-674) does not ask for a workflow",
+      "Build docs: orchestra/CLAUDE.md:54-56 says Android builds go through EAS (eas.json). Signing keys, the EAS project, the updater key and store listings are created behind the ops gate. mobile/README.md:1-19 has no EAS or build section",
+      "Tooling: which eas finds nothing on PATH; npm ls -g eas-cli prints an empty tree. npx eas-cli was not run",
+      "Login state: C:/Users/natha/.expo/state.json exists (116 bytes). Only key names were checked, and no auth key matched. No eas-cli config dir, no ~/.eas directory. Contents not read",
+      "Play privacy policy: none in the repo. docs/decisions/0001-pricing-and-relay.md:64 says the EULA and privacy policy still need writing; ROADMAP.md:691 unchecked",
+      "Data-safety inputs present: camera purpose string (app.json:50), POST_NOTIFICATIONS (app.json:22), telemetry off (ROADMAP.md:744). Local network: expo-network (package.json:21) only; app.json declares no INTERNET or ACCESS_NETWORK_STATE",
+      "Play listing assets: mobile/assets/images has icon, adaptive icon parts, splash and favicon only. No feature graphic or screenshots",
+      "Jest, run once: mobile npx jest --watchAll=false gives Tests: 437 passed, 437 total (16.0 s)",
+      "ROADMAP R2 items at ROADMAP.md:672-674 are all unchecked"
+    ],
+    "unknowns": [
+      "Whether the merged manifest contains usesCleartextTraffic=true: inferred from plugin source, not proven by prebuild",
+      "Whether a preview APK connects to ws://lan-ip on a phone: not tested, no build exists",
+      "The generated template targetSdkVersion: not checked (needs prebuild in a copy)",
+      "Whether an EAS preview build with no explicit versionCode reuses the same code every build (appVersionSource remote, preview has no autoIncrement)",
+      "Whether expo-network needs an explicit INTERNET or ACCESS_NETWORK_STATE declaration, and how Play data safety treats local-network access: not researched",
+      "Whether the Expo login state file holds a live session: only key presence checked",
+      "Icon pixel size for the 512px Play icon: not checked"
+    ],
+    "risks": [
+      "Cleartext is app-wide, so release and production builds also allow it. Narrowing it needs a network security config, a design call for the architect",
+      "expo-updates is absent, so the eas.json channels do nothing for OTA yet. Adding it later changes the fingerprint and needs a new build (ROADMAP.md:611 says the same for expo-notifications). Decide before the first preview APK if OTA is wanted",
+      "ROADMAP.md:631: expo install --check already reports drift (@expo/ui, expo, expo-network, expo-router); EAS may warn or fail on version mismatch",
+      "Play target SDK: new apps and updates must target API 36 or higher. The Aug 31 2026 date has passed (today 2026-10-23); the extension to Nov 1 2026 is for existing apps. The Expo fallback of 36 meets this, but confirm in the generated manifest",
+      "The Play track needs owner-only inputs: privacy policy URL, listing assets, service-account JSON for eas submit"
+    ],
+    "build": "eas build not run. jest 437/437 green in orchestra/mobile. No eas on PATH, so no eas command was attempted",
+    "rubric": {
+      "1_app_json": "Present: android.package, slug, version, runtimeVersion fingerprint, icon and adaptive icon, plugins. Missing for eas build: owner and extra.eas.projectId (both set by eas init, owner action); updates.url (only needed with expo-updates); android.versionCode (remote-managed under appVersionSource remote)",
+      "2_eas_json": "Three profiles with channels; appVersionSource remote; no conflict with the convention",
+      "3_cleartext": "A preview APK should reach ws://lan-ip: usesCleartextTraffic is set globally (app.json:60) and the plugin writes it to the application element (android.js:211-215). Not device-verified",
+      "4_build_contents": "Native modules include expo-notifications, expo-camera, expo-secure-store, expo-network and others. noble is pure JS. expo-dev-client is present and only the development profile needs it. expo-updates is not installed",
+      "5_eas_cli": "Not on PATH, no global install. Expo login state file present, contents unread",
+      "6_ci": "No Android or EAS workflow. No doc asks for one",
+      "7_play": "Privacy policy missing; some data-safety inputs present; target SDK fallback 36",
+      "8_jest": "437 passed, 437 total"
+    },
+    "doc_guess_check": "Confirmed: app.json, eas.json, ROADMAP R2, the A1 follow-up and the native-mobile convention. Corrected: no network security config and no custom plugin exist; cleartext is the expo-build-properties switch in app.json. mobile/README.md has no build instructions"
+  },
+  "architect": {
+    "written_by": "architect",
+    "shape": "single-loop",
+    "parallel_safe": false,
+    "rationale": "One app, two small sequential slices in orchestra/mobile. Not a diamond: both slices touch package.json (s1 edits it; the s2 prebuild rewrites its scripts and must restore them), and the s2 manifest proof must run on the s1 dependency tree. Real edge s1 -> s2. orchestra is a git repo, so each slice gets a worktree branch. Risk: s1 high, because it changes native module versions (expo, expo-router, @expo/ui, expo-network). Jest mocks native code, so the tests cannot see a native break; only the owner device run sees it. s2 high, because it touches eas.json (native-mobile rule) and records a security trade-off (cleartext in release builds) whose wording the reviewer must check against the code. DECISIONS. (1) Cleartext: KEEP it app-wide and document it as a decided trade-off covering preview AND production builds. An Android network security config can only list domains, not IP ranges or CIDRs, and the hosts are arbitrary LAN or Tailscale IPs. Any config that works is base-config cleartextPermitted=true, which is today with more files. The Noise channel carries the security, and the app opens no other connection (orchestra/CLAUDE.md:159-161). The owner approves one added sentence. (2) expo-updates: NOT now. It makes the app contact u.expo.dev at launch, which breaks the rule that the app opens no other connection and the no-phone-home stance. Its updates.url needs the projectId, which only the owner eas init creates. Under the fingerprint policy, adding it later means one more build, which for a sideloaded preview APK is one more owner build. Revisit before the Play production track. The eas.json channels stay, inert. (3) Version drift: FIX it in s1 with npx expo install --fix, within SDK 57, so the first EAS build matches what EAS and expo-doctor expect. (4) versionCode: ADD autoIncrement true to build.preview. With appVersionSource remote and no autoIncrement, preview reuses the remote code and two APKs cannot be told apart. The remote counter is per platform, not per profile, so it is shared with production. That is harmless, because Play needs codes to rise, not to be contiguous. (5) Verification: s2 runs prebuild --no-install --clean in the worktree, greps the generated manifest (cleartext, RECORD_AUDIO remove, INTERNET) and the gradle targetSdk fallback (36 or higher), then deletes android/ and restores package.json. The final merged manifest is proven only by the owner device pairing over ws with the EAS APK. (6) Docs: a build-and-install section in mobile/README.md (s2). (7) No EAS CI workflow: it needs an EXPO_TOKEN secret, which is credential handling agents may not do. It spends EAS build quota for one owner device, and test.yml already runs tsc and jest. Revisit with the Play tracks or R1.",
+    "plan": [
+      {
+        "slice": "s1",
+        "depends_on": [],
+        "intent": "Fix the SDK 57 version drift that expo install --check reports on main (@expo/ui, expo, expo-network, expo-router) with npx expo install --fix, staying within SDK 57. No other dependency changes. No source edits: if tsc or jest breaks, report it, do not patch around it.",
+        "files": [
+          "orchestra/mobile/package.json",
+          "orchestra/mobile/package-lock.json"
+        ],
+        "done_when": [
+          "cd orchestra/mobile && npx expo install --check -> exit 0, nothing listed",
+          "cd orchestra/mobile && npx tsc --noEmit -> exit 0",
+          "cd orchestra/mobile && npx jest --watchAll=false -> Tests: 437 passed, 437 total (or more, none failing)",
+          "cd orchestra/mobile && npx expo-doctor -> no dependency-version check failing",
+          "cd orchestra/mobile && node -p \"require(`./package.json`).dependencies.expo\" -> starts with ~57.",
+          "git -C orchestra diff --name-only main -> only mobile/package.json and mobile/package-lock.json"
+        ],
+        "risk": "high",
+        "risk_reason": "It bumps native module versions. Jest mocks native code, so the tests cannot see a native break, and the bump changes the fingerprint and runtimeVersion of the first build."
+      },
+      {
+        "slice": "s2",
+        "depends_on": [
+          "s1"
+        ],
+        "intent": "Get ready for the preview APK. (a) eas.json: add autoIncrement true to build.preview and nothing else. (b) mobile/README.md: add a section, Build and install (Android preview). It covers the owner-only eas login, init and build steps; that the first build generates an EAS-managed keystore; sideloading the APK from the EAS build page; that the app talks plain ws:// to a desktop on the LAN or a Tailscale IP, with no internet service and no OTA updates; and that each preview build installs over the last. Also fix the stale line saying pairing is not built yet. (c) orchestra/CLAUDE.md: one sentence at the cleartext rule saying release and production builds carry it too, decided in R2, because a network security config cannot express IP ranges. Then verify with prebuild and remove every generated artifact.",
+        "files": [
+          "orchestra/mobile/eas.json",
+          "orchestra/mobile/README.md",
+          "orchestra/CLAUDE.md",
+          "orchestra/mobile/android",
+          "orchestra/mobile/package.json"
+        ],
+        "done_when": [
+          "cd orchestra/mobile && node -e \"const e=require(`./eas.json`);process.exit(e.build.preview.autoIncrement===true&&e.build.preview.android.buildType===`apk`&&e.cli.appVersionSource===`remote`?0:1)\" -> exit 0",
+          "cd orchestra/mobile && npx expo prebuild --platform android --no-install --clean -> exit 0",
+          "cd orchestra/mobile && grep -c \"android:usesCleartextTraffic=.true.\" android/app/src/main/AndroidManifest.xml -> 1 or more",
+          "cd orchestra/mobile && grep -c \"RECORD_AUDIO.*tools:node=.remove.\" android/app/src/main/AndroidManifest.xml -> 1 or more",
+          "cd orchestra/mobile && grep -c \"android.permission.INTERNET\" android/app/src/main/AndroidManifest.xml -> record the count (resolves the scout unknown)",
+          "cd orchestra/mobile && grep -rn targetSdk android/build.gradle android/gradle.properties android/app/build.gradle -> resolves to 36 or higher (record the line)",
+          "cd orchestra/mobile && rm -rf android && git checkout -- package.json && test ! -e android -> exit 0",
+          "cd orchestra/mobile && grep -c \"eas build --platform android --profile preview\" README.md -> 1 or more; grep -c \"ws://\" README.md -> 1 or more; grep -c \"not built yet\" README.md -> 0",
+          "grep -ci \"release and production\" orchestra/CLAUDE.md -> 1 or more",
+          "cd orchestra/mobile && npx tsc --noEmit -> exit 0; npx jest --watchAll=false -> all passed",
+          "git -C orchestra diff --name-only main -> only mobile/eas.json, mobile/README.md, CLAUDE.md (plus the two s1 files if stacked); ROADMAP.md never staged; git -C orchestra status --porcelain -> clean after commit",
+          "human-read: the README section and the CLAUDE.md sentence, read for accuracy and for no credential values"
+        ],
+        "risk": "high",
+        "risk_reason": "It touches eas.json (native-mobile rule) and writes down a security trade-off the reviewer must match to the code. Prebuild rewrites package.json, which must be undone, and a green test cannot show that."
+      }
+    ],
+    "edges": [
+      "s1 -> s2 because the s2 prebuild manifest proof must run on the s1 dependency tree, and both touch package.json"
+    ],
+    "owner_steps": [
+      "Precondition: s1 and s2 merged to orchestra main. Run each step in orchestra/mobile, prefixed with !",
+      "1. ! npm ci",
+      "2. ! npm install -g eas-cli   (eas.json needs cli >= 16.0.0)",
+      "3. ! eas login   (owner credentials; no agent sees them)",
+      "4. ! eas whoami   (confirm it is the account chosen at the gate, Q5)",
+      "5. ! eas init   (creates the EAS project for slug orchestra and writes owner and extra.eas.projectId into app.json)",
+      "6. ! git diff app.json   (expect only owner and extra.eas.projectId), then ! git commit -am \"mobile: link EAS project\"   (no attribution trailers; EAS warns on a dirty tree)",
+      "7. ! eas build --platform android --profile preview   (uploads source: an outward action. Answer Yes to Generate a new Android Keystore, which EAS stores server-side. A warning that the channel is set but expo-updates is missing is expected)",
+      "8. On the phone: open the build URL or QR from step 7, download the APK, allow install-unknown-apps for the browser, install it",
+      "9. Optional backup: ! eas credentials --platform android  -> download the keystore to a password manager, never into the repo",
+      "10. Run the owner device checks D1-D7, then tick R2 items 1 and 2 in ROADMAP.md locally (gitignored; never committed)",
+      "11. ! git push   (outward; or delegate it to ops after approval)"
+    ],
+    "ops_gate": "Agents never run owner steps 2-9: login, project creation, keystore generation and source upload. After explicit approval, an ops node may (a) git push orchestra main and (b) start LATER preview builds with eas build -p android --profile preview --non-interactive --no-wait, on the owner existing session, only after the keystore exists. Each build uploads source, which is an outward action, so each needs its own approval. Nothing in the Play Console is ever ops.",
+    "deferred": {
+      "R2 item 3 (Play listing, internal track, production)": "BLOCKED on PR1. Play requires a privacy policy URL for the data-safety form, and the app requests the camera. It also needs owner-only inputs: a Play developer account with identity verification (new personal accounts may face a closed-testing requirement before production, not verified here); listing assets (512px icon, 1024x500 feature graphic, screenshots), none of which exist; a service-account JSON kept by the owner for eas submit; and a later eas.json submit.production change. It unblocks when PR1 publishes the privacy policy at a URL (e.g. telosrg.com) and the owner has created the Play account. Then it is its own run."
+    },
+    "owner_device_checks": [
+      "D1 the APK installs and launches; Settings > Apps > Orchestra lists only Camera and Notifications (no microphone)",
+      "D2 pair with a desktop on a LAN IP over ws:// by scanning its QR (the camera works in a release build). This proves release-build cleartext and closes the A1 follow-up at ROADMAP.md:575",
+      "D3 connect over a Tailscale IP with the phone off Wi-Fi",
+      "D4 force-stop and reopen: it reconnects to the last paired desktop; the A1 owner checks (used or closed code, two desktops) still pass",
+      "D5 A2: allow, deny and a question each round-trip; an answer sent offline is queued or visibly refused",
+      "D6 A3 O1-O10 on this real build (not Expo Go), against the desktop, especially O2 (Android 13+ prompt), O6 (about 30 s in the background), O7 (tap, including a cold start), O8 (secure lock screen) and O10 (monochrome status-bar glyph)",
+      "D7 a second preview build (repeat step 7) installs over the first without an uninstall, shows a higher versionCode, and keeps the pairing keys"
+    ],
+    "not_doing": [
+      "Play Console listing, testing tracks, production, eas submit config, service account (blocked on PR1)",
+      "expo-updates, OTA, eas update",
+      "a network security config or any narrowing of cleartext",
+      "an EAS build CI workflow or an EXPO_TOKEN secret",
+      "iOS builds or credentials",
+      "any eas login, init or build, or any keystore handling, by an agent",
+      "an SDK upgrade beyond 57, or dependency changes beyond expo install --fix",
+      "A3 follow-up fixes (cold-start gone copy, double route, web root throw, tap-bridge render test)",
+      "changes to the development or production profiles, or to app.json (the owner eas init writes app.json)",
+      "Play listing assets or icon resizing",
+      "committing ROADMAP.md (gitignored, local-only)"
+    ],
+    "human_gate": [
+      "Q1 Cleartext: approve keeping usesCleartextTraffic app-wide in preview AND production builds as a decided trade-off (no network security config, because it cannot express IP ranges), recorded as one sentence in orchestra/CLAUDE.md?",
+      "Q2 OTA: approve NOT adding expo-updates now, because it phones home to u.expo.dev and breaks the no-other-connection rule? Revisit before Play production.",
+      "Q3 Drift: approve npx expo install --fix within SDK 57 in s1, knowing it changes the first build fingerprint?",
+      "Q4 versionCode: approve autoIncrement true on build.preview, sharing the remote counter with production?",
+      "Q5 Account: which Expo account owns the EAS project, personal njcurtis3 or an Expo organization for TelosRG? It sets app.json owner, and changing it later is a project transfer.",
+      "Q6 Keystore: approve the EAS-managed keystore generated on the first build, with an optional owner backup to a password manager?",
+      "Q7 Play: confirm R2 item 3 is deferred until the PR1 privacy policy is published?"
+    ]
+  },
+  "approved_by_human": true,
+  "scope_exceptions": [],
+  "builders": {
+    "s1": {
+      "written_by": "builder",
+      "status": "done",
+      "branch": "r2-android",
+      "commit": "e6bb1cc",
+      "changed": [
+        "orchestra/mobile/package.json",
+        "orchestra/mobile/package-lock.json"
+      ],
+      "version_moves": {
+        "@expo/ui": "~57.0.25 -> ~57.0.26",
+        "expo": "~57.0.30 -> ~57.0.31",
+        "expo-network": "~57.0.2 -> ~57.0.3",
+        "expo-router": "~57.0.28 -> ~57.0.29"
+      },
+      "notes": "",
+      "gate_results": [
+        {
+          "cmd": "npx expo install --fix",
+          "out": "changed 4 packages; only the four moves above, all within SDK 57"
+        },
+        {
+          "cmd": "npx expo install --check",
+          "out": "Dependencies are up to date (exit 0)"
+        },
+        {
+          "cmd": "npx tsc --noEmit",
+          "out": "exit 0, no output"
+        },
+        {
+          "cmd": "npx jest --watchAll=false",
+          "out": "Test Suites: 22 passed, 22 total; Tests: 437 passed, 437 total"
+        },
+        {
+          "cmd": "npx expo-doctor",
+          "out": "21/21 checks passed. No issues detected!"
+        },
+        {
+          "cmd": "node -p require(./package.json).dependencies.expo",
+          "out": "~57.0.31"
+        },
+        {
+          "cmd": "git diff --name-only main",
+          "out": "mobile/package-lock.json, mobile/package.json"
+        }
+      ]
+    },
+    "s2": {
+      "written_by": "builder",
+      "status": "done",
+      "branch": "r2-android",
+      "commit": "52460aa",
+      "changed": [
+        "orchestra/mobile/eas.json",
+        "orchestra/mobile/README.md",
+        "orchestra/CLAUDE.md"
+      ],
+      "internet_count": 1,
+      "notes": "",
+      "gate_results": [
+        {
+          "cmd": "eas.json node check (autoIncrement, apk, remote)",
+          "out": "exit 0"
+        },
+        {
+          "cmd": "npx expo prebuild --platform android --no-install --clean",
+          "out": "exit 0; Created native directory, Updated package.json, Finished prebuild"
+        },
+        {
+          "cmd": "grep -n 'usesCleartextTraffic=\"true\"' android/app/src/main/AndroidManifest.xml",
+          "out": "17:  <application android:name=\".MainApplication\" ... android:usesCleartextTraffic=\"true\" android:fullBackupContent=... (1 match)"
+        },
+        {
+          "cmd": "grep -n RECORD_AUDIO AndroidManifest.xml",
+          "out": "6:  <uses-permission android:name=\"android.permission.RECORD_AUDIO\" tools:node=\"remove\"/>"
+        },
+        {
+          "cmd": "grep -c android.permission.INTERNET AndroidManifest.xml",
+          "out": "1 (line 3: <uses-permission android:name=\"android.permission.INTERNET\"/>)"
+        },
+        {
+          "cmd": "grep -rn targetSdk android/build.gradle android/gradle.properties android/app/build.gradle",
+          "out": "android/app/build.gradle:94: targetSdkVersion rootProject.ext.targetSdkVersion; fallback node_modules/expo-modules-core/android/ExpoModulesCorePlugin.gradle:69: targetSdkVersion project.ext.safeExtGet(\"targetSdkVersion\", 36) -> 36"
+        },
+        {
+          "cmd": "rm -rf android && git checkout -- package.json && test ! -e android",
+          "out": "exit 0"
+        },
+        {
+          "cmd": "README grep counts: eas build line / ws:// / not built yet",
+          "out": "1 / 1 / 0"
+        },
+        {
+          "cmd": "grep -ci 'release and production' CLAUDE.md",
+          "out": "1"
+        },
+        {
+          "cmd": "npx tsc --noEmit",
+          "out": "exit 0"
+        },
+        {
+          "cmd": "npx jest --watchAll=false",
+          "out": "Test Suites: 22 passed, 22 total; Tests: 437 passed, 437 total"
+        },
+        {
+          "cmd": "git status --porcelain after commit",
+          "out": "empty (clean)"
+        },
+        {
+          "cmd": "git diff --name-only main",
+          "out": "CLAUDE.md, mobile/README.md, mobile/eas.json, mobile/package-lock.json, mobile/package.json (last two are s1)"
+        }
+      ]
+    }
+  },
+  "reviews": {
+    "s1": {
+      "written_by": "reviewer",
+      "verdict": "PASS",
+      "attempt": 1,
+      "commit_reviewed": "e6bb1cc",
+      "summary": "PASS. Re-derived on e6bb1cc (base 97179a0) after npm ci: diff is only mobile/package.json and package-lock.json; package.json moves are exactly @expo/ui 57.0.25->26, expo 57.0.30->31 (still ~57.), expo-network 57.0.2->3, expo-router 57.0.28->29. I re-ran expo install --check (up to date, exit 0), expo-doctor (21/21), tsc (exit 0), jest (22 suites, 437/437). Lockfile transitive moves are all pulled by the new Expo ranges: @expo/config-plugins 57.0.11, expo-modules-core 57.0.24, expo-modules-jsi 57.1.3, @expo/cli 57.0.32, @expo/router-server 57.0.14, react-native-drawer-layout 4.2.12, plus postcss 8.5.30->31 (npm refresh inside @expo/metro-config's ^8.5.14). One major jump, xcode 3.0.1->4.0.0 (required by config-plugins ^4.0.0, iOS pbxproj only), drops uuid 7.0.3. No packages added. To see the native side, I diffed the old tarballs against node_modules. The only changes to expo-router plugin, expo-network manifest, and config-plugins code are version strings. No permission changes. Fingerprint inputs change only by version. Author njcurtis3, no attribution, no ROADMAP.md.",
+      "findings": [
+        {
+          "file": "mobile/package-lock.json",
+          "line": 15858,
+          "severity": "note",
+          "origin": "",
+          "issue": "Transitive major jump xcode 3.0.1 -> 4.0.0 (and uuid 7.0.3 removed, its only dependent). Forced by @expo/config-plugins 57.0.11 declaring xcode ^4.0.0; Expo's own SDK 57 patch, iOS pbxproj tooling only, no Android effect. Out-of-scope under neither the slice nor not_doing, but worth knowing if an iOS prebuild ever regresses."
+        },
+        {
+          "file": "mobile/package-lock.json",
+          "line": 12966,
+          "severity": "note",
+          "origin": "",
+          "issue": "postcss 8.5.30 -> 8.5.31 is an npm re-resolution side effect, not required by any new range (@expo/metro-config 57.0.13 unchanged, still ^8.5.14). It is a normal dep of an Expo package, patch-level, build-time only; harmless but strictly beyond the four --fix moves."
+        },
+        {
+          "file": "node_modules/expo-modules-core (57.0.24)",
+          "line": 0,
+          "severity": "note",
+          "origin": "",
+          "issue": "Only Android native code change crossed: ExpoComposeView.kt (Compose Host blank-on-mount fix in FlatList rows, CHANGELOG #51780). Not exercised by jest; s2's APK build is the first real compile of it. expo-network 57.0.3 change is iOS-only (NetworkModule.swift); its AndroidManifest.xml is byte-identical."
+        },
+        {
+          "file": "node_modules/expo-router, @expo/config-plugins, expo",
+          "line": 0,
+          "severity": "note",
+          "origin": "",
+          "issue": "No CHANGELOG ships for expo, expo-router or @expo/config-plugins, so I npm-packed 57.0.30/57.0.28/57.0.10 and diffed: expo-router plugin/ unchanged, android/build.gradle and expo-module.config.json differ only in version strings; config-plugins differs only in package.json (xcode range); expo differs in android/build.gradle version, bundledNativeModules.json and template.tgz. Plugin output unchanged; fingerprint changes only via versions/lockfile."
+        }
+      ],
+      "evidence": {
+        "diff_stat": "mobile/package-lock.json 113 +-, mobile/package.json 8 +-",
+        "expo_install_check": "Dependencies are up to date, exit 0",
+        "expo_doctor": "21/21 checks passed",
+        "tsc": "exit 0",
+        "jest": "Test Suites: 22 passed, 22 total; Tests: 437 passed, 437 total",
+        "author": "njcurtis3 <nathanjcurtis3@gmail.com> (author and committer); body has no attribution trailers",
+        "lockfile_moves": "@expo/ui 57.0.26, expo 57.0.31, expo-network 57.0.3, expo-router 57.0.29, @expo/config-plugins 57.0.11, expo-modules-core 57.0.24, expo-modules-jsi 57.1.3, @expo/cli 57.0.32, @expo/router-server 57.0.14, react-native-drawer-layout 4.2.12, postcss 8.5.31, xcode 4.0.0; removed uuid 7.0.3; added none"
+      }
+    },
+    "s2": {
+      "verdict": "PASS",
+      "attempt": 1,
+      "commit_reviewed": "52460aa",
+      "written_by": "reviewer",
+      "summary": "PASS. Diff e6bb1cc..52460aa touches only mobile/eas.json (+autoIncrement on preview; development and production unchanged), mobile/README.md and CLAUDE.md. No android/, package.json or ROADMAP.md is committed, the author is njcurtis3, and there is no attribution. I re-ran npm ci, prebuild --clean (exit 0), tsc (0) and jest (22/437 green), then rm -rf android and git checkout package.json; the tree is clean. Manifest: cleartext=true, RECORD_AUDIO tools:node=remove, INTERNET x1. I re-derived targetSdk=36 through a different chain from the builder's: app/build.gradle reads rootProject.ext.targetSdkVersion, which ExpoRootProjectPlugin sets from react-native/gradle/libs.versions.toml (targetSdk=\"36\"). The expo-modules-core fallback the builder cited only covers library modules. The CLAUDE.md sentence matches decision 1 and the code. Notes: the README drops the owner steps' eas whoami and git diff app.json checks before git commit -am. The manifest also carries template SYSTEM_ALERT_WINDOW, VIBRATE and READ/WRITE_EXTERNAL_STORAGE (maxSdk 32), so D1's 'only Camera and Notifications' holds only on Android 13+. Play deferral is not mentioned.",
+      "findings": [
+        {
+          "severity": "note",
+          "origin": "builder",
+          "where": "orchestra/mobile/README.md:27-32",
+          "issue": "The README compresses architect.owner_steps and drops step 4 (eas whoami, to confirm the njcurtis3 account) and step 6's 'git diff app.json, expect only owner and extra.eas.projectId' before 'git commit -am'. Run from mobile/, -am stages every modified tracked file in the whole orchestra repo, so any stray local edit, such as a package.json left rewritten by a local prebuild, would be swept into the EAS link commit. Ignored files (ROADMAP.md, /android, *.jks) are not at risk. Suggested fix: add 'eas whoami' and 'git diff' lines, or use 'git commit app.json -m'."
+        },
+        {
+          "severity": "note",
+          "origin": "architect",
+          "where": "generated android/app/src/main/AndroidManifest.xml:2-9 (prebuild at 52460aa)",
+          "issue": "The full permission list is CAMERA, INTERNET, POST_NOTIFICATIONS, READ_EXTERNAL_STORAGE (maxSdk 32), RECORD_AUDIO (remove), SYSTEM_ALERT_WINDOW, VIBRATE and WRITE_EXTERNAL_STORAGE (maxSdk 32). INTERNET and VIBRATE are normal permissions, and SYSTEM_ALERT_WINDOW shows under Special app access, not the Permissions list. So D1 ('only Camera and Notifications') holds on Android 13+, but on an Android 12 or older device the storage permissions would appear as Files and media. They come from the Expo prebuild template, and SYSTEM_ALERT_WINDOW is unneeded in a release build. Blocking them means changing app.json blockedPermissions, which is out of scope for s2 (not_doing). Candidate follow-up."
+        },
+        {
+          "severity": "note",
+          "origin": "builder",
+          "where": "builders.s2 gate_results (targetSdk)",
+          "issue": "The result (36) is correct but the evidence chain was wrong. app/build.gradle:94 uses rootProject.ext.targetSdkVersion, set by expo-autolinking ExpoRootProjectPlugin.kt:55 from the version catalog react-native/gradle/libs.versions.toml:4 (targetSdk = \"36\"). Its own default is 35, and gradle.properties sets no android.targetSdkVersion override. The cited ExpoModulesCorePlugin.gradle:69 fallback applies only to Expo library modules."
+        },
+        {
+          "severity": "note",
+          "origin": "builder",
+          "where": "orchestra/mobile/README.md:21-44",
+          "issue": "There is no line saying Play Store distribution is deferred (to PR1), and no mention that the expected 'channel set but expo-updates missing' warning from owner step 7 is harmless. Neither was in the slice intent, so this is a nice-to-have."
+        }
+      ],
+      "evidence": {
+        "diff_files": "CLAUDE.md, mobile/README.md, mobile/eas.json (e6bb1cc..52460aa); diff main..52460aa adds the s1 package.json and package-lock.json only",
+        "eas_json": "preview.autoIncrement=true, android.buildType=apk, cli.appVersionSource=remote; development and production byte-identical to before. A boolean autoIncrement with a remote version source bumps the EAS-hosted versionCode (eas-cli schema).",
+        "prebuild": "npx expo prebuild --platform android --no-install --clean -> Finished prebuild",
+        "manifest": "usesCleartextTraffic=\"true\" on <application> line 17; RECORD_AUDIO tools:node=\"remove\" line 6; INTERNET count 1",
+        "targetSdk": "app/build.gradle:94 rootProject.ext.targetSdkVersion <- ExpoRootProjectPlugin.kt:55 <- react-native/gradle/libs.versions.toml:4 targetSdk=\"36\"; compileSdk 36",
+        "cleanup": "rm -rf android; git checkout -- package.json; git status --porcelain empty",
+        "tsc": "exit 0",
+        "jest": "22 suites / 437 tests passed",
+        "commit": "author njcurtis3 <nathanjcurtis3@gmail.com>, no Co-Authored-By or Claude lines",
+        "gitignore": "/android and /ios in mobile/.gitignore; /ROADMAP.md in the orchestra root .gitignore; *.jks, *.key and *.p12 ignored"
+      }
+    }
+  },
+  "integrator": {
+    "written_by": "the node that wrote this key - here, always the string integrator",
+    "merged": [],
+    "conflicts": [],
+    "verification": "what command proved it works, and its output"
+  },
+  "ops": {
+    "written_by": "the node that wrote this key - here, always the string ops",
+    "gated": true,
+    "actions": []
+  },
+  "log": [
+    "orchestrator: opened run for ROADMAP R2 (Android: EAS project and credentials, internal preview APK, Play Console tracks). Owner typed \"stary A2\"; A2 is done and R2 is next, so read as start R2. Release section is ops-gated on every item; account login and credentials are the owner's. 2026-10-23",
+    "orchestrator: scout done (no plan-killer for preview APK: cleartext is app-wide via expo-build-properties; Play track blocked on owner-only privacy policy, PR1). 2026-10-23",
+    "orchestrator: owner approved plan as is (Q1 cleartext app-wide as decided trade-off, Q2 no expo-updates, Q3 expo install --fix within SDK 57, Q4 preview autoIncrement, Q5 owner = personal njcurtis3 Expo account (default stated at gate, owner said approve with no account), Q6 EAS-managed keystore, Q7 Play deferred to PR1). 2026-10-23",
+    "orchestrator: s1 PASS (e6bb1cc) and s2 PASS (52460aa), both attempt 1. Merged r2-android into orchestra main as 5d0093b (--no-ff, clean, tree equals 52460aa). On main: mobile jest 437/437, tsc clean. 2026-10-23",
+    "orchestrator: closed 2026-10-23. R2 code prep s1-s2 PASS, merged 5d0093b, not pushed yet. Owner steps (eas login, eas init, first eas build with EAS-managed keystore, install, device checks D1-D7) remain the owner's; R2 items 1-2 tick only after them; item 3 (Play) deferred to PR1. Follow-ups: README owner steps drop eas whoami and the git diff app.json check, and its git commit -am from mobile/ commits every modified tracked file; generated manifest also carries SYSTEM_ALERT_WINDOW, VIBRATE, READ/WRITE_EXTERNAL_STORAGE (maxSdk 32) from the prebuild template, so D1 holds only on Android 13+ unless blockedPermissions grows; README does not say Play is deferred; first native compile of expo-modules-core 57.0.24 ExpoComposeView.kt happens on EAS."
+  ]
+}
