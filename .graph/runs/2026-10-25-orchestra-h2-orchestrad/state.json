@@ -1,0 +1,1427 @@
+{
+  "$comment": "Shared state for ONE work-graph run. Lives at .graph/runs/<run-id>/state.json. Every node reads this on start and appends to its OWN key on finish - the builder writes its own builders.<slice> key, including the branch it worked on. Never rewrite another node's key. Every node key carries written_by, naming the node that wrote it: that is the ONLY record of authorship this file has, and without it 'never rewrite another node's key' is unverifiable - an orchestrator hand-writing all six keys is indistinguishable from six nodes doing their jobs. verify-state.py --audit checks it. This file is the edge: it is how context crosses between agents that cannot see each other.",
+  "run_id": "2026-10-25-orchestra-h2-orchestrad",
+  "goal": "lets continue building ... go with what is next on the roadmap (ROADMAP next: H2, orchestrad, the headless service)",
+  "app": "orchestra",
+  "status": "done",
+  "scout": {
+    "written_by": "scout",
+    "facts": [
+      "CORE HAS THE ENGINE: session manager, task queue/runner, state persistence, transcripts, projects, notify decision and link host all live in orchestra/core (core/src/lib.rs:1-7 pub mods: git, link, notify, paths, projects, session, wire).",
+      "SHELL-ONLY pieces (desktop/src-tauri/src): lib.rs 165 lines (Tauri builder, plugins, setup, IPC registration lib.rs:106-134, Exit shutdown lib.rs:138-148); commands.rs 229 lines (async Tauri wrappers over core; pick_project commands.rs:23-33 via tauri-plugin-dialog); link.rs 937 lines (LinkState, callbacks, apply, pending list, view/QR, IPC: link.rs:217-258, 297-337, 340-395, 168-176); link_config.rs 441 lines (config.json load/save/validate, adapter enumeration via if-addrs: link_config.rs:63-84 load, :150 interfaces(), :202 validate); keyring.rs 208 lines (Windows Credential Manager, keyring.rs:12 TARGET, :15-26 provider_for); qr.rs 47 lines (QR SVG via qrcode crate, qr.rs:9-19); window.rs 135 lines (window clamp, not in H2 scope); main.rs 6 lines.",
+      "STATE PERSISTENCE: path chosen by shell (lib.rs:37-41 app_data_dir/state.json; lib.rs:43-46 transcripts dir; lib.rs:48-51 worktrees dir); the logic is core: store.rs 359 lines (Snapshot struct store.rs:73-86 holds schema, revision, projects, sessions, tasks, counters; load/save/open store.rs:123-170; atomic temp+rename save store.rs:142-155; background Writer store.rs:171-215). Inbox is per session: stored sessions carry an inbox array (store.rs:293 test JSON). Sessions::with_writer takes writer, transcripts and worktree_base (session/mod.rs:484-494); restore at session/mod.rs:508; save_state session/mod.rs:648.",
+      "TASK QUEUE / RUNNER: core. Sessions::create_task session/mod.rs:751; pump session/mod.rs:1115-1122 (background via pump_in_background); claim_next :1130; start_task :1160; MAX_RUNNING_TASKS imported at session/mod.rs:30; cancel/land/discard/retry at session/mod.rs:791, 891, 992, 1009. Shell only starts it: lib.rs:83-86 calls sessions.pump_in_background() and retry_pending_in_background().",
+      "SESSION MANAGER FED TO LINK: core. LinkHost holds Arc<Sessions> (link/server.rs:286-296). Each connection subscribes directly: link/conn.rs:391 sessions.subscribe(...) and sends a Snapshot at conn.rs:410-418; Sessions::subscribe is session/mod.rs:682. Requests go through core dispatch: link/conn.rs:516-552 calls wire::dispatch (wire/dispatch.rs:50). So the link pulls snapshots and events and routes answers in core; the shell does not feed it.",
+      "SHELL WIRING TO THE WEBVIEW: Event enum session/mod.rs:61, Emit type session/mod.rs:68; shell maps Event to Tauri emit at lib.rs:53-60. Link status and pairing events go to Tauri via link.rs:297-337 and lib.rs:96-98. A headless host would supply its own Emit, Notify and LinkCallbacks closures instead.",
+      "NOTIFICATIONS: decision logic is core (core/src/notify.rs: Notice :23, decide :32, body :47). Delivery is shell: lib.rs:63-75 uses tauri-plugin-notification and skips when the window is focused. Notify callback type session/mod.rs:155. Core does not forward notices to the link: protocol/README.md:334 says notice is not forwarded yet (H2).",
+      "LINK CONFIG: shell only. link_config.rs load :63-82 (missing file = defaults; unknown schema = read-only; unreadable = read-only), save :84, interfaces() :150 (adapter enumeration), validate :202 (refuses unspecified and mapped addresses; port_error :188 enforces 1024-65535). Core LinkConfig has no file loader: core/src/link/mod.rs:71-85 takes binds, port and limits as given; core validate_binds is server.rs:44. Schema-1 semantics and the firewall-notice gate (link_config.rs:197, :202) would need replicating for a config file.",
+      "HOST KEY: desktop keyring.rs (Windows, windows-sys Credential Manager, keyring.rs:47-146) via provider_for keyring.rs:15-26; non-Windows returns the core FileKeyProvider. Core FileKeyProvider keys.rs:217-240 writes <link dir>/host_key, 32 bytes, mode 0600 on Unix (keys.rs:214-216), read keys.rs:226-240, load_or_create keys.rs:304. KeyProvider trait keys.rs:209-212. On Linux the shell already uses the core provider, so orchestrad can use FileKeyProvider with no new code.",
+      "PAIRING OFFER and QR: offer built in core (PairingWindow open pairing.rs:17-60; offer() pairing.rs:70; PairingOffer struct pairing.rs:93-106; to_json pairing.rs:108; LinkHost::open_pairing server.rs:386-396). QR rendering is shell: qr.rs:5-19 (qrcode 0.14, svg feature only; shell Cargo.toml). The shell turns the offer into SVG at link.rs:168-176 (view_of). The core has no QR code; orchestrad would need a terminal renderer and a new dependency.",
+      "PAIRING CONFIRMATION API: core. LinkCallbacks {on_pairing_request, log} server.rs:114-117 (silent() :120). PendingPairing {id, client_name, fingerprint} server.rs:105-111. LinkHost::confirm_pairing(id, optional scopes) server.rs:406-418 (None means DEFAULT_SCOPES); reject_pairing server.rs:420-425; the pending map is private (server.rs:174). Shell keeps its own list (link.rs:40 MAX_PENDING=16, :73-74, callback at link.rs:297-320). A terminal can answer: print from on_pairing_request, read y/n from stdin, call confirm_pairing or reject_pairing. Confirm timeout is LinkLimits.confirm_timeout (core/src/link/mod.rs:31).",
+      "CORE DEPS: core/Cargo.toml [dependencies] serde, serde_json, snow 0.10 (no default features), tungstenite 0.30 (handshake only), getrandom 0.3. Windows only: windows-sys 0.60 (JobObjects, Threading, Security). Unix only: libc 0.2. No GUI, no tauri, no keyring crate. Linux PDEATHSIG spawner is in core (session/process.rs:238 spawn; die_with_parent behind cfg linux).",
+      "LINUX CI: .github/workflows/test.yml:15-39 job core on ubuntu-24.04 and ubuntu-24.04-arm runs a GUI-crate guard (test.yml:32-37, grep for gtk, webkit, tauri, wry over cargo tree -p orchestra-core) then cargo test -p orchestra-core --locked (test.yml:38-39). Windows job runs cargo test --workspace --locked (test.yml:41-51). macOS runs cargo check -p orchestra-core --tests (test.yml:54-64). Local run on Windows: core builds and passes.",
+      "CLAUDE LAUNCH: core/src/session/process.rs:34 PROGRAM = claude (PATH lookup, no shell); ARGS process.rs:40-49 (-p, --input-format stream-json, --output-format stream-json, --verbose, --include-hook-events, --permission-prompt-tool stdio); build_args adds --model, --permission-mode, --resume (process.rs ~63-75). spawn_handle process.rs:258: cwd = project folder, Command::new, process group on unix, PDEATHSIG on Linux. Missing binary gives Err at process.rs:298 (claude was not found on PATH, a .cmd shim is not supported); other spawn errors give failed to start claude. Start path returns the Err and drops the session: session/mod.rs:1279-1287; resume path :1519-1527.",
+      "NO SIGN-IN CHECK: grep of core/src/session and process.rs finds no login, API key, auth or token detection. An unauthenticated claude would surface only through its stream-json output: a result with is_error=true becomes an InboxKind::Error item (session/state.rs:408-431). The exact text claude prints when signed out is unknown (see unknowns).",
+      "PROJECTS: desktop picks via Tauri dialog blocking_pick_folder (commands.rs:28), then into_path (commands.rs:31), then Sessions::add_project (session/mod.rs:712-716, which calls save_state). Projects::add projects.rs:41-57: requires is_dir (projects.rs:42, else not a folder error); re-pick of the same path returns the existing entry (projects.rs:45-48, dedupe by path equality); name = folder basename or the word project (projects.rs:49-54); id = p plus counter (projects.rs:55). No canonicalize, owner, permission or symlink check in core. Restore sets missing = !is_dir (projects.rs:90-91); list and get skip missing (projects.rs:62, :67). Shell adds no validation beyond the dialog. A config-file project list would need: absolute path, is_dir, basename name, p-N ids from the counter, path dedupe, and a missing flag.",
+      "WORKSPACE: root Cargo.toml:1-4 members = core and desktop/src-tauri, resolver 3; profiles at root only (Cargo.toml:6-14). Members are explicit, no glob, so an orchestrad/ crate is NOT picked up unless added to members. A bin target inside core (core/src/bin/orchestrad.rs) is picked up automatically by cargo test -p orchestra-core and by --workspace. CI Linux job runs only -p orchestra-core (test.yml:38-39), so a new workspace member would not run on Linux CI without a CI change.",
+      "NO EXISTING H2 CODE: grep for orchestrad, headless, systemd, H2 finds no unit files, no bin target and no config loader for projects or listen address in core. Mentions only: CLAUDE.md:61 (architecture); core/src/link/mod.rs:2; core/src/paths.rs:1-3 (XDG state_dir, Nothing calls this yet; paths.rs:12-21); core/src/wire/message.rs:135 and core/src/wire/mod.rs:35 (notice typed by H2); protocol/README.md:20, 62-75 (host key file in orchestrad state dir), 160, 204, 334, 344-351, 380 (orchestrad H2 not built); protocol/constants.ts:57; protocol/types.ts:193; mobile/README.md:4; testplan.md:100. docs/ holds only decisions/0001-pricing-and-relay.md, which does not mention H2.",
+      "TESTS RUN (cargo test --workspace --locked, Windows, exit 0, all passed): core lib 255 (CLAUDE.md:59 says 255); shell lib 44 (CLAUDE.md says 44); link integration tests/link.rs 32 (CLAUDE.md says 30, now stale); wire_fixtures 4. Total 335. Linux link behaviour not exercised here (CI only)."
+    ],
+    "unknowns": [
+      "exact text and exit behaviour when claude is installed but signed out or has no API key. Not in code; needs a live run. Only is_error result handling exists (session/state.rs:408-431).",
+      "whether claude itself reads a setup-token or ANTHROPIC_API_KEY from the environment. Nothing in orchestra sets or reads it; child env is inherited (process.rs:258-300 sets no env).",
+      "StoredSession field list (store.rs:24-44) was not re-read in full; inbox placement is taken from the test JSON at store.rs:293.",
+      "adapter enumeration depends on the if-addrs crate (link_config.rs:150; desktop Cargo.toml). A config-file bind list would skip it.",
+      "fleet/ not read (out of scope). ROADMAP.md is about 60KB and was read by line range only (H0-H3 lines 292-367, H4 header 368), so the rlm rule was not triggered.",
+      "core Linux paths (PDEATHSIG, process groups, reaper gap in ROADMAP.md:335-337) are proven only in CI and were not run here. H1 says orchestrad must become a subreaper or run under init (ROADMAP.md:335-337).",
+      "CLAUDE.md:59 test counts are partly stale (link 30 vs 32 today)."
+    ],
+    "risks": [
+      "PLAN-KILLER (narrowed). The engine is already in core, so the move is smaller than feared. Shell-only pieces orchestrad must re-do or move: link config file, schema and adapter binds (link_config.rs, 441 lines); pending-pairing list and QR (link.rs:168-176, 297-337; qr.rs, 47 lines); notification delivery (lib.rs:63-75); project picking (commands.rs:23-33, replace with config list); state path and dir choice (lib.rs:37-51); IPC glue (commands.rs 229 lines, link.rs IPC section). Persistence, tasks, sessions, link host, key provider and notify decision are already core.",
+      "a new orchestrad/ crate must be added to root Cargo.toml members (Cargo.toml:2) and to CI; it is not auto-discovered. A core/src/bin target is discovered automatically.",
+      "CI gap. Linux CI runs only -p orchestra-core (test.yml:38-39); any orchestrad code outside core is not tested on Linux.",
+      "core PDEATHSIG covers only claude itself; descendants that setsid() survive (ROADMAP.md:327-330), so the plan relies on systemd KillMode=control-group (ROADMAP.md:329-330).",
+      "config-file limits must match shell semantics: a port outside 1024-65535 keeps the link off (link_config.rs:18, :188, :197); the listen address must never be 0.0.0.0 or :: (core/src/link/server.rs:44 validate_binds)."
+    ]
+  },
+  "architect": {
+    "written_by": "architect",
+    "shape": "diamond",
+    "parallel_safe": true,
+    "rationale": "Diamond, because the slices meet all three conditions. (a) After s1 there are three slices with disjoint files: s2 owns orchestrad/src/config.rs; s3 owns orchestrad/src/control.rs and qr.rs; s5 owns orchestrad/systemd/*, README.md, config.example.toml, tests/unit_file.rs, .github/workflows/test.yml, CLAUDE.md and protocol/README.md. s4 owns main.rs, daemon.rs, log.rs, preflight.rs and tests/daemon.rs. The shared files every module needs (orchestrad/Cargo.toml, src/lib.rs with all module declarations, the root Cargo.toml and Cargo.lock) belong to s1 alone, and every dependency is declared there, so no later slice touches the lockfile. (b) Each done_when runs alone: config:: and control::/qr:: unit tests, a unit-file pin test, and a cross-target cargo check --target x86_64-unknown-linux-gnu (target already installed), so a Windows builder proves Linux code at least compiles. (c) It is a network-facing service run as a system user, which I would not merge unreviewed. orchestra is a git repo, so each slice gets its own branch. Edges are real: s1 makes the crate, addr.rs and host.rs that everything compiles against. s4 consumes the Config from s2 and the Handler, client and QR from s3. s5 needs only the crate (for its test target) and the CLI surface fixed in this plan, so it runs in parallel with s2-s4. Core-vs-duplicate: MOVE where mechanical. The address rules (classify, port_error, ports) and the boot sequence (store/transcripts/worktrees/Sessions/restore/pump) move into core and the desktop calls them. The rules are pure, and the boot sequence is the same 25 lines both hosts would otherwise copy. Do NOT move the desktop config.json loader: its schema (enabled, firewall_notice_seen, read-only fallback, adapter enumeration via if-addrs) is desktop policy, and the orchestrad file has other fields and a different failure rule (refuse to start). The QR stays per binary (SVG for the webview, unicode for a terminal), and qrcode stays out of core. A new crate rather than core/src/bin: it keeps qrcode/toml out of the engine deps, and the CI cost (one test line) is paid in s5. Platform: orchestrad behaviour is cfg(target_os=linux), not unix, because SO_PEERCRED and PR_* are Linux-only, so the macOS core check is unaffected. Windows builds a stub main and runs the pure tests. Risk tags: s1 high, because it edits desktop lib.rs and link_config.rs, whose semantics must not change, and it owns the shared Cargo/lib.rs files. s2 high, because it is the only gate between a text file and a network listener (0.0.0.0, mapped forms, port range), and a wrong low there is an exposure. s3 high, because it carries the pairing secret to a terminal and owns the peer-uid check, which a Windows test cannot run. s4 high, because the secret never reaching the journal and never running as root are properties a test samples but cannot fully see, and most of s4 runs only in Linux CI. s5 low: no secret, no file shared with another slice, the security directives are pinned by a test, and the prose is human-read.",
+    "plan": [
+      {
+        "slice": "s1",
+        "intent": "Core moves plus the orchestrad crate skeleton. (a) Move the pure address rules out of desktop link_config.rs into a new core/src/link/addr.rs: classify, Kind, port_error, MIN_PORT, DEFAULT_PORT. link_config.rs keeps the names through `pub use`, so its callers and its tests build unchanged. (b) A new core/src/host.rs with open_host(data_dir: Option<&Path>, emit, spawner, notify) -> (Arc<Sessions>, StorageStatus). It holds the boot sequence now at desktop lib.rs:37-86 (store::open, transcripts disk/memory, worktree_base incl. the temp_dir fallback, Sessions::with_writer, restore, pump_in_background, retry_pending_in_background). The desktop calls it with its own Tauri emit/notify closures and nothing else changes. (c) Create orchestrad/ as a workspace member: Cargo.toml (orchestra-core by path, serde, serde_json, toml, qrcode 0.14 default-features=false, libc under cfg(target_os=linux)); src/lib.rs declaring pub mod config, control, qr, daemon, log, preflight; each module a doc-comment stub; src/main.rs a stub that on non-Linux prints 'orchestrad runs on Linux' and exits 1. Root Cargo.toml members gain orchestrad; Cargo.lock is regenerated here and only here.",
+        "files": [
+          "orchestra/core/src/lib.rs",
+          "orchestra/core/src/host.rs",
+          "orchestra/core/src/link/mod.rs",
+          "orchestra/core/src/link/addr.rs",
+          "orchestra/desktop/src-tauri/src/link_config.rs",
+          "orchestra/desktop/src-tauri/src/lib.rs",
+          "orchestra/Cargo.toml",
+          "orchestra/Cargo.lock",
+          "orchestra/orchestrad/Cargo.toml",
+          "orchestra/orchestrad/src/lib.rs",
+          "orchestra/orchestrad/src/main.rs",
+          "orchestra/orchestrad/src/config.rs",
+          "orchestra/orchestrad/src/control.rs",
+          "orchestra/orchestrad/src/qr.rs",
+          "orchestra/orchestrad/src/daemon.rs",
+          "orchestra/orchestrad/src/log.rs",
+          "orchestra/orchestrad/src/preflight.rs"
+        ],
+        "done_when": "(1) `cargo test --workspace --locked` from orchestra/ -> exit 0. Shell lib still 44 passed, tests/link.rs 32, wire_fixtures 4, core lib 255 plus the new addr/host tests. (2) `cargo check -p orchestrad --tests --locked --target x86_64-unknown-linux-gnu` -> exit 0 (the target is already installed). (3) `cargo tree -p orchestrad --locked -e normal,build | grep -iE 'gtk|web.?kit|tauri|wry'` -> no output, and the same for -p orchestra-core. (4) `git diff --stat main -- desktop/src-tauri/src/commands.rs desktop/src-tauri/src/link.rs desktop/src-tauri/src/keyring.rs desktop/src-tauri/tauri.conf.json desktop/src-tauri/Cargo.toml` -> empty.",
+        "risk": "high",
+        "depends_on": []
+      },
+      {
+        "slice": "s2",
+        "intent": "orchestrad config file: parse and validate, pure, no I/O except reading the one path. Format (TOML if G1 holds): schema = 1; optional host_name; [link] port (default 47800, core port_error 1024-65535, never 0) and binds (IPv4 only, each passing core classify, never 0.0.0.0 or ::ffff:0.0.0.0, at most 16, deduped); [limits] max_connections (1..=16, may only lower the product cap; G3); [[projects]] path (absolute, no '..' component). A missing file is a valid config that listens on nothing and has no projects. An unknown schema, unknown field, bad value or unparseable file is a typed ConfigError that names the field. The daemon refuses to start on it, unlike the desktop's read-only fallback. Exposes to_link_binds(&Config) -> Vec<SocketAddr>, and core validate_binds runs on the result as a second check.",
+        "files": [
+          "orchestra/orchestrad/src/config.rs"
+        ],
+        "done_when": "`cargo test -p orchestrad --locked config::` -> exit 0. Named tests exist and pass: missing_file_listens_on_nothing, refuses_unspecified, refuses_mapped_unspecified, refuses_ipv6, refuses_link_local_and_multicast, port_out_of_range_is_an_error, unknown_schema_is_an_error, unknown_field_is_an_error, relative_project_path_is_an_error, dotdot_project_path_is_an_error, max_connections_cannot_raise_the_cap. Check with `cargo test -p orchestrad --locked config:: -- --list | grep -c ': test'` -> >= 11. Plus `cargo check -p orchestrad --tests --locked --target x86_64-unknown-linux-gnu` -> exit 0.",
+        "risk": "high",
+        "depends_on": [
+          "s1"
+        ]
+      },
+      {
+        "slice": "s3",
+        "intent": "The local control channel and the terminal QR. control.rs: line-delimited JSON requests and replies (Status, OpenPairing, NextPairingRequest, Confirm{id}, Reject{id}, ClosePairing, ListClients, Revoke{id}), with encode/decode pure and tested everywhere. Under cfg(target_os=linux) it adds a UnixListener server that takes a Handler trait object, so it knows nothing of the daemon, plus a client. The socket path is --socket, else $RUNTIME_DIRECTORY/control.sock (systemd), else $XDG_RUNTIME_DIR/orchestrad/control.sock. The socket is created with umask 0077 / mode 0600. Every accepted peer is checked with SO_PEERCRED and refused unless its uid is the daemon's euid. Each request and reply line is capped at 64 KiB. qr.rs: offer text -> a terminal string using qrcode's unicode Dense1x2 renderer, EcLevel M, quiet zone, with an error for a payload too big for a code.",
+        "files": [
+          "orchestra/orchestrad/src/control.rs",
+          "orchestra/orchestrad/src/qr.rs"
+        ],
+        "done_when": "`cargo test -p orchestrad --locked control:: qr::` (or the two filters run one after the other) -> exit 0 on Windows (codec round trip, oversize line refused, unknown request refused, QR deterministic, QR grows with payload, QR refuses 5000 bytes). `cargo check -p orchestrad --tests --locked --target x86_64-unknown-linux-gnu` -> exit 0. ci: the Linux socket tests (round trip over a real UnixListener in a temp dir, socket file mode is 0600, and a test pinning the peer-uid comparison) run in test.yml job `core` on ubuntu-24.04 and ubuntu-24.04-arm once s5 adds `cargo test -p orchestrad`.",
+        "risk": "high",
+        "depends_on": [
+          "s1"
+        ]
+      },
+      {
+        "slice": "s4",
+        "intent": "The daemon and its CLI, Linux-only behind cfg(target_os=linux). The pure parts are tested everywhere. Subcommands: `run [--config PATH] [--state-dir PATH]`, plus `status`, `pair`, `clients` and `revoke ID`. `run` refuses euid 0 and refuses PID 1 (H1 follow-up: tell the operator to use systemd or docker --init; no subreaper, G5). It then loads the config (s2). The state dir is --state-dir, else $STATE_DIRECTORY, else core paths::state_dir(). It opens via core::host::open_host. emit is a no-op, because link subscribers get events from Sessions directly. notify logs one info line with the project name and notice kind only. Projects from the config are added through Sessions::add_project, after checking is_dir and that the folder is owned by the euid; anything else is logged and skipped. Preflight (preflight.rs, a pure fn over an env lookup and a file-exists probe): claude is on PATH, and one of ANTHROPIC_API_KEY or CLAUDE_CODE_OAUTH_TOKEN is set, or $HOME/.claude/.credentials.json exists. If not, it logs a clear error naming `claude setup-token` and the env file, and `status` shows it. It never logs a value (G4). The link starts with FileKeyProvider at <state>/link only when binds is non-empty. The control server (s3) is served. SIGTERM/SIGINT go through sigwait on a thread: close pairing, stop the link, Sessions::shutdown, exit 0. log.rs writes stderr lines with an sd-daemon <N> priority prefix when JOURNAL_STREAM is set, and maps LinkLog with client ids only. `pair` opens the window, prints the QR on the caller's terminal only, waits for a request, shows the client name and fingerprint, asks y/N, and confirms with default scopes or rejects; Ctrl-C closes the window. `status` prints version, pid, state dir, storage, listening addrs with their kind, paired count, whether pairing is open, the claude preflight, projects (with missing), and session counts by status. It exits 3 when the daemon is not running.",
+        "files": [
+          "orchestra/orchestrad/src/main.rs",
+          "orchestra/orchestrad/src/daemon.rs",
+          "orchestra/orchestrad/src/log.rs",
+          "orchestra/orchestrad/src/preflight.rs",
+          "orchestra/orchestrad/tests/daemon.rs"
+        ],
+        "done_when": "(1) `cargo test --workspace --locked` -> exit 0 on Windows (preflight, log prefix and status formatting tests run here). (2) `cargo check -p orchestrad --tests --locked --target x86_64-unknown-linux-gnu` -> exit 0. (3) ci, test.yml job `core` on ubuntu-24.04 and ubuntu-24.04-arm: tests/daemon.rs starts the built binary with a temp config bound to 127.0.0.1 on a free port >= 1024 and a temp state dir. It checks that `status` exits 0 and lists that address; that with no binds `status` shows nothing listening and the port refuses a TCP connect; that `pair` against the real LinkHost yields an offer whose secret does not appear anywhere in the daemon's captured stderr; that SIGTERM exits 0 within 5 s; and that `status` with no daemon exits 3. The root and PID-1 refusals are unit-tested through an injected euid/pid.",
+        "risk": "high",
+        "depends_on": [
+          "s1",
+          "s2",
+          "s3"
+        ]
+      },
+      {
+        "slice": "s5",
+        "intent": "systemd unit, docs and CI. orchestrad/systemd/orchestrad.service: User=/Group=orchestra, ExecStart=/usr/local/bin/orchestrad run --config /etc/orchestrad/config.toml, EnvironmentFile=-/etc/orchestrad/env (root 0600, documented), StateDirectory=orchestra, RuntimeDirectory=orchestrad, UMask=0077, KillMode=control-group (written out, H1 gap), Restart=on-failure, TimeoutStopSec=15. Sandbox: NoNewPrivileges, ProtectSystem=strict, ProtectHome=yes, PrivateTmp, PrivateDevices=yes, the ProtectKernel*/ProtectControlGroups set, RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6, CapabilityBoundingSet= empty, LockPersonality, RestrictRealtime, SystemCallArchitectures=native. It does NOT set MemoryDenyWriteExecute (Node's JIT) or RestrictNamespaces (Claude Code's bash sandbox may need user namespaces; an owner check, G7). HOME is the state dir, projects live under /var/lib/orchestra/projects by default, and other roots are a ReadWritePaths= drop-in. orchestrad/systemd/gpu.conf.example is the opt-in drop-in: PrivateDevices=no, DeviceAllow=/dev/nvidia* and /dev/dri rw, SupplementaryGroups=video render. It points to H4. orchestrad/config.example.toml. orchestrad/README.md is a by-hand install guide (useradd --system, file modes, sign-in via `claude setup-token` or an API key in the env file, pairing with `sudo -u orchestra orchestrad pair`, `status`, journalctl, keeping it off the public internet), and it is explicit that nothing installs it. orchestrad/tests/unit_file.rs pins the unit's security directives, csp_pinned style. test.yml job `core`: set -o pipefail and fail when cargo tree itself fails (H1 follow-up), run the GUI guard for -p orchestrad as well, and add `cargo test -p orchestrad --locked`. CLAUDE.md: layout row, command line and test counts for orchestrad. protocol/README.md: the 'Still not built' prose line only.",
+        "files": [
+          "orchestra/orchestrad/systemd/orchestrad.service",
+          "orchestra/orchestrad/systemd/gpu.conf.example",
+          "orchestra/orchestrad/config.example.toml",
+          "orchestra/orchestrad/README.md",
+          "orchestra/orchestrad/tests/unit_file.rs",
+          "orchestra/.github/workflows/test.yml",
+          "orchestra/CLAUDE.md",
+          "orchestra/protocol/README.md"
+        ],
+        "done_when": "(1) `cargo test -p orchestrad --locked --test unit_file` -> exit 0. It asserts that User=orchestra, KillMode=control-group, NoNewPrivileges=yes, PrivateDevices=yes, ProtectSystem=strict and an empty CapabilityBoundingSet are present; that no DeviceAllow and no User=root appear in the default unit; and that the gpu example carries the DeviceAllow lines. (2) a YAML parse of orchestra/.github/workflows/test.yml (python yaml.safe_load) -> exit 0, `grep -c 'cargo test -p orchestrad --locked' orchestra/.github/workflows/test.yml` -> 1, and `grep -c pipefail` on the same file -> >= 1. (3) `git diff --stat main -- protocol/README.md` -> one file, a few lines. (4) human-read: orchestrad/README.md install, sign-in and pairing steps, read by the owner against the CLI in s4.",
+        "risk": "low",
+        "depends_on": [
+          "s1"
+        ]
+      }
+    ],
+    "edges": [
+      "s1 -> s2 (crate skeleton, core::link::addr)",
+      "s1 -> s3 (crate skeleton)",
+      "s1 -> s5 (crate exists for tests/unit_file.rs and the CI line)",
+      "s1 -> s4 (core::host::open_host)",
+      "s2 -> s4 (Config, to_link_binds)",
+      "s3 -> s4 (control Handler/server/client, qr render)",
+      "s5 parallel with s2, s3, s4"
+    ],
+    "not_doing": [
+      "Packaging: tarballs, .deb, AUR, checksums, a release workflow (R3).",
+      "Installing on any real machine, creating users, or running systemctl anywhere. The unit is a file in the repo plus docs.",
+      "Typing or forwarding the reserved notice event. That is a protocol change that must ship in desktop and mobile together. Phone alerts already come from inbox-updated (A3). orchestrad logs notices instead (G2).",
+      "Desktop attach-to-host, host switcher, Rust link client, Unreachable state (H3).",
+      "GPU inventory, local_compute config, model endpoints (H4). H2 ships only the opt-in drop-in example.",
+      "IPv6 binds: the phone offer parser (mobile/src/link/offer.ts:31-39) accepts IPv4 addresses only and rejects the whole offer on any other, so an IPv6 bind would break pairing.",
+      "Becoming a child subreaper or reaping with waitpid(-1). It would race the core waits on claude. orchestrad refuses to be PID 1 instead.",
+      "A typed pairing code / PAKE (rejected in P1). Terminal pairing is the QR only.",
+      "Removing a project because it left the config (core has no remove; a follow-up).",
+      "Making MAX_RUNNING_TASKS configurable (a core session change), unless G3 picks reading B.",
+      "Changing the desktop link/config.json schema, firewall notice, keyring or any Tauri command.",
+      "Other H1 follow-ups (OnceLock spawner panic, cargo fmt drift in git.rs). Only the CI pipefail guard is fixed, because s5 edits those lines anyway.",
+      "Detecting sign-in by running claude or parsing its output (the signed-out text is unknown).",
+      "Staging, copying or editing ROADMAP.md (local, untracked)."
+    ],
+    "gate_questions": [
+      {
+        "id": "G1",
+        "q": "Config file format.",
+        "options": [
+          "TOML (/etc/orchestrad/config.toml, a new toml dep in orchestrad only; comments allowed in a hand-edited server file)",
+          "JSON schema 1 like the desktop files (no new dep, no comments)"
+        ],
+        "recommend": "TOML"
+      },
+      {
+        "id": "G2",
+        "q": "ROADMAP says orchestrad forwards notifications to clients. Read it as already met by inbox-updated events (phone A3 alerts on those), or type and forward notice now?",
+        "options": [
+          "Met by existing events; orchestrad logs notices; notice stays reserved",
+          "Type notice in protocol/ + Rust + desktop + mobile in this run"
+        ],
+        "recommend": "Met by existing events. Typing it is a protocol change across both clients and is not needed for a headless host."
+      },
+      {
+        "id": "G3",
+        "q": "What limits means in the config.",
+        "options": [
+          "A: link limits only, max_connections, lower-only (no core session change)",
+          "B: also max_running_tasks (today a core const = 2 at core/src/session/task.rs:19; needs a Sessions field, which touches session/mod.rs and task.rs and adds a slice)"
+        ],
+        "recommend": "A for H2; B as its own small follow-up if a server needs more than 2 concurrent tasks."
+      },
+      {
+        "id": "G4",
+        "q": "Sign-in check without a live claude run: preflight is claude on PATH plus ANTHROPIC_API_KEY or CLAUDE_CODE_OAUTH_TOKEN set, or ~/.claude/.credentials.json present. On failure, refuse to start, or run and report?",
+        "options": [
+          "Run, log a clear error at start and show it in status",
+          "Refuse to start"
+        ],
+        "recommend": "Run and report: the link and pairing still work, and the heuristic could be wrong. The owner should run claude signed out on a Linux box once and record the real message for a later exact check."
+      },
+      {
+        "id": "G5",
+        "q": "H1 follow-up (PID 1 / descendants): subreaper or init?",
+        "options": [
+          "Refuse PID 1, rely on systemd + KillMode=control-group",
+          "PR_SET_CHILD_SUBREAPER plus a reaper thread"
+        ],
+        "recommend": "Refuse PID 1 and rely on systemd. A waitpid(-1) reaper races the core waits on claude."
+      },
+      {
+        "id": "G6",
+        "q": "Control channel for status/pair: a Unix socket in RuntimeDirectory (0600, SO_PEERCRED uid check), used via sudo -u orchestra orchestrad pair. Also include clients and revoke?",
+        "options": [
+          "Yes: status + pair + clients + revoke",
+          "status + pair only"
+        ],
+        "recommend": "Include clients and revoke. Without them a headless host has no way to un-pair a lost phone."
+      },
+      {
+        "id": "G7",
+        "q": "Unit sandbox omissions: no MemoryDenyWriteExecute (Node JIT) and no RestrictNamespaces (Claude Code bash sandbox). Accept these two, to be confirmed by an owner check on a real box later?",
+        "options": [
+          "Accept",
+          "Tighten now and risk claude failing under the unit"
+        ],
+        "recommend": "Accept, and record them as owner checks."
+      }
+    ]
+  },
+  "approved_by_human": true,
+  "scope_exceptions": [
+    "orchestra/core/src/projects.rs",
+    "orchestra/core/src/session/mod.rs",
+    "orchestra/orchestrad/README.md",
+    "orchestra/core/src/host.rs"
+  ],
+  "builders": {
+    "s1": {
+      "written_by": "builder",
+      "status": "done",
+      "branch": "h2-s1",
+      "commit": "9c3e70b",
+      "changed": [
+        "core/src/lib.rs",
+        "core/src/host.rs",
+        "core/src/link/mod.rs",
+        "core/src/link/addr.rs",
+        "desktop/src-tauri/src/link_config.rs",
+        "desktop/src-tauri/src/lib.rs",
+        "Cargo.toml",
+        "Cargo.lock",
+        "orchestrad/Cargo.toml",
+        "orchestrad/src/lib.rs",
+        "orchestrad/src/main.rs",
+        "orchestrad/src/config.rs",
+        "orchestrad/src/control.rs",
+        "orchestrad/src/qr.rs",
+        "orchestrad/src/daemon.rs",
+        "orchestrad/src/log.rs",
+        "orchestrad/src/preflight.rs"
+      ],
+      "notes": "One shell lib test failed once in a full workspace run and passed on 4 reruns; not reproduced, likely a pre-existing flake.",
+      "deviation_from_approved_plan": "link_config.rs re-exports DEFAULT_PORT, Kind, classify, port_error but not MIN_PORT (nothing in the shell uses it; the re-export warned unused). Moved the classify and port tests as new addr tests rather than deleting the shell's copies.",
+      "gate_results": [
+        {
+          "cmd": "cargo test --workspace --locked (orchestra/)",
+          "exit": 0,
+          "output": "shell lib 44 passed; core lib 259 passed (255 + 2 addr + 2 host); tests/link.rs 32 passed; wire_fixtures 4 passed; orchestrad 0 tests; run 3 times green"
+        },
+        {
+          "cmd": "cargo check -p orchestrad --tests --locked --target x86_64-unknown-linux-gnu",
+          "exit": 0,
+          "output": "Checking orchestrad v0.1.0 ... Finished `dev` profile in 17.72s"
+        },
+        {
+          "cmd": "cargo tree -p orchestrad|orchestra-core --locked -e normal,build | grep -iE 'gtk|web.?kit|tauri|wry'",
+          "exit": "grep 1",
+          "output": "(no output for either package)"
+        },
+        {
+          "cmd": "git diff --stat main -- commands.rs link.rs keyring.rs tauri.conf.json src-tauri/Cargo.toml",
+          "exit": 0,
+          "output": "(empty)"
+        }
+      ]
+    },
+    "s5": {
+      "written_by": "builder",
+      "status": "done",
+      "branch": "h2-s5",
+      "commit": "4792c5d",
+      "changed": [
+        "orchestrad/systemd/orchestrad.service",
+        "orchestrad/systemd/gpu.conf.example",
+        "orchestrad/config.example.toml",
+        "orchestrad/README.md",
+        "orchestrad/tests/unit_file.rs",
+        ".github/workflows/test.yml",
+        "CLAUDE.md",
+        "protocol/README.md"
+      ],
+      "notes": "README uses `sudo -u orchestra env RUNTIME_DIRECTORY=/run/orchestrad orchestrad <cmd>` because s3/s4 define no --socket on the CLI in the plan; owner/s4 reviewer should confirm.",
+      "deviation_from_approved_plan": "protocol/README.md: removed `orchestrad (H2);` from the Still-not-built line. CLAUDE.md counts are post-s1 (259 core, 32 link). Unit adds ProtectClock, ProtectHostname, RuntimeDirectoryMode=0700, StateDirectoryMode=0700, RestartSec=5, Environment=HOME. GPU drop-in: the plan's DeviceAllow=/dev/nvidia* and /dev/dri lines do not work in systemd (no globs on paths, directory not a node); replaced with char-nvidia-frontend, char-nvidia-uvm, char-drm, plus /dev/ptmx and char-pts so ptys survive PrivateDevices=no. SupplementaryGroups=video render dropped from the drop-in (a missing render group fails the unit with 217/GROUP); the drop-in and README tell the owner to usermod -aG the groups by hand. config.example.toml binds is commented out. README also documents --socket on client commands. Attempt 3: char-nvidia-frontend and char-nvidia-uvm replaced by a single DeviceAllow=char-nvidia* rw (driver 550+ has no nvidia-frontend class); test rejects char-nvidia-frontend alone; drop-in comment says to check `grep nvidia /proc/devices`. README client commands drop the env prefix (socket resolves --socket, RUNTIME_DIRECTORY, XDG_RUNTIME_DIR, /run/orchestrad/control.sock) and note the QR is light on dark.",
+      "gate_results": [
+        {
+          "cmd": "cargo test -p orchestrad --locked --test unit_file",
+          "exit": 0,
+          "output": "9 passed; 0 failed"
+        },
+        {
+          "cmd": "python yaml.safe_load test.yml; grep -c 'cargo test -p orchestrad --locked'; grep -c pipefail",
+          "exit": 0,
+          "output": "yaml ok; 1; 1"
+        },
+        {
+          "cmd": "git diff --stat main -- protocol/README.md",
+          "exit": 0,
+          "output": "1 file changed, 1 insertion(+), 1 deletion(-)"
+        },
+        {
+          "cmd": "human-read README vs s4 CLI",
+          "exit": "pending",
+          "output": "owner check"
+        }
+      ],
+      "attempt": 3
+    },
+    "s2": {
+      "written_by": "builder",
+      "status": "done",
+      "branch": "h2-s2",
+      "commit": "a1f4cf7",
+      "changed": [
+        "orchestrad/src/config.rs"
+      ],
+      "notes": "",
+      "deviation_from_approved_plan": "none; added extra tests (a_full_file_parses, too_many_binds_is_an_error, garbage_is_an_error, host_name_is_checked) and to_link_limits(&Config)->LinkLimits for G3; host_name limited to 1-64 chars, no control chars; duplicate binds silently deduped; absolute path accepts leading '/' on any OS so tests run on Windows. Fix for review attempt 1: parse errors use toml Error Display (keeps key path) as one bounded line; echoed bind text clipped to 64 chars; also rejects NUL in project paths and dedupes projects. Not done: bidi stripping in host_name (note only).",
+      "gate_results": [
+        {
+          "cmd": "cargo test -p orchestrad --locked config::",
+          "exit": 0,
+          "output": "18 passed; 0 failed (11 named tests present, plus a_wrong_type_names_its_field, echoed_input_is_truncated, duplicate_projects_collapse_and_nul_is_refused)"
+        },
+        {
+          "cmd": "cargo test -p orchestrad --locked config:: -- --list | grep -c ': test'",
+          "exit": 0,
+          "output": "18"
+        },
+        {
+          "cmd": "cargo check -p orchestrad --tests --locked --target x86_64-unknown-linux-gnu",
+          "exit": 0,
+          "output": "Finished `dev` profile"
+        }
+      ]
+    },
+    "s3": {
+      "written_by": "builder",
+      "status": "done",
+      "branch": "h2-s3",
+      "commit": "8c85e69",
+      "changed": [
+        "orchestrad/src/control.rs",
+        "orchestrad/src/qr.rs"
+      ],
+      "notes": "Left (outside these files or by design): socket_path has no /run/orchestrad fallback for `sudo -u orchestra orchestrad pair` (s4/docs); stale-socket check and process-wide umask race only matter for concurrent serve() calls; QR polarity note for README/s4.",
+      "deviation_from_approved_plan": "None to files. Added a pure socket_path(flag, RUNTIME_DIRECTORY, XDG_RUNTIME_DIR) and pure peer_allowed(uid, euid) so path precedence and the uid rule are tested on Windows; the server is serve(path, Arc<dyn Handler>) -> Server (Drop stops it) and client request(path, req, timeout). Only absolute (leading '/') env paths count; first entry of a colon list for RUNTIME_DIRECTORY. QR draws modules light on dark (inverted, qrencode ansiutf8 style). Attempt 2: Reply has a hand-written Debug (Offer prints <redacted>); Server stops via a polled stop flag on a nonblocking listener (50ms), independent of the path, and removes the socket file only if its (dev,ino) still matches the one bind created; also fixed notes: client checks the server uid via SO_PEERCRED, refused peers get an Error reply, peers are turned away after Drop, accept errors back off instead of spinning.",
+      "gate_results": [
+        {
+          "cmd": "cargo test -p orchestrad --locked",
+          "exit": 0,
+          "output": "12 passed on Windows (8 control:: incl. debug_of_an_offer_reply_never_shows_the_secret, 4 qr::)"
+        },
+        {
+          "cmd": "cargo check -p orchestrad --tests --locked --target x86_64-unknown-linux-gnu",
+          "exit": 0,
+          "output": "Finished; cargo clippy same target: no orchestrad warnings"
+        },
+        {
+          "cmd": "ci-only, NOT run: control::unix::tests (10 tests)",
+          "exit": "not run",
+          "output": "round trip, 0600, parent 0700, peer uid, bad lines, oversize, live/stale, regular file, plus new drop_returns_promptly_after_the_socket_file_was_deleted and drop_leaves_a_different_socket_at_the_path_alone. Compile-checked only; run in test.yml core on ubuntu once s5 adds cargo test -p orchestrad."
+        }
+      ],
+      "attempt": 2
+    },
+    "s4": {
+      "written_by": "builder",
+      "status": "done",
+      "branch": "h2-s4",
+      "commit": "0e85417",
+      "changed": [
+        "orchestrad/src/main.rs",
+        "orchestrad/src/daemon.rs",
+        "orchestrad/src/log.rs",
+        "orchestrad/src/preflight.rs",
+        "orchestrad/tests/daemon.rs",
+        "orchestra/core/src/projects.rs",
+        "orchestra/core/src/session/mod.rs",
+        "orchestra/orchestrad/README.md",
+        "orchestra/core/src/host.rs",
+        "orchestra/desktop/src-tauri/src/lib.rs"
+      ],
+      "notes": "Left: JOURNAL_STREAM dev:ino check, EPIPE on stderr, test port races, add_project error always shown as not a folder (cosmetic), arm64 not compile-checked.",
+      "deviation_from_approved_plan": "None to files. Design choices: CLI hand-parsed (no clap); pure rules in daemon.rs (parse_args, refuse_start(euid,pid), resolve_state_dir, resolve_socket with /run/orchestrad/control.sock last fallback, project_verdict, format_status, PairQueue, utc_date) so they run on Windows. A control socket that cannot be opened, a bad config, or a link that fails to start exits 1; missing sign-in does not (G4). Signals are blocked before any thread exists and handled by sigwait on the main thread; a 4 s watchdog exits 1 if shutdown hangs. LinkLog::Refused logs no IP. `pair` needs a tty on stdin and stdout, ends after one confirmed phone (reject keeps waiting), exits when the offer's expires_at passes, Ctrl-C/SIGTERM sends ClosePairing via a sigwait thread and exits 130. NextPairingRequest waits 2 s per call. Status lists configured projects as ok/MISSING/skipped. run default config is /etc/orchestrad/config.toml. tests/daemon.rs is Linux-only (#![cfg(target_os=linux)]; empty on Windows): status+address+loopback, no-binds refuses TCP and OpenPairing, secret absent from stderr (and offer JSON), clients/revoke, SIGTERM exit 0 <5 s and socket removed, status with no daemon and stale socket exit 3, bad config exit 1 naming field, usage exit 2; they skip as root. Root/PID-1 refusal is unit-tested via refuse_start. ATTEMPT 2 (scope exceptions core/src/projects.rs, core/src/session/mod.rs, orchestrad/README.md; h2-s5 merged first): added Projects::retain(&[PathBuf]) and Sessions::retain_projects, which hide (missing=true) every project not in the allowed set. Chosen semantics: hidden, never deleted; it leaves list/get so no new session/task can start there and phones do not see it; existing sessions/tasks, state.json entries and worktrees are untouched and behave as when a folder is gone (cannot resume or land until the folder is allowed again); add_project of the same folder restores the same id. The flag is not persisted, so nothing is saved and the daemon calls it on every start, after open_host, before adding the accepted projects. The desktop does not call it. Core tests: projects::retain_hides_the_rest_and_add_brings_one_back, session retain_projects_hides_the_rest_and_blocks_new_work. Daemon test (CI-only): a_project_dropped_from_the_config_is_hidden_after_a_restart (3 runs on one state dir). Shutdown order now: close pairing, stop control socket, sessions.shutdown (saves, kills agents), then link.stop on a thread waited up to 6 s; hard watchdog 12 s (exit 1) under TimeoutStopSec=15, so a slow phone no longer causes exit 1 or skips the save. Other notes fixed: project vetting uses canonicalized real paths (symlink note); status re-probes sign-in and claude each call; claude must have an execute bit; README socket lookup sentence corrected and project-hiding documented. Left: log.rs JOURNAL_STREAM dev:ino and EPIPE (cosmetic), test port races, add_project error text, `pair` QR path not executable without a pty. ATTEMPT 3 (scope exception core/src/host.rs; desktop/src-tauri/src/lib.rs touched only to pass None): (1) Projects gets a `hidden` flag distinct from `missing`; Sessions::retain_projects sets it. Hidden is checked in ONE place per kind of work: Inner::cwd_of (every spawn/resume of a plain or task session: start, reply/resume_with) returns CwdError::Hidden before looking at worktrees, and Inner::begin_task (land, review diff, discard, retry_cleanup, hence retry_pending) refuses; claim_next skips a hidden project's queued tasks. All refuse with 'this project is not available on this host' (no path); resume_with returns it without fail_resume, so a plain session is no longer ended for good. (2) Pending cleanups and queued tasks on a hidden project are left as they are (cleanup stays pending, task stays queued, worktree never touched) until the folder is listed again; running agents are not stopped (retain runs before any run starts). Discarding/cancelling a hidden queued task is refused too. (3) open_host takes allowed: Option<&[PathBuf]>, applied after restore and before pump/retry threads; the daemon vets projects first and passes Some(accepted); desktop passes None (behaviour identical). Core tests: projects retain; session follow-up to hidden task session (reply, diff, land, discard, retry refused, worktree intact, lifts on re-add), hidden plain session stays resumable, hidden queued task neither starts nor fails; host: queued task on a disallowed project never starts at boot while None picks it up. Shutdown/other attempt-2 items unchanged.",
+      "gate_results": [
+        {
+          "cmd": "cargo test --workspace --locked (Windows)",
+          "exit": 0,
+          "output": "core 265 passed (hidden/host tests included), desktop shell 44, core link 32, wire_fixtures 4, orchestrad lib 51, unit_file 9; no warnings; tests/daemon.rs empty on Windows"
+        },
+        {
+          "cmd": "cargo check -p orchestrad --tests --locked --target x86_64-unknown-linux-gnu",
+          "exit": 0,
+          "output": "Finished, no warnings"
+        },
+        {
+          "cmd": "ci: tests/daemon.rs on ubuntu-24.04 and ubuntu-24.04-arm",
+          "exit": null,
+          "output": "NOT RUN here. CI-only: 9 tests in tests/daemon.rs."
+        }
+      ]
+    }
+  },
+  "reviews": {
+    "s1": {
+      "$comment": "RE-REVIEWS NEST, and this is the rule every reader follows. The TOP LEVEL of reviews.<slice> IS attempt 1. A re-review writes attempt_2, then attempt_3, and so on, each with the same fields as the top level. Every attempt SURVIVES PERMANENTLY - history is never overwritten, flattened, or migrated up. The LATEST attempt supplies the verdict: that is what close-run.py, brief.py and verify-state.py resolve through, and what fleetview's finalVerdict() has always shown. `ever_rejected` - did ANY attempt REJECT - is DISPLAY ONLY, forever, so a rejection stays visible after it is fixed; it must never gate anything, or the fleet stops being able to loop. NO NODE MAY REWRITE AN EARLIER ATTEMPT: a second reviewer writes its own attempt_N and leaves the ones before it alone, top-level verdict included - relocating that verdict would destroy the history the board keeps and leave a key stamped written_by:reviewer with someone else as its real author. The KEY INDEX numbers an attempt, not the `attempt` field inside it; the field is display. An EMPTY attempt_N is not a re-review, it is a key nobody wrote - write the whole attempt or none of it. The walk STOPS AT THE FIRST GAP, so an attempt_3 with no attempt_2 is ignored and the earlier verdict stands: A GAP IS MALFORMED AND NO NODE MAY LEAVE ONE. Write the next UNUSED N and never skip - a mis-numbered re-review is not reported anywhere, it is simply unread, and a REJECT nobody reads is a REJECT nobody acts on. The cap is attempt_9, matching fleetview's `for (i = 2; i < 10; i++)` exactly so the two readers cannot disagree; attempt_10 and beyond is reported loudly and resolved by nobody.",
+      "written_by": "reviewer",
+      "verdict": "PASS",
+      "attempt": 1,
+      "summary": "PASS. Re-ran every done_when item at 9c3e70b on C:/Users/natha/wt/h2s1r: cargo test --workspace --locked exit 0 (shell 44, core 259 = 255+2 addr+2 host, link.rs 32, wire_fixtures 4, orchestrad 0); cargo check -p orchestrad --tests --target x86_64-unknown-linux-gnu exit 0; cargo tree GUI grep empty for orchestrad, orchestra-core and orchestrad on the linux target; the five-file desktop diff --stat is empty. The diff touches exactly the 17 approved files. Compared old lib.rs:37-86 with host.rs line by line: same store::open / unreadable fallback, transcripts disk only with dir+writer, temp_dir worktree fallback, with_writer arg order, restore then pump then retry; emit/spawn/notify closures and status/link wiring unchanged. addr.rs is a verbatim move; the shell's original classify/port tests still run through the pub use. Dropping the MIN_PORT re-export is harmless. Lock adds only the orchestrad entry; libc is linux-only; the non-Linux main prints and exits 1. Shell lib run 8 times alone and 6 times alongside the core+link binaries: all green. The flaky test is most likely the pre-existing free_port race in link.rs, not s1. Author njcurtis3, no attribution.",
+      "checks": [
+        {
+          "cmd": "cargo test --workspace --locked",
+          "exit": 0,
+          "output": "shell lib 44; orchestra main 0; core lib 259; tests/link.rs 32; wire_fixtures 4; orchestrad lib/main 0; doc-tests 0"
+        },
+        {
+          "cmd": "cargo check -p orchestrad --tests --locked --target x86_64-unknown-linux-gnu",
+          "exit": 0,
+          "output": "Finished dev profile in 19.62s"
+        },
+        {
+          "cmd": "cargo tree -p orchestrad|orchestra-core --locked -e normal,build | grep -iE 'gtk|web.?kit|tauri|wry' (also orchestrad --target x86_64-unknown-linux-gnu)",
+          "exit": "grep 1 x3",
+          "output": "no output"
+        },
+        {
+          "cmd": "git diff --stat 1481989 9c3e70b -- commands.rs link.rs keyring.rs tauri.conf.json src-tauri/Cargo.toml",
+          "exit": 0,
+          "output": "empty (main == 1481989)"
+        },
+        {
+          "cmd": "git diff --stat 1481989 9c3e70b",
+          "exit": 0,
+          "output": "17 files, all in architect.plan s1.files"
+        },
+        {
+          "cmd": "cargo tree -p orchestrad --depth 1 (host, and linux target)",
+          "exit": 0,
+          "output": "orchestra-core(path), qrcode 0.14.1, serde, serde_json, toml 0.8.2; libc 0.2.190 only on linux target"
+        },
+        {
+          "cmd": "cargo run -p orchestrad (Windows)",
+          "exit": 1,
+          "output": "orchestrad runs on Linux"
+        },
+        {
+          "cmd": "touch + cargo check --workspace --tests --locked",
+          "exit": 0,
+          "output": "0 warnings"
+        },
+        {
+          "cmd": "shell lib x8 alone; x6 concurrent with core and link test binaries",
+          "exit": 0,
+          "output": "44 passed every run; flake not reproduced"
+        },
+        {
+          "cmd": "git log -1 author/committer/body",
+          "exit": 0,
+          "output": "njcurtis3 <nathanjcurtis3@gmail.com> both; 0 claude/co-authored matches"
+        }
+      ],
+      "findings": [
+        {
+          "file": "orchestra/desktop/src-tauri/src/link.rs",
+          "line": 690,
+          "issue": "Probable source of the builder's one-off shell failure, and not introduced by s1: free_port() binds 127.0.0.1:0 and drops the listener, so a parallel test (or a second worktree running at the same time) can take the port before enable() binds it. Shell lib tests never call open_host, and cargo runs test binaries one after another, so core's new host tests cannot interfere. Not reproduced in 14 runs.",
+          "severity": "note",
+          "origin": ""
+        },
+        {
+          "file": "orchestra/core/src/link/addr.rs",
+          "line": 53,
+          "issue": "classify_kinds in core leaves out the /10 boundary cases (100.127.255.254, 100.63.255.255) and the 172.16/172.32 cases that the shell's copy checks. Coverage holds for now because the shell tests still run through the re-export. Once orchestrad stops going through the shell, core should carry those cases itself.",
+          "severity": "note",
+          "origin": "builder"
+        },
+        {
+          "file": "orchestra/core/src/host.rs",
+          "line": 46,
+          "issue": "Host tests cover no data_dir and a reopen. They do not cover a data_dir whose state.json is unreadable, where transcripts must fall back to memory. The logic is a verbatim move, so this is a gap in coverage, not a bug.",
+          "severity": "note",
+          "origin": ""
+        },
+        {
+          "file": "orchestra/orchestrad/src/main.rs",
+          "line": 1,
+          "issue": "On Linux, main is empty and exits 0. That is acceptable for a skeleton, and the plan only specifies the non-Linux behaviour; a later slice must replace it.",
+          "severity": "note",
+          "origin": ""
+        }
+      ]
+    },
+    "s5": {
+      "written_by": "reviewer",
+      "verdict": "REJECT",
+      "attempt": 1,
+      "summary": "Re-ran done_when on 3b3333a: unit_file 8/8 pass; test.yml yaml.safe_load ok, 'cargo test -p orchestrad --locked' x1, pipefail x1; protocol/README.md 1+/1-. Diff is exactly the 8 approved files, no ROADMAP reference in it, author njcurtis3, no attribution. The default unit is sound (User=orchestra, KillMode=control-group, NoNewPrivileges, strict FS, PrivateDevices, empty caps, UMask, G7 omissions; extras fine). REJECT on gpu.conf.example: systemd only allows globs on char-/block- group names, never on /dev paths, and /dev/dri is a directory, not a device node. So DeviceAllow=/dev/nvidia* and DeviceAllow=/dev/dri are logged and ignored. With PrivateDevices=no and DeviceAllow lines present, DevicePolicy=auto becomes an allowlist: nvidiactl, nvidia-uvm and the pseudo devices. /dev/nvidia0 and /dev/dri/renderD128 then fail with EPERM, so the drop-in does not open the GPU it says it opens, and unit_file.rs pins the broken lines. Origin architect: the plan named those exact lines. Fix: char-nvidia-frontend, char-nvidia-uvm (or char-nvidia*) and char-drm. README/s4 mismatches are notes.",
+      "checks": [
+        {
+          "cmd": "cargo test -p orchestrad --locked --test unit_file",
+          "exit": 0,
+          "output": "8 passed; 0 failed"
+        },
+        {
+          "cmd": "python yaml.safe_load .github/workflows/test.yml",
+          "exit": 0,
+          "output": "jobs core, windows-workspace, core-check-macos, desktop-npm, mobile-npm"
+        },
+        {
+          "cmd": "grep -c 'cargo test -p orchestrad --locked' / grep -c pipefail test.yml",
+          "exit": 0,
+          "output": "1 / 1"
+        },
+        {
+          "cmd": "git diff --stat main 3b3333a -- protocol/README.md",
+          "exit": 0,
+          "output": "1 file, 1+ 1-"
+        },
+        {
+          "cmd": "git diff --name-only 9c3e70b 3b3333a",
+          "exit": 0,
+          "output": "exactly the 8 approved files"
+        },
+        {
+          "cmd": "git diff 9c3e70b 3b3333a | grep -ic roadmap",
+          "exit": 1,
+          "output": "0 (pre-existing tracked mentions only in .gitignore and docs/decisions/0001, untouched)"
+        },
+        {
+          "cmd": "git show -s 3b3333a author/committer + trailer grep",
+          "exit": 0,
+          "output": "njcurtis3 <nathanjcurtis3@gmail.com>; no Claude/Co-Authored-By"
+        }
+      ],
+      "findings": [
+        {
+          "file": "orchestra/orchestrad/systemd/gpu.conf.example",
+          "line": 12,
+          "severity": "blocker",
+          "origin": "architect",
+          "issue": "DeviceAllow=/dev/nvidia* rw and DeviceAllow=/dev/dri rw do not work. systemd.resource-control(5) says glob wildcards are 'not available for device node path specifications', only for char-/block- group names from /proc/devices, and a /dev path must be a device node (it is stat'd), but /dev/dri is a directory. Both lines are warned about and dropped. With PrivateDevices=no and DeviceAllow entries present, DevicePolicy=auto restricts access to the listed nodes plus null/zero/full/random/urandom (and ProtectClock's char-rtc). Input: install the drop-in on an NVIDIA box. Result: nvidiactl and nvidia-uvm open, but /dev/nvidia0 (the GPU itself) and every /dev/dri/card*/renderD* fail with EPERM. Fix: DeviceAllow=char-nvidia-frontend rw (nvidia0..N, nvidiactl, modeset), char-nvidia-uvm rw (or char-nvidia* rw) and char-drm rw. Then update gpu_example_carries_the_device_lines to pin the char- forms."
+        },
+        {
+          "file": "orchestra/orchestrad/systemd/gpu.conf.example",
+          "line": 9,
+          "severity": "note",
+          "origin": "",
+          "issue": "Once PrivateDevices=no, the implicit /dev/ptmx, char-pts and /dev/tty allowances that PrivateDevices=yes adds are gone, so under the allowlist an agent's bash that opens a pty would get EPERM with the drop-in installed. Core uses pipes and no pty, so the daemon is fine; consider DeviceAllow=/dev/ptmx rw and char-pts rw. Also: SupplementaryGroups=render fails the unit start (217/GROUP) on distros with no 'render' group. Worth one line in the comment."
+        },
+        {
+          "file": "orchestra/orchestrad/README.md",
+          "line": 0,
+          "severity": "note",
+          "origin": "",
+          "issue": "For s4 to honour: the README drives every CLI command as `sudo -u orchestra env RUNTIME_DIRECTORY=/run/orchestrad orchestrad <cmd>`. That is correct under s3's resolution order (sudo drops XDG_RUNTIME_DIR), but s3 names a --socket flag that s4's subcommand list does not carry. If s4 adds --socket to status/pair/clients/revoke, the README could use `--socket /run/orchestrad/control.sock`. If s4 resolves differently, the README is wrong. Exit 3 for status and the y/N prompt for pair match s4's intent."
+        },
+        {
+          "file": "orchestra/orchestrad/config.example.toml",
+          "line": 15,
+          "severity": "note",
+          "origin": "",
+          "issue": "binds = [\"100.64.0.10\"] is uncommented. A config copied without editing makes the daemon try to bind an address the box likely does not have. The README does say to edit first. Commenting it out (link off by default) would fail safe."
+        },
+        {
+          "file": "orchestra/orchestrad/systemd/orchestrad.service",
+          "line": 19,
+          "severity": "note",
+          "origin": "",
+          "issue": "The README creates /var/lib/orchestra as 0700, but StateDirectoryMode defaults to 0755 and systemd fixes up the mode at start, so the state dir ends up 0755. UMask=0077 still keeps files private. Add StateDirectoryMode=0700 if 0700 is the intent. The extras ProtectClock, ProtectHostname, RuntimeDirectoryMode=0700, RestartSec=5 and Environment=HOME=/var/lib/orchestra are sound. HOME sits inside the writable StateDirectory, and ProtectHome=yes does not touch it."
+        }
+      ],
+      "attempt_2": {
+        "written_by": "reviewer",
+        "verdict": "REJECT",
+        "attempt": 2,
+        "summary": "I re-ran every gate on 2f6f59f: unit_file passes 9/9, test.yml parses, the orchestrad test grep and the pipefail grep each count 1, and protocol/README.md is 1+/1-. The diff from 9c3e70b touches only the 8 approved files. It adds no ROADMAP reference, the author is njcurtis3 and there is no attribution. The attempt-1 notes are fixed: StateDirectoryMode=0700 is set and pinned, binds is commented out, SupplementaryGroups is gone and the usermod step is right, and README's /run/orchestrad/control.sock matches s3's socket_path in 389e736. The device sandbox stays closed: with DeviceAllow entries, DevicePolicy=auto is an allowlist. The attempt-1 blocker is still there in a new form. NVIDIA driver 550 and later has no nv-frontend.c and registers major 195 as \"nvidia\" and \"nvidiactl\", per upstream open-gpu-kernel-modules (535 still had \"nvidia-frontend\", 550.40.07 does not). systemd fnmatches char-NAME against /proc/devices, so char-nvidia-frontend matches nothing on any current driver. Then /dev/nvidia0 and /dev/nvidiactl get EPERM, and unit_file.rs pins the broken line. The fix is DeviceAllow=char-nvidia* rw, or /dev/nvidia0 rw plus /dev/nvidiactl rw.",
+        "checks": [
+          {
+            "cmd": "cargo test -p orchestrad --locked --test unit_file",
+            "result": "exit 0, 9 passed"
+          },
+          {
+            "cmd": "yaml.safe_load test.yml; grep -c 'cargo test -p orchestrad --locked'; grep -c pipefail",
+            "result": "ok; 1; 1"
+          },
+          {
+            "cmd": "git diff --stat 9c3e70b..2f6f59f -- protocol/README.md",
+            "result": "1 file, 1+/1-"
+          },
+          {
+            "cmd": "git diff --stat 9c3e70b..2f6f59f",
+            "result": "8 approved files only"
+          },
+          {
+            "cmd": "git grep ROADMAP / diff grep",
+            "result": "0 in diff (pre-existing .gitignore and docs/decisions lines untouched)"
+          },
+          {
+            "cmd": "git log author/trailers",
+            "result": "njcurtis3, no attribution"
+          },
+          {
+            "cmd": "git show 389e736:orchestrad/src/control.rs socket_path",
+            "result": "$RUNTIME_DIRECTORY/control.sock -> /run/orchestrad/control.sock, matches README"
+          },
+          {
+            "cmd": "curl NVIDIA/open-gpu-kernel-modules nv.c @main, @550.40.07; nv-frontend.c @535.43.02 (200) vs @550.40.07/@560.28.03 (404)",
+            "result": "550+ registers 'nvidia' and 'nvidiactl'; 'nvidia-frontend' only in <=535"
+          },
+          {
+            "cmd": "curl systemd src/core/bpf-devices.c",
+            "result": "char-NAME fnmatch against /proc/devices names; auto_devices includes /dev/tty and /dev/ptmx"
+          }
+        ],
+        "findings": [
+          {
+            "severity": "blocker",
+            "file": "orchestra/orchestrad/systemd/gpu.conf.example:22",
+            "origin": "",
+            "detail": "DeviceAllow=char-nvidia-frontend rw names a /proc/devices group that NVIDIA drivers no longer register. In 550.40.07 and main, kernel-open/nvidia/nv.c calls register_chrdev_region for major 195 as \"nvidia\" (nvidia0..N) and \"nvidiactl\". nv-frontend.c, which registered \"nvidia-frontend\", exists at 535.43.02 and is gone at 550.40.07 and 560.28.03. systemd's bpf-devices.c fnmatches the name against /proc/devices, so on any current driver the line allows nothing. Input: install the drop-in on a box with driver >=550. Result: nvidia-uvm and DRM open, but /dev/nvidia0 and /dev/nvidiactl fail with EPERM and nvidia-smi/CUDA cannot initialise. The drop-in still does not open the NVIDIA GPU, which is attempt 1's blocker. Fix: DeviceAllow=char-nvidia* rw (globs are allowed on class names; it covers nvidia, nvidiactl, nvidia-modeset, nvidia-uvm and old nvidia-frontend), or explicit /dev/nvidia0 rw plus /dev/nvidiactl rw. Then update gpu_example_carries_the_device_lines to match. The char-nvidia-frontend name came from attempt 1's suggested fix, which also offered char-nvidia*."
+          },
+          {
+            "severity": "note",
+            "file": "orchestra/orchestrad/systemd/gpu.conf.example:10",
+            "origin": "",
+            "detail": "The comment says PrivateDevices=no drops the pty nodes. systemd's auto_devices already allow /dev/tty and /dev/ptmx (and pts) whenever a device allowlist applies, so the /dev/ptmx and char-pts lines are redundant. They are harmless; the comment is inaccurate."
+          },
+          {
+            "severity": "note",
+            "file": "orchestra/orchestrad/systemd/gpu.conf.example",
+            "origin": "",
+            "detail": "The sandbox stays closed only because DeviceAllow entries exist (DevicePolicy=auto). If a later drop-in sets DeviceAllow= to empty, auto opens every device. An explicit DevicePolicy=closed in the drop-in would make that fail closed."
+          },
+          {
+            "severity": "note",
+            "file": "orchestra/orchestrad/README.md:97",
+            "origin": "",
+            "detail": "README says pair/clients/revoke take --socket. s4's intent lists no --socket flag on the subcommands, and s4 is not built. s4 must add it, or the README line must go. The RUNTIME_DIRECTORY form works under s3's resolution order either way."
+          }
+        ]
+      },
+      "attempt_3": {
+        "written_by": "reviewer",
+        "verdict": "PASS",
+        "attempt": 3,
+        "summary": "PASS. I re-ran every gate at 4792c5d (C:/Users/natha/wt/h2s5r3): unit_file passed 9/9, test.yml parses, the orchestrad test grep and the pipefail grep each count 1, and protocol/README.md is 1+/1-. The diff from 9c3e70b touches only the 8 approved files and adds no ROADMAP reference (.gitignore's is older). All 3 commits are by njcurtis3 with no attribution. Both earlier blockers are fixed. DeviceAllow=char-nvidia* rw passes systemd's char- pattern check and is fnmatched against /proc/devices, so it covers nvidia, nvidiactl, nvidia-uvm, nvidia-modeset and nvidia-caps on 550+, plus nvidia-frontend on drivers up to 535. char-drm (major 226) covers card* and renderD*. The drop-in's other lines are PrivateDevices=no and the pty lines, and with DeviceAllow present the policy stays an allowlist. The default unit is unchanged and pinned. I checked the QR note against s3's qr.rs and it is accurate. One seam is left for s4: s3's socket_path returns None when no env var is set, so the README's /run/orchestrad/control.sock fallback works only if s4 adds it. That is a note, not a reject. I am not raising the risk tag: if the opt-in drop-in is wrong, access fails closed (EPERM).",
+        "checks": [
+          {
+            "cmd": "cargo test -p orchestrad --locked --test unit_file",
+            "result": "exit 0, 9 passed"
+          },
+          {
+            "cmd": "python yaml.safe_load test.yml; grep -c 'cargo test -p orchestrad --locked'; grep -c pipefail",
+            "result": "ok; 1; 1"
+          },
+          {
+            "cmd": "git diff --stat 9c3e70b..4792c5d (and -- protocol/README.md)",
+            "result": "8 approved files only; protocol/README.md 1+/1-, 'orchestrad (H2);' removed from Still not built"
+          },
+          {
+            "cmd": "git grep ROADMAP.md at 4792c5d",
+            "result": "only pre-existing .gitignore:2, not in diff"
+          },
+          {
+            "cmd": "git log 9c3e70b..4792c5d author/body",
+            "result": "3 commits, njcurtis3 <nathanjcurtis3@gmail.com>, no Claude/Co-Authored-By"
+          },
+          {
+            "cmd": "read gpu.conf.example directives",
+            "result": "PrivateDevices=no, DeviceAllow=char-nvidia* rw, char-drm rw, /dev/ptmx rw, char-pts rw; no DevicePolicy, no SupplementaryGroups, no capability/path widening"
+          },
+          {
+            "cmd": "read orchestrad.service",
+            "result": "User/Group=orchestra, KillMode=control-group, NoNewPrivileges, ProtectSystem=strict, ProtectHome, PrivateTmp, PrivateDevices=yes, ProtectKernel*/ControlGroups/Clock/Hostname, CapabilityBoundingSet= empty, UMask=0077, StateDirectoryMode=0700, RuntimeDirectory=orchestrad (0700), no DeviceAllow, no MDWE/RestrictNamespaces (G7)"
+          },
+          {
+            "cmd": "git show 8c85e69:orchestrad/src/control.rs socket_path",
+            "result": "--socket > $RUNTIME_DIRECTORY/control.sock > $XDG_RUNTIME_DIR/orchestrad/control.sock > None; no /run/orchestrad default"
+          },
+          {
+            "cmd": "git show 8c85e69:orchestrad/src/qr.rs",
+            "result": "dark_color(Light)/light_color(Dark), quiet zone is full block: correct on dark theme, inverted on light; README note accurate"
+          },
+          {
+            "cmd": "C:/Users/natha/wt/h2s4 orchestrad/src",
+            "result": "s4 not yet written; no CLI socket default exists anywhere"
+          }
+        ],
+        "findings": [
+          {
+            "severity": "note",
+            "file": "orchestra/orchestrad/README.md:93",
+            "origin": "architect",
+            "detail": "For s4 to honour. The README says plain `sudo -u orchestra orchestrad status|pair` works because a client finds the socket via --socket, $RUNTIME_DIRECTORY, $XDG_RUNTIME_DIR or /run/orchestrad/control.sock. s3's socket_path (8c85e69) stops at the third step and returns None. sudo's env_reset drops XDG_RUNTIME_DIR, and RUNTIME_DIRECTORY is set only inside the unit. So the commands work only if s4's CLI turns None into /run/orchestrad/control.sock. The plan's s3/s4 intents never specify a default when no env var is set (hence architect). The s4 builder or reviewer must add and test that fallback, or the README must restore the `env RUNTIME_DIRECTORY=/run/orchestrad` prefix. Separately, 'under sudo the default is the right one' is false where sudoers keeps XDG_RUNTIME_DIR: the client would then resolve /run/user/<uid>/orchestrad/control.sock. One clause would cover it."
+          },
+          {
+            "severity": "note",
+            "file": "orchestra/orchestrad/systemd/gpu.conf.example:12",
+            "origin": "",
+            "detail": "Carried from attempt 2, still unaddressed and still harmless. systemd's auto devices already allow /dev/tty, /dev/ptmx and char-pts whenever an allowlist applies, so the comment saying PrivateDevices=no 'drops the pty nodes' is inaccurate and the two pty lines are redundant. DevicePolicy=closed in the drop-in would also keep the device list closed if a later drop-in reset DeviceAllow= to empty."
+          },
+          {
+            "severity": "note",
+            "file": "orchestra/orchestrad/tests/unit_file.rs",
+            "origin": "",
+            "detail": "gpu_example_carries_the_device_lines pins the lines that must be there but not the full set of keys. A later edit adding e.g. DevicePolicy=auto, CapabilityBoundingSet=CAP_SYS_ADMIN or DeviceAllow=char-* to gpu.conf.example would still pass. An exact-match assertion on lines(GPU) would pin it the way UNIT is pinned."
+          }
+        ]
+      }
+    },
+    "s2": {
+      "verdict": "REJECT",
+      "attempt": 1,
+      "written_by": "reviewer",
+      "checks": [
+        {
+          "cmd": "cargo test -p orchestrad --locked config::",
+          "exit": 0,
+          "result": "15 passed; all 11 named tests present and assert what their names say"
+        },
+        {
+          "cmd": "cargo test -p orchestrad --locked config:: -- --list | grep -c ': test'",
+          "exit": 0,
+          "result": "15"
+        },
+        {
+          "cmd": "cargo check -p orchestrad --tests --locked --target x86_64-unknown-linux-gnu",
+          "exit": 0,
+          "result": "Finished"
+        },
+        {
+          "cmd": "git diff --stat 9c3e70b 36f7cf6",
+          "exit": 0,
+          "result": "orchestrad/src/config.rs only, +348; author njcurtis3, no Claude trailers"
+        },
+        {
+          "cmd": "scratch probe crate against the worktree (38 adversarial inputs) + toml 0.8.2 Error Display vs message()",
+          "exit": 0,
+          "result": "bind/port/limits/path validation correct; type-mismatch errors lose the field name"
+        }
+      ],
+      "findings": [
+        {
+          "severity": "blocker",
+          "origin": "builder",
+          "file": "orchestrad/src/config.rs:109,117",
+          "issue": "Parse errors are built from toml::de::Error::message(), which drops the key path. Input `[link]\nport = \"5000\"` -> ConfigError::Parse(\"invalid type: string \\\"5000\\\", expected i64\"), naming no field; same for binds = \"127.0.0.1\", binds = [1], max_connections = \"4\", host_name = 5, projects path = 5, link = 5. The intent says a bad value is an error that names the field, and the daemon refuses to start on it with nobody at a window. Verified: e.to_string() on the same try_into error reads \"... expected i64\nin `link.port`\". Fix: use e.to_string() (or carry e.keys) for the try_into error, and add a test that a wrong-typed link.port error contains \"link.port\"."
+        },
+        {
+          "severity": "minor",
+          "origin": "builder",
+          "file": "orchestrad/src/config.rs:154,117",
+          "issue": "Input is echoed unbounded: a bind of N bytes is echoed whole via {text:?}, and an unknown key of N bytes is echoed whole in the serde message. Owner-controlled file, so not a hole, but the brief asked messages not echo huge input; truncate (e.g. 64 chars) while fixing the blocker."
+        },
+        {
+          "severity": "note",
+          "origin": "",
+          "file": "orchestrad/src/config.rs:193",
+          "issue": "The `starts_with('/')` clause is a no-op on Linux (is_absolute == leading '/'), so it opens nothing on the target; on Windows it only affects tests. `/..`, `/srv/a/..` are rejected; `//srv/./a/` and `/` are accepted (no traversal; s4 checks ownership). A NUL byte (`\u0000`) is accepted and will fail later with InvalidInput at fs calls; harmless, could be rejected here."
+        },
+        {
+          "severity": "note",
+          "origin": "",
+          "file": "orchestrad/src/config.rs:188-200",
+          "issue": "Duplicate projects are not deduped (two `/` entries both kept). Not in the contract; s4 should tolerate or this should dedupe like binds."
+        },
+        {
+          "severity": "note",
+          "origin": "",
+          "file": "orchestrad/src/config.rs:126",
+          "issue": "host_name rejects Cc controls only; bidi overrides (U+202E) pass, whereas core clients.rs:241 strips them from names a person reads. host_name reaches the phone's pairing offer. Owner-written, so low."
+        },
+        {
+          "severity": "note",
+          "origin": "",
+          "file": "orchestrad/src/config.rs:20",
+          "issue": "MAX_CONNECTIONS_CAP duplicates LinkLimits::default().max_connections (16, core/src/link/mod.rs:56); to_link_limits uses min() so it stays lower-only even if core lowers the cap. Fine."
+        }
+      ],
+      "summary": "REJECT on one blocker. I re-ran all three done_when commands (15 tests pass, all 11 named tests present and asserting what they claim, Linux target check exits 0); the diff touches only orchestrad/src/config.rs, author njcurtis3, no attribution. A scratch crate fed the parser 38 adversarial inputs: 0.0.0.0, ::, ::ffff:0.0.0.0, ::ffff:0:0, other IPv6, hostnames, host:port, octal, 127.1, ports 0/80/1023/65536/-1/huge/string, 17 binds (even dupes), empty binds, /.., /srv/a/.., empty path, unknown fields at all four table levels, schema 2/\"1\"/1.0/missing \u2014 all handled correctly and consistent with core classify/port_error/validate_binds; missing file is listen-on-nothing; max_connections 0/17/-3 rejected and to_link_limits is min()-lowered against the real default of 16. The blocker: wrong-typed values (port = \"5000\", binds = [1], max_connections = \"4\") yield a Parse error with no field name because the code uses toml Error::message(), which drops the key that Display carries (verified: Display adds \"in `link.port`\"). The contract says a bad value names the field. One-line fix plus a test; also bound the echoed input.",
+      "attempt_2": {
+        "verdict": "PASS",
+        "attempt": 2,
+        "written_by": "reviewer",
+        "checks": [
+          {
+            "cmd": "cargo test -p orchestrad --locked config::",
+            "exit": 0,
+            "result": "18 passed; 0 failed"
+          },
+          {
+            "cmd": "cargo test -p orchestrad --locked config:: -- --list | grep -c ': test'",
+            "exit": 0,
+            "result": "18 (>= 11); all 11 named tests present"
+          },
+          {
+            "cmd": "cargo check -p orchestrad --tests --locked --target x86_64-unknown-linux-gnu",
+            "exit": 0,
+            "result": "Finished"
+          },
+          {
+            "cmd": "git diff --stat 9c3e70b..a1f4cf7; git log authors",
+            "result": "only orchestrad/src/config.rs; njcurtis3, no Claude trailers"
+          },
+          {
+            "cmd": "scratch crate (path dep on worktree orchestrad) feeding ~100 adversarial inputs incl. multibyte truncation",
+            "result": "no panics; every bind/port/schema/unknown-field/project case correct and consistent with core classify/port_error/validate_binds; wrong types name their key path"
+          }
+        ],
+        "findings": [
+          {
+            "severity": "minor",
+            "origin": "builder",
+            "file": "orchestrad/src/config.rs:67-74",
+            "detail": "parse_error clips the whole toml message to 256 chars, and toml puts the key path last ('... in `link.port`'). So a wrong-typed string value long enough to push past the cap loses the field: `[link]\nport = \"<400 x 'y'>\"` -> Parse(\"invalid type: string \\\"yyyy...\") with no link.port (verified: 150/200 chars keep it, 400 does not). This needs a deliberately absurd input to the owner's own file, so it is not a blocker. Fix: clip only the echoed value, or prefix the message with e.keys()/the span's key so the field always survives."
+          },
+          {
+            "severity": "note",
+            "origin": "builder",
+            "file": "orchestrad/src/config.rs:67",
+            "detail": "Unknown-key text reaches the Parse message unescaped. The quoted key \"\u001b[31mX\" yields Parse(\"unknown field `\u001b[31mX` ...\"), so Display writes a raw ESC into the log or journal. The file is owner-controlled, so this is low risk. Could map chars through escape_debug or drop control characters in parse_error."
+          },
+          {
+            "severity": "note",
+            "origin": "",
+            "file": "orchestrad/src/config.rs:147",
+            "detail": "host_name rejects Cc controls only; U+202E and other bidi/format chars pass (verified). Core clients.rs strips these from names a person reads. host_name reaches the phone's pairing offer, but the owner writes it, so this is a note. Whoever renders it (s-later/pairing) should run core's sanitizer, or this should reject Cf."
+          },
+          {
+            "severity": "note",
+            "origin": "",
+            "file": "orchestrad/src/config.rs:214",
+            "detail": "`|| p.path.starts_with('/')` is a no-op on Linux, where is_absolute() is the same as a leading '/'. It only makes tests portable to Windows, and the daemon is Linux-only. '/', '//srv/./a/' and '/a/...' are accepted; none of them traverse. Ownership checks belong to s4. Not a blocker."
+          },
+          {
+            "severity": "note",
+            "origin": "",
+            "file": "orchestrad/src/config.rs:20",
+            "detail": "MAX_CONNECTIONS_CAP (16) duplicates LinkLimits::default().max_connections. to_link_limits takes min() against the live core default, so if core lowers its cap the result is still lower-only. If core ever raises it, the file range stays at 1-16, which is conservative. Not a blocker."
+          },
+          {
+            "severity": "note",
+            "origin": "",
+            "file": "orchestrad/src/config.rs:223",
+            "detail": "Project dedupe uses PathBuf equality, so '/a' and '/a/' collapse (verified), while '/a' and '//a' or '/a/.' are component-equal too. Fine. Binds accept public IPs (8.8.8.8 -> Kind::Other), consistent with core classify/validate_binds, so this is not a config-layer issue."
+          }
+        ],
+        "summary": "PASS. Re-ran done_when in the a1f4cf7 worktree: config:: 18 passed, --list count 18, all 11 named tests present and asserting behavior, Linux-target check exit 0. Diff 9c3e70b..a1f4cf7 touches only orchestrad/src/config.rs; both commits authored by njcurtis3, no attribution. Attempt-1 blocker fixed: wrong-typed values now name the key path at every level (link.port, link.binds, limits.max_connections, host_name, projects.path, link/limits/projects). Truncation is char-based (chars().take), and ~40 multibyte inputs (2-, 3- and 4-byte chars, combining marks, 5000 reps, 1MB key/line) neither panicked nor exceeded about 1KB. A scratch crate re-tried ~100 adversarial inputs (0.0.0.0, ::, ::ffff:0.0.0.0, ::ffff:0:0, IPv6, hostnames, host:port, octal, 127.1, ports 0/1023/65536/-1/i64::MAX/2^32/string/float, 17 dup binds, NUL, '..', relative, ~, schema variants, unknown fields at every level, BOM, CRLF). All were correct, and missing file = listen on nothing. Notes only: a wrong-typed string over ~230 chars loses its field suffix to truncation, raw ESC from a quoted unknown key reaches the message, host_name bidi passes, and the leftover items stay notes."
+      }
+    },
+    "s3": {
+      "written_by": "reviewer",
+      "verdict": "REJECT",
+      "attempt": 1,
+      "summary": "REJECT. Re-ran at 389e736 (C:/Users/natha/wt/h2s3r): control:: 7 passed, qr:: 4 passed, linux-gnu check --tests exit 0, linux clippy clean for orchestrad; diff is exactly control.rs+qr.rs; author njcurtis3, no attribution. Linux socket tests are CI-only and unexecuted here; I read them by hand and expect them to pass. Socket hardening reads right: umask 0077 around bind then chmod 0600 (never wider), symlink/regular file at path refused, SO_PEERCRED via libc::ucred with rc checked, uid must equal euid (root peers refused; s4 refuses euid 0), 64 KiB cap via take() before growth, 30s/10s timeouts, thread per peer, malformed/unknown ops get Error. QR polarity is correct on dark terminals. Blocker: Reply derives Debug, so {:?} of Reply::Offer prints the pairing secret in full, undoing core's redacted PairingOffer Debug right before s4 builds on it. Second blocker: Server::drop wakes accept() by connecting to the path, so if the socket file is gone, join() hangs forever. Notes: the documented `sudo -u orchestra orchestrad pair` resolves no socket path (architect), client doesn't check the server's uid, peer threads outlive Drop.",
+      "checks": [
+        {
+          "cmd": "cargo test -p orchestrad --locked control::",
+          "exit": 0,
+          "result": "7 passed (Windows)"
+        },
+        {
+          "cmd": "cargo test -p orchestrad --locked qr::",
+          "exit": 0,
+          "result": "4 passed (Windows)"
+        },
+        {
+          "cmd": "cargo check -p orchestrad --tests --locked --target x86_64-unknown-linux-gnu",
+          "exit": 0,
+          "result": "Finished; also cargo clippy same target: no orchestrad warnings"
+        },
+        {
+          "cmd": "git diff --name-only 9c3e70b 389e736",
+          "exit": 0,
+          "result": "orchestrad/src/control.rs, orchestrad/src/qr.rs only (approved files)"
+        },
+        {
+          "cmd": "git log -1 389e736 author/trailers",
+          "exit": 0,
+          "result": "njcurtis3 <nathanjcurtis3@gmail.com>, no Claude attribution"
+        },
+        {
+          "cmd": "control::unix::tests (8 Linux socket tests)",
+          "exit": "not run",
+          "result": "CI-only, unexecuted on this machine. Compile-checked for linux-gnu and read by hand: oversize test gets its reply before the ECONNRESET the kernel sets for unread data (queued data is delivered first); stale/live test correct; temp paths well under the 108-byte sun_path cap. Expect pass on ubuntu-24.04 and -arm."
+        },
+        {
+          "cmd": "read qrcode 0.14 render/unicode.rs",
+          "exit": 0,
+          "result": "with dark_color(Light)/light_color(Dark), dark modules are ' ' (terminal bg) and light/quiet zone are '\u2588' (fg): correct polarity on a light-on-dark terminal, inverted on a light-theme terminal. EcLevel M, quiet zone 4, 5000 bytes -> TooLarge."
+        }
+      ],
+      "findings": [
+        {
+          "severity": "blocker",
+          "file": "orchestrad/src/control.rs:44-55",
+          "origin": "builder",
+          "issue": "Reply derives Debug, and Reply::Offer { offer } holds the offer JSON including the 32-byte secret. format!(\"{:?}\", Reply::Offer { offer: pairing_offer.to_json() }) prints `Offer { offer: \"{...\\\"secret\\\":\\\"<64 hex>\\\"...}\" }`. core/src/link/pairing.rs:113 deliberately redacts PairingOffer's Debug for exactly this secret; wrapping it as a String in a derived-Debug enum undoes that, and s4's daemon/CLI is about to handle Reply values in error and log paths (s4 done_when asserts the secret never reaches stderr). Fix: hand-write Debug for Reply (or a newtype around the offer string) that prints Offer as <redacted>, and add a test that the Debug output of an Offer does not contain its secret."
+        },
+        {
+          "severity": "blocker",
+          "file": "orchestrad/src/control.rs:183-192",
+          "origin": "builder",
+          "issue": "Server::drop wakes the blocked accept() by UnixStream::connect(&self.path). If the socket file has been unlinked (operator rm, or anything else removing it) the connect fails, accept() never returns, and thread.join() blocks forever, hanging the daemon's SIGTERM shutdown until systemd SIGKILLs it at TimeoutStopSec. If another listener now owns that path, the wake connection goes to it instead, and after a join remove_file would delete that other socket. Fix: wake accept without the path, e.g. libc::shutdown(listener fd, SHUT_RDWR) on a kept raw fd, or a nonblocking listener polled with a short timeout. Then remove the file only if its inode (dev, ino) still matches what bind created."
+        },
+        {
+          "severity": "note",
+          "file": "orchestrad/src/control.rs:121-139",
+          "origin": "architect",
+          "issue": "Seam with s4/s5: the unit is a system service (User=orchestra, RuntimeDirectory=orchestrad -> /run/orchestrad/control.sock), and the README is to say `sudo -u orchestra orchestrad pair`. That client has no RUNTIME_DIRECTORY, and sudo's env_reset normally drops XDG_RUNTIME_DIR, so socket_path(None, None, None) is None. With -E it is /run/user/<human>/orchestrad, which is the wrong path. The documented command finds no socket. s4 or socket_path needs a /run/orchestrad/control.sock fallback for the client, or the docs must pass --socket."
+        },
+        {
+          "severity": "note",
+          "file": "orchestrad/src/control.rs:313-328",
+          "origin": "",
+          "issue": "The client never checks the server's SO_PEERCRED. With --socket in a directory others can write to (an existing parent is not checked for owner or mode, line 265), a squatter can replace the socket and answer OpenPairing with its own Offer, which the user then shows to the phone. The default paths are safe. A cheap fix: in request(), check that the server peer uid equals own euid."
+        },
+        {
+          "severity": "note",
+          "file": "orchestrad/src/control.rs:240-242",
+          "origin": "",
+          "issue": "A refused peer (e.g. `sudo orchestrad pair` as root) gets a silent close, so the client reports 'the daemon closed the connection'. An Error reply such as 'run as the daemon's user' leaks nothing and would explain the refusal."
+        },
+        {
+          "severity": "note",
+          "file": "orchestrad/src/control.rs:296-306",
+          "origin": "",
+          "issue": "Peer threads are detached. After Drop, an already-connected peer can keep calling the handler, and each request resets its 30s timeout, so 'Drop stops the server' only stops accepting. Also, a persistent accept error (EMFILE) spins the loop at 100% CPU via `continue`."
+        },
+        {
+          "severity": "note",
+          "file": "orchestrad/src/control.rs:271-292",
+          "origin": "",
+          "issue": "umask is process-wide. Two concurrent serve() calls (only the parallel tests do this) can restore 022 before the other's bind, so the restore races. The stale-socket check-then-remove also races two daemons starting at once. Neither happens under a single systemd unit."
+        },
+        {
+          "severity": "note",
+          "file": "orchestrad/src/control.rs:15-27",
+          "origin": "",
+          "issue": "Extra fields on a known op are tolerated ({\"op\":\"status\",\"x\":1} -> Status). Harmless, since no field changes meaning; unknown ops are refused."
+        },
+        {
+          "severity": "note",
+          "file": "orchestrad/src/qr.rs:21-32",
+          "origin": "",
+          "issue": "There are no ANSI colours, so polarity depends on the theme: correct on dark terminals, inverted on light-theme terminals, which some scanners will not read. Worth a line in the s4 pair output or the README."
+        }
+      ],
+      "attempt_2": {
+        "written_by": "reviewer",
+        "verdict": "PASS",
+        "attempt": 2,
+        "summary": "PASS. I re-ran these at 8c85e69 (C:/Users/natha/wt/h2s3r2): control:: 8 passed, qr:: 4 passed, the linux-gnu check --tests exited 0, and linux clippy is clean for orchestrad. The diff is control.rs and qr.rs only. Author njcurtis3, no attribution. Both attempt-1 blockers are fixed. Reply's Debug is hand-written and Offer prints <redacted>; a test covers {:?}, {:#?} and nested use. No other Debug, Display, error or panic path in either file carries the offer. Request, Pending, ClientInfo and CodecError hold no secret, and serde errors become Invalid without echoing input. Server::drop sets a SeqCst flag that the nonblocking accept loop polls every 50ms. join no longer depends on the path, the listener closes before the (dev,ino) check, and only the file bind created is removed. Accepted streams are set blocking explicitly. The client checks the server's SO_PEERCRED euid, which suits `sudo -u orchestra`. The 10 Linux socket tests are CI-only and were not run here. I read them by hand and expect them to pass. The notes left are seams or by design.",
+        "checks": [
+          {
+            "cmd": "cargo test -p orchestrad --locked control::",
+            "exit": 0,
+            "result": "8 passed (Windows)"
+          },
+          {
+            "cmd": "cargo test -p orchestrad --locked qr::",
+            "exit": 0,
+            "result": "4 passed (Windows)"
+          },
+          {
+            "cmd": "cargo check -p orchestrad --tests --locked --target x86_64-unknown-linux-gnu",
+            "exit": 0,
+            "result": "Finished"
+          },
+          {
+            "cmd": "cargo clippy -p orchestrad --tests --locked --target x86_64-unknown-linux-gnu",
+            "exit": 0,
+            "result": "no orchestrad warnings"
+          },
+          {
+            "cmd": "control::unix::tests (10 Linux socket tests)",
+            "exit": "not run",
+            "result": "CI-only (no WSL/Docker here); read by hand and expected to pass. They run in test.yml core on ubuntu-24.04 and ubuntu-24.04-arm once s5 adds cargo test -p orchestrad"
+          },
+          {
+            "cmd": "git diff --stat 9c3e70b..8c85e69; git log",
+            "exit": 0,
+            "result": "only orchestrad/src/control.rs and qr.rs; both commits authored by njcurtis3 with no Claude trailers"
+          }
+        ],
+        "findings": [
+          {
+            "severity": "note",
+            "where": "orchestrad/src/control.rs:140-158",
+            "origin": "architect",
+            "text": "Still open from attempt 1, and correctly out of s3's scope (s3's intent fixes this precedence): `sudo -u orchestra orchestrad pair` resolves socket_path(None,None,None)=None. s4's main.rs must either fall back to /run/orchestrad/control.sock for client subcommands or have the README pass --socket. s4's reviewer should check this."
+          },
+          {
+            "severity": "note",
+            "where": "orchestrad/src/control.rs:267-280",
+            "origin": "",
+            "text": "Drop now turns away a connected peer at its next request. A peer already blocked inside handler.handle(NextPairingRequest) still runs until the handler returns. s4's shutdown must close pairing first so that wait ends (its intent already does this). Peer threads are unbounded, but only same-uid peers ever get past the uid check."
+          },
+          {
+            "severity": "note",
+            "where": "orchestrad/src/control.rs:270-273",
+            "origin": "",
+            "text": "A refused peer gets its Error reply without its request being read. If the server closed before the client's write landed, the client could see EPIPE instead of the message. That is unlikely, since connect completes before the 50ms-polled accept, and request() now refuses a foreign-uid server first anyway. Cosmetic."
+          },
+          {
+            "severity": "note",
+            "where": "orchestrad/src/control.rs:324-349",
+            "origin": "",
+            "text": "If set_permissions, symlink_metadata or the thread spawn fails after bind, serve returns Err and leaves a 0700 socket file behind. The next serve sees a dead socket and replaces it as stale, so it is harmless."
+          },
+          {
+            "severity": "note",
+            "where": "orchestrad/src/control.rs:319-323",
+            "origin": "",
+            "text": "umask is process-wide. Concurrent serve() calls (parallel tests only) can leave the umask at 077 or restore it early. The explicit chmod 0600 makes the socket mode correct either way. Other threads during the window only get stricter modes. Not a blocker."
+          },
+          {
+            "severity": "note",
+            "where": "orchestrad/src/qr.rs:24-33",
+            "origin": "",
+            "text": "Unchanged since attempt 1. Light-on-dark polarity is correct on dark terminals and inverted on light themes. s4's pair output or the README should say so. Extra fields on a known op are tolerated, which is harmless."
+          }
+        ]
+      }
+    },
+    "s4": {
+      "verdict": "REJECT",
+      "attempt": 1,
+      "written_by": "reviewer",
+      "summary": "REJECT, one blocker. Re-ran at d95628f (C:/Users/natha/wt/h2s4r): Windows cargo test --workspace --locked exit 0 (core 259, shell 44, link 32, wire 4, orchestrad 51, no warnings); linux-gnu check --tests exit 0; linux clippy clean for orchestrad. Diff is exactly the 5 approved files; author njcurtis3, no attribution. tests/daemon.rs (8 tests) is CI-only and unexecuted here; read by hand, expected to pass as non-root on both ubuntu runners. Traced the secret by hand: offer -> Reply::Offer (redacted Debug) -> socket -> pair's QR on a tty-checked stdout only; no log, error or panic path carries it, and the stderr test uses the real secret over all of stderr. Root/PID-1 refusal (geteuid) precedes every open; signals blocked before any thread, Rust std clears the mask for claude children; shutdown order and 4 s watchdog fit TimeoutStopSec=15. Blocker: open_host restores every project in state.json, so a project skipped by the config (not owned, or removed) is still live to phones after a restart while status calls it skipped. The fix needs a core API (architect).",
+      "checks": [
+        {
+          "cmd": "cargo test --workspace --locked (Windows, worktree d95628f)",
+          "exit": 0,
+          "result": "core 259, shell 44, core tests/link 32, wire_fixtures 4, orchestrad lib 51 (preflight 6, log 3, daemon 12, config 18, control 8, qr 4); tests/daemon.rs compiles to 0 tests on Windows; 0 warnings"
+        },
+        {
+          "cmd": "cargo check -p orchestrad --tests --locked --target x86_64-unknown-linux-gnu",
+          "exit": 0,
+          "result": "Finished, no warnings"
+        },
+        {
+          "cmd": "cargo clippy -p orchestrad --tests --locked --target x86_64-unknown-linux-gnu",
+          "exit": 0,
+          "result": "no orchestrad warnings (8 pre-existing orchestra-core warnings only)"
+        },
+        {
+          "cmd": "git diff --name-only 4b7444d..d95628f; git log author/trailers",
+          "exit": 0,
+          "result": "orchestrad/src/{main,daemon,log,preflight}.rs + tests/daemon.rs only; author/committer njcurtis3 <nathanjcurtis3@gmail.com>, no Claude trailers; Cargo.toml/lock untouched, no cross-app import"
+        },
+        {
+          "cmd": "tests/daemon.rs (8 tests) on ubuntu-24.04 / ubuntu-24.04-arm",
+          "exit": "not run",
+          "result": "CI-only, unexecuted (no Linux here; aarch64 target not installed so arm64 is not even compile-checked). Read by hand: temp dirs under /tmp (sun_path well under 108), RUNTIME_DIRECTORY created by serve, PATH=/nonexistent so claude absence is the tested case, skip as root (GH runners are non-root), Listening is logged synchronously in LinkHost::start before the socket exists, watchdog (4 s) < test deadline (5 s) so a hung shutdown shows as exit 1. Expected to pass."
+        },
+        {
+          "cmd": "hand trace: pairing secret",
+          "exit": 0,
+          "result": "PairingOffer.to_json -> Reply::Offer (s3 hand-written Debug, redacted) -> serve_peer write -> pair: requires stdin+stdout tty, renders QR to stdout, drops the string; QrError/LinkError/Reply::Error carry no offer; Daemon/PendingPairing/LinkConfig/Preflight Debug carry no secret; only unreachable!() panics in the handler. Test reads the whole stderr file, uses the real 64-hex secret and the full offer JSON."
+        },
+        {
+          "cmd": "hand trace: root/PID1, signals, shutdown",
+          "exit": 0,
+          "result": "refuse_start(geteuid(), process::id()) is the first thing run() does after reading JOURNAL_STREAM; block_signals precedes config/state/open_host/link/socket and every thread; Rust std resets the signal mask in the child before exec (pre_exec PDEATHSIG runs after), so claude does not inherit blocked SIGTERM/SIGINT; Sessions::shutdown SIGKILLs each process group; order close_pairing, drop(server), link.stop, sessions.shutdown; 4 s watchdog exits 1, under TimeoutStopSec=15 with KillMode=control-group."
+        },
+        {
+          "cmd": "seam: s5 unit/README/config.example at h2-s5",
+          "exit": 0,
+          "result": "ExecStart /usr/local/bin/orchestrad run --config /etc/orchestrad/config.toml parses; STATE_DIRECTORY=/var/lib/orchestra and RUNTIME_DIRECTORY=/run/orchestrad (0700) are honoured; DEFAULT_SOCKET /run/orchestrad/control.sock serves sudo -u orchestra orchestrad pair; exit 3 on not running, refusal texts match the README. One README wording mismatch (note)."
+        }
+      ],
+      "findings": [
+        {
+          "severity": "blocker",
+          "origin": "architect",
+          "file": "orchestrad/src/daemon.rs:638-650 (seam: core/src/host.rs:38-40, core/src/projects.rs:82-95)",
+          "issue": "The config's project gate does not survive a restart. open_host restores state.json, and Projects::restore re-creates every project ever added, marking only folders that are gone as missing. add_projects then only adds; nothing removes or hides a restored project the config no longer accepts. Input: start with [[projects]] path=\"/srv/a\" (owned by orchestra), stop, then either delete that entry from the config or chown root /srv/a, and start again. Result: /srv/a is still in Sessions::list_projects, which a paired phone gets through list_projects and can start sessions in, while status prints '/srv/a (skipped, not owned by the service user)' or 'projects: none configured'. Core has no remove_project, so a headless operator cannot remove a project at all, and the README's 'or it is logged and skipped' is false from the second start on. The plan did not say how config projects reconcile with persisted ones. A fix needs a core API outside s4's files, e.g. Sessions::retain_projects(&accepted) or marking unaccepted entries missing after restore. The orchestrator should grant that scope, or the owner should accept this as a documented limitation."
+        },
+        {
+          "severity": "note",
+          "origin": "",
+          "file": "orchestrad/src/daemon.rs:727-741",
+          "issue": "link.stop joins every connection thread, and a thread stuck in a write can hold for up to write_timeout (30 s) on a phone with a stalled TCP window. The 4 s watchdog then exits 1 before sessions.shutdown runs, so the stop is reported as a failure and the final suspended snapshot is not flushed (cgroup and PDEATHSIG still kill claude). Running sessions.shutdown before link.stop, or from the watchdog, would keep exit 0 and the save."
+        },
+        {
+          "severity": "note",
+          "origin": "",
+          "file": "orchestrad/src/daemon.rs:586-587",
+          "issue": "Any add_project error is recorded as Skip::NotAFolder, so status says 'skipped, not a folder' whatever the real reason was. Today the only error is 'not a folder', which can come from a race after the metadata check, so this is cosmetic."
+        },
+        {
+          "severity": "note",
+          "origin": "",
+          "file": "orchestrad/src/daemon.rs:577",
+          "issue": "The ownership check uses metadata(), which follows symlinks. The stored path is not canonicalised, so a symlinked project can be retargeted after the check by whoever owns the link's parent. The daemon is unprivileged, so this is a hygiene gate, not a privilege boundary. symlink_metadata on the final component, or canonicalising before both the check and add_project, would close it."
+        },
+        {
+          "severity": "note",
+          "origin": "",
+          "file": "orchestrad/src/daemon.rs:633,498",
+          "issue": "The preflight runs once at start, and status shows that snapshot. After sudo -u orchestra claude creates .credentials.json, status still says 'no sign-in' until a restart. The README's sign-in section implies status reflects the fix. Re-probing the file check in status_view would be cheap. Env vars need a restart anyway."
+        },
+        {
+          "severity": "note",
+          "origin": "",
+          "file": "orchestrad/src/preflight.rs:37",
+          "issue": "claude_on_path checks is_file only, not the execute bit. A non-executable file counts as found."
+        },
+        {
+          "severity": "note",
+          "origin": "",
+          "file": "orchestrad/tests/daemon.rs:157-183",
+          "issue": "The done_when names `pair` against the real LinkHost. The test drives the same OpenPairing request through the library, because `pair` refuses without a tty, so the QR/stdout path of `pair` is never executed in CI. The secret check covers open and close only, not PairingRequested/Paired or shutdown logging (those lines print ids by construction). Acceptable without a pty harness."
+        },
+        {
+          "severity": "note",
+          "origin": "",
+          "file": "orchestrad/src/log.rs:64-66",
+          "issue": "Prefixes turn on whenever JOURNAL_STREAM is non-empty. sd-daemon advises comparing it with fstat(stderr) dev:ino, because the variable is inherited, e.g. by a manual orchestrad run from a shell started by a unit. Cosmetic. eprintln! panics on EPIPE to stderr, which a journald restart could cause; also low."
+        },
+        {
+          "severity": "note",
+          "origin": "builder",
+          "file": "orchestrad/README.md (h2-s5) 'Pair a phone'",
+          "issue": "The README mismatches the CLI. It says the socket is found from '$RUNTIME_DIRECTORY, else $XDG_RUNTIME_DIR'. The code (and USAGE) uses $RUNTIME_DIRECTORY/control.sock and $XDG_RUNTIME_DIR/orchestrad/control.sock. 'Under sudo the default is the right one' holds only while sudo drops XDG_RUNTIME_DIR; with sudo -E the client looks in /run/user/<uid>/orchestrad and reports 'not running' (exit 3). This is s5's file, so the fix goes there."
+        },
+        {
+          "severity": "note",
+          "origin": "",
+          "file": "orchestrad/tests/daemon.rs:27-31,148",
+          "issue": "free_port binds and drops, so a parallel test could be handed the same ephemeral port before use. no_binds asserts ConnectionRefused on a port nobody should hold. Both races are negligible with Linux's randomised ephemeral allocation. The arm64 runner build is unverified locally: the aarch64 target is not installed."
+        }
+      ],
+      "attempt_2": {
+        "verdict": "REJECT",
+        "attempt": 2,
+        "written_by": "reviewer",
+        "summary": "REJECT, two blockers in the core fix; the rest of attempt 1 holds. Re-ran at 427b7fb: Windows cargo test --workspace --locked exit 0 (core 261, shell 44, link 32, wire 4, orchestrad 51, unit_file 9); linux-gnu check --tests exit 0; orchestrad clippy clean. e985d17..427b7fb touches only the 3 approved exceptions plus s4's files; author njcurtis3, no attribution; desktop never calls retain. tests/daemon.rs (9) is CI-only; read by hand, it should pass as non-root. Shutdown order, the 12 s/6 s budgets under TimeoutStopSec=15, the euid/PID-1 refusal and the secret handling all check out. Blocker 1, proven with a scratch-clone probe test: after retain_projects hides a project, a phone Reply to that project's finished task session resumes it. cwd_of takes the worktree for task sessions and never asks Projects. claude spawns in <state>/worktrees/pN/tN and the task goes Running. The retain_projects doc says this cannot happen. Blocker 2: open_host starts pump and retry_pending threads before the daemon calls retain. A queued task on a dropped project can therefore start (new worktree, claude spawned) during that window.",
+        "checks": [
+          {
+            "cmd": "cargo test --workspace --locked (Windows, 427b7fb)",
+            "exit": 0,
+            "result": "core 261, desktop shell 44, core link 32, wire_fixtures 4, orchestrad lib 51, unit_file 9; tests/daemon.rs is 0 tests on Windows; no warnings"
+          },
+          {
+            "cmd": "cargo check -p orchestrad --tests --locked --target x86_64-unknown-linux-gnu",
+            "exit": 0,
+            "result": "Finished, no warnings; clippy: orchestrad clean, 8 pre-existing core warnings"
+          },
+          {
+            "cmd": "git diff e985d17 427b7fb --stat; git log 4b7444d..427b7fb",
+            "exit": 0,
+            "result": "core/src/projects.rs, core/src/session/mod.rs, orchestrad/README.md (approved exceptions) plus daemon.rs, preflight.rs, tests/daemon.rs; author njcurtis3, no Claude trailers; grep desktop/ finds no retain caller"
+          },
+          {
+            "cmd": "probe test in a scratch clone (review tree untouched): rig_repo, done_task, retain_projects(&[]), reply(task session)",
+            "exit": 0,
+            "result": "reply=Ok(()) spawns=2 task=Running: blocker 1 reproduced"
+          },
+          {
+            "cmd": "tests/daemon.rs (9 incl. restart) on ubuntu-24.04 / -arm",
+            "exit": "not run",
+            "result": "CI-only. Read by hand: the restart test shares dir/state, the first run saves on SIGTERM, the hidden warning is logged before the control socket serves, and stderr.log is truncated per run. Expected to pass as non-root."
+          },
+          {
+            "cmd": "hand trace: shutdown, refusal, secret, socket",
+            "exit": 0,
+            "result": "close_pairing, drop(server), sessions.shutdown (save, flush, kill), then link.stop on a thread waited 6 s; watchdog 12 s exit 1 < TimeoutStopSec=15 (unit at h2-s5, KillMode=control-group); a slow phone gives exit 0 with the state saved. refuse_start(geteuid) runs first; no new log line carries a secret or a value"
+          }
+        ],
+        "findings": [
+          {
+            "severity": "blocker",
+            "origin": "builder",
+            "file": "core/src/session/mod.rs:243-249 (cwd_of), 1493-1509 (resume_with); doc at 719-724",
+            "issue": "A hidden project's task sessions can still be resumed, so a phone can start new agent work in a project the config dropped. cwd_of returns task.worktree for a task session without consulting Projects. The missing flag that retain sets therefore gates only plain sessions, create_task, land and diff, not a follow-up. Input: config lists /srv/a; a phone runs a task there to Done; the operator removes /srv/a from the config (or chowns it to root) and restarts; the phone sends Answer::Reply to that task's session. Result: resume_with spawns claude --resume with cwd <state>/worktrees/p1/t1, a git worktree of /srv/a, and the task becomes Running. Proven in a scratch clone at 427b7fb with retain_projects(&[]) then reply(): reply=Ok, spawns=2, status=Running. The retain_projects doc says these sessions cannot be resumed or landed until the folder is allowed again, and the brief requires no resume or follow-up path. Same-as-gone-folder semantics does not give that, because a gone project folder never blocked worktree resumes. Fix: give hidden its own flag, distinct from missing, and check it in cwd_of for task sessions too. The desktop's gone-folder behaviour stays unchanged. Add a core test for reply on a hidden task session."
+          },
+          {
+            "severity": "blocker",
+            "origin": "builder",
+            "file": "core/src/host.rs:38-42 vs orchestrad/src/daemon.rs:652-655",
+            "issue": "retain runs too late. open_host has already called pump_in_background and retry_pending_in_background before it returns. Only then does the daemon vet projects (canonicalize and metadata per path) and call retain_projects. Input: a task on /srv/a is Queued at shutdown (for example, a third task while MAX_RUNNING_TASKS are busy); /srv/a is removed from the config; restart. Result: the pump thread's claim_next still sees the project, and start_task adds a worktree from /srv/a and spawns claude. It races the main thread, which is busy with filesystem calls first. retry_pending likewise runs git worktree remove against hidden repos. Fix: hide before the background work starts, either through a retain/allowed parameter or hook on open_host (core/src/host.rs needs a scope exception) or by vetting and retaining in the restore path before pump. Then re-pump after retain."
+          },
+          {
+            "severity": "note",
+            "origin": "",
+            "file": "core/src/session/mod.rs:1148-1153, core/src/session/state.rs:283-288",
+            "issue": "Hiding is not fully non-destructive. The next pump permanently fails a hidden project's Queued task (The project folder no longer exists). A phone reply to a hidden plain session runs fail_resume, which ends it for good (Ended, not resumable after the project returns), with a message saying the folder is gone when it exists. Discard on a hidden Done task goes to cleanup_pending. All of this is consistent with gone-folder semantics, but the README's claim that a project comes back when it is listed again does not hold for these. A distinct hidden flag (blocker 1) could refuse instead of mutating."
+          },
+          {
+            "severity": "note",
+            "origin": "",
+            "file": "orchestrad/src/daemon.rs:757-768",
+            "issue": "Between sessions.shutdown() and link.stop() (up to 6 s), connected phones can still dispatch. Sessions::start does not check shutting_down, so a session started in that window spawns after the final save. The cgroup kills it at exit and it is never persisted, so the only loss is its record. Low."
+          },
+          {
+            "severity": "note",
+            "origin": "",
+            "file": "core/src/projects.rs:65-71",
+            "issue": "retain compares stored paths as saved with canonical accepted paths. That fails closed: a non-canonical stored path, such as one from the unreleased attempt-1 build, is hidden and re-added under a new id, which orphans its sessions. Path equality is component-wise, so a trailing slash cannot bypass it, and no symlink bypass exists. Cosmetic for an unreleased daemon."
+          },
+          {
+            "severity": "note",
+            "origin": "",
+            "file": "attempt-1 notes",
+            "issue": "Resolved: the shutdown order and watchdog (12 s, link waited 6 s, under TimeoutStopSec=15; sessions.shutdown saves, flushes and kills without waiting); symlink vetting via canonicalize; status re-probes the preflight; claude needs an exec bit; the README socket sentence is now correct, and plain sudo's env_reset drops XDG_RUNTIME_DIR. Still open and acceptable: JOURNAL_STREAM dev:ino and EPIPE, test port races, the add_project error text, the pair QR path untested without a pty, arm64 not compile-checked locally."
+          }
+        ]
+      },
+      "attempt_3": {
+        "verdict": "PASS",
+        "attempt": 3,
+        "written_by": "reviewer",
+        "summary": "PASS. Both attempt-2 blockers are fixed. I re-ran at 0e85417: Windows cargo test --workspace --locked exit 0 (core 265, shell 44, link 32, wire 4, orchestrad 51, unit_file 9), and the linux-gnu check --tests exit 0; clippy shows nothing new. e985d17..0e85417 touches only s4's files and the four exceptions; desktop lib.rs adds exactly `None`. Author is njcurtis3, no attribution. I traced every spawn and worktree path by hand: start_in, resume_with, claim_next/start_task, land, diff, discard, retry_cleanup, retry_pending, and all 15 dispatch arms. Each goes through cwd_of, begin_task or the claim_next filter, and refuses with a message that carries no path. A refused reply leaves the session Suspended. open_host hides before the pump/retry threads start, and the daemon vets first and passes Some(accepted). Hidden is not persisted, and re-adding a project restores its id. A scratch probe confirmed the discard and reply refusals and found that cancel_task is not refused (a note). tests/daemon.rs (9 tests) is CI-only; read by hand, it should pass as non-root on ubuntu x64 and arm64. main.rs and log.rs are unchanged, and daemon.rs only moved vet_projects.",
+        "checks": [
+          {
+            "cmd": "cargo test --workspace --locked (Windows, C:/Users/natha/wt/h2s4r3 @ 0e85417)",
+            "exit": 0,
+            "result": "core 265, desktop shell 44, core link 32, wire_fixtures 4, orchestrad lib 51, unit_file 9; tests/daemon.rs compiles empty on Windows"
+          },
+          {
+            "cmd": "cargo check -p orchestrad --tests --locked --target x86_64-unknown-linux-gnu",
+            "exit": 0,
+            "result": "Finished, no warnings"
+          },
+          {
+            "cmd": "cargo clippy -p orchestrad -p orchestra-core --tests --target x86_64-unknown-linux-gnu",
+            "exit": 0,
+            "result": "warnings only at pre-existing lines (session/mod.rs 1396/1800, projects.rs test 170/174, git, link, state, task); none on new lines"
+          },
+          {
+            "cmd": "scratch-clone probe tests (never committed)",
+            "exit": 0,
+            "result": "retain_projects(&[]) then discard_task(queued)=Err(HIDDEN_PROJECT); answer(Reply) on hidden plain session=Err(HIDDEN_PROJECT), still Suspended; cancel_task(queued hidden)=Ok -> Discarded; stop(hidden session)=Ok -> Ended; list_sessions/list_tasks/transcript still return the hidden project's records"
+          },
+          {
+            "cmd": "git diff --stat e985d17 0e85417; git log authors and bodies",
+            "exit": 0,
+            "result": "only orchestrad/src/{daemon,preflight}.rs, tests/daemon.rs, README.md, core/src/{host,projects}.rs, core/src/session/mod.rs, desktop/src-tauri/src/lib.rs (+2 lines: a comment and `None,`); main.rs and log.rs are unchanged since d95628f. All commits by njcurtis3, no Claude trailers"
+          },
+          {
+            "cmd": "ci: tests/daemon.rs on ubuntu-24.04 and ubuntu-24.04-arm",
+            "exit": null,
+            "result": "NOT RUN here (no Linux runtime), CI-only. Read all 9 tests by hand, including the new restart test (shared dir, stderr.log truncated per run, 'ready' and 'hidden' lines logged before the socket serves). Expected to pass as non-root; arm64 not compile-checked locally"
+          }
+        ],
+        "findings": [
+          {
+            "severity": "note",
+            "where": "core/src/session/mod.rs:819-830 (cancel_task)",
+            "origin": "builder",
+            "text": "cancel_task does not check is_hidden. The builder report says 'Discarding/cancelling a hidden queued task is refused too', but only discard is refused. Probe: retain_projects(&[]), then cancel_task(t1) returns Ok and the task is Discarded for good, so it will not run when the project is listed again. Nothing spawns and no worktree is touched (a queued task has none), and it is the phone's explicit request, so this is not a blocker. An is_hidden check at the top would make it match discard and the report."
+          },
+          {
+            "severity": "note",
+            "where": "orchestrad/README.md:41-44, core/src/session/mod.rs list_sessions/list_tasks/transcript/stop",
+            "origin": "",
+            "text": "'Hidden from phones' covers the project only. A paired phone still lists a dropped project's sessions and tasks and reads their transcripts. stop() still works on them, and on a suspended plain session it ends the session for good. This matches the chosen semantics ('existing sessions untouched'), and that phone could read them before, but an operator who drops a project to withdraw it may expect more. Consider a README sentence saying the old history stays visible to paired phones."
+          },
+          {
+            "severity": "note",
+            "where": "graph_agents state scope_exceptions vs desktop/src-tauri/src/lib.rs",
+            "origin": "",
+            "text": "desktop/src-tauri/src/lib.rs is not listed in scope_exceptions, though the orchestrator log implies the edit ('Desktop passes no filter'). Verified: the diff is a comment and `None,` only. The desktop never calls retain, so hidden is always false and list, get, cwd_of, begin_task and claim_next behave exactly as before; `missing` is set and cleared as before."
+          },
+          {
+            "severity": "note",
+            "where": "carried over",
+            "origin": "",
+            "text": "Still open and acceptable from attempts 1 and 2: JOURNAL_STREAM dev:ino and EPIPE in log.rs; test port races; add_project error text; pair's QR path untested without a pty; arm64 not compile-checked locally; Sessions::start not checking shutting_down during the up-to-6 s link wait; retain fails closed on a non-canonical stored path."
+          }
+        ]
+      }
+    }
+  },
+  "integrator": {
+    "written_by": "integrator",
+    "worktree": "C:/Users/natha/wt/h2int",
+    "branch": "h2-integrate",
+    "base": "1481989 (orchestra main, untouched)",
+    "head": "f7f435d",
+    "merged": [
+      {
+        "slice": "s1",
+        "branch": "h2-s1",
+        "head": "9c3e70b",
+        "merge_commit": "68ef4fd"
+      },
+      {
+        "slice": "s2",
+        "branch": "h2-s2",
+        "head": "a1f4cf7",
+        "merge_commit": "3a576a9"
+      },
+      {
+        "slice": "s3",
+        "branch": "h2-s3",
+        "head": "8c85e69",
+        "merge_commit": "7417095"
+      },
+      {
+        "slice": "s5",
+        "branch": "h2-s5",
+        "head": "4792c5d",
+        "merge_commit": "ac6b9b2"
+      },
+      {
+        "slice": "s4",
+        "branch": "h2-s4",
+        "head": "0e85417",
+        "merge_commit": "4172e1e"
+      }
+    ],
+    "merge_notes": "All --no-ff, owner identity njcurtis3 <nathanjcurtis3@gmail.com>, no attribution. None was a no-op: each made a merge commit. s4 already contained s1-s3 and s5, so its merge brought only s4's own commits (d95628f, 427b7fb, 0e85417 and its two internal merges). After the s4 merge, `git diff h2-s4 4172e1e` was empty (same tree as the s4 head that passed review).",
+    "conflicts": [],
+    "post_merge_commits": [
+      {
+        "commit": "f7f435d",
+        "what": "CLAUDE.md: '259 core' -> '265 core' in the cargo test line. s5 wrote 259, then s4 added 6 core tests (10 core #[test]s added this run in total: 255 on main + 10 = 265, matching the Windows run). Mechanical number fix, separate commit."
+      }
+    ],
+    "verification": [
+      {
+        "cmd": "cargo test --workspace --locked",
+        "where": "repo root, Windows",
+        "exit": 0,
+        "output": "orchestra_lib 44 passed; orchestra (shell bin) 0; orchestra_core lib 265 passed; tests/link.rs 32 passed; tests/wire_fixtures.rs 4 passed; orchestrad lib 51 passed; orchestrad bin 0; tests/daemon.rs 0 passed (Linux-only, compiled out); tests/unit_file.rs 9 passed; doc-tests 0/0/0. 0 failed anywhere, 0 warnings."
+      },
+      {
+        "cmd": "cargo check -p orchestrad --tests --locked --target x86_64-unknown-linux-gnu",
+        "exit": 0,
+        "output": "Checking orchestra-core, toml_edit, toml, orchestrad ... Finished `dev` profile in 15.91s"
+      },
+      {
+        "cmd": "cargo tree -p orchestrad --locked -e normal,build | grep -iE 'gtk|web.?kit|tauri|wry'",
+        "exit": "tree 0, grep 1",
+        "output": "(no output)"
+      },
+      {
+        "cmd": "cargo tree -p orchestra-core --locked -e normal,build | grep -iE 'gtk|web.?kit|tauri|wry'",
+        "exit": "tree 0, grep 1",
+        "output": "(no output)"
+      },
+      {
+        "cmd": "cd desktop && npm ci && npm test",
+        "exit": 0,
+        "output": "Test Files 9 passed (9); Tests 218 passed (218)"
+      },
+      {
+        "cmd": "cd desktop && npm run build",
+        "exit": 0,
+        "output": "tsc && vite build: dist/index.html 0.40 kB, index css 5.74 kB, index js 272.45 kB, built in 172ms"
+      },
+      {
+        "cmd": "cd mobile && npm ci && npm test",
+        "exit": 0,
+        "output": "Test Suites: 22 passed, 22 total; Tests: 437 passed, 437 total"
+      },
+      {
+        "cmd": "cd mobile && npx tsc --noEmit",
+        "exit": 0,
+        "output": "(no output; expo start not needed)"
+      },
+      {
+        "cmd": "git ls-files ROADMAP.md testplan.md",
+        "exit": 0,
+        "output": "(empty)"
+      },
+      {
+        "cmd": "git diff 1481989 HEAD | grep '^+.*ROADMAP'",
+        "output": "(empty). Tracked ROADMAP mentions are pre-existing only: .gitignore:/ROADMAP.md and two in docs/decisions/0001-pricing-and-relay.md."
+      }
+    ],
+    "npm_note": "The fresh worktree had no node_modules; installed with npm ci from the committed lockfiles. No tracked file changed.",
+    "coherence": {
+      "readme_vs_main_rs": "Match. Subcommands run/status/pair/clients/revoke, --config/--state-dir/--socket as in USAGE; socket lookup --socket > $RUNTIME_DIRECTORY/control.sock > $XDG_RUNTIME_DIR/orchestrad/control.sock > /run/orchestrad/control.sock (resolve_socket + DEFAULT_SOCKET); status exits 3 (EXIT_NOT_RUNNING); refuses euid 0 and PID 1 with the docker --init hint. Minor, not fixed: README's status line leaves out pid and storage, which status prints; it does not mention exit 2 on a usage error or 130 on Ctrl-C in pair.",
+      "unit_vs_daemon": "Match. ExecStart=/usr/local/bin/orchestrad run --config /etc/orchestrad/config.toml = DEFAULT_CONFIG; StateDirectory=orchestra -> STATE_DIRECTORY=/var/lib/orchestra = HOME = WorkingDirectory = README useradd home; RuntimeDirectory=orchestrad -> /run/orchestrad/control.sock = DEFAULT_SOCKET. MemoryDenyWriteExecute and RestrictNamespaces are left unset on purpose.",
+      "claude_md": "Layout row for orchestrad/ and its files match the tree (src: config, control, daemon, lib, log, main, preflight, qr; tests: daemon, unit_file; systemd: service, gpu example). The core count was stale and is fixed in f7f435d. 'plus orchestrad's own' gives no number, so nothing there can be wrong. CI: test.yml has set -o pipefail, fails when cargo tree fails, runs the GUI guard for both packages, and runs cargo test -p orchestrad --locked. protocol/README.md: only the 'Still not built' line changed."
+    },
+    "not_run_anywhere": "The Linux-only tests have NOT run anywhere yet: control::unix (socket server/client, SO_PEERCRED, 0600 mode), tests/daemon.rs (0 tests on Windows because cfg compiles them out), and the unit's sandbox on a real systemd box. They were only type-checked for x86_64-unknown-linux-gnu. They first run in GitHub Actions test.yml after a push, and the unit sandbox runs only on a real host.",
+    "suite": "green (Windows + Linux cross-check); Linux runtime unproven",
+    "pushed": false
+  },
+  "ops": {
+    "written_by": "the node that wrote this key - here, always the string ops",
+    "gated": true,
+    "actions": []
+  },
+  "log": [
+    "orchestrator: opened run for ROADMAP H2 (orchestrad: headless binary over core, systemd service under an unprivileged user, config file with listen address, Claude Code sign-in check, journal logs and status command, terminal pairing QR, opt-in GPU device access). Owner defers all device checks to one cycle at the end of the roadmap (testplan.md). Pre-flight: orchestra is a git repo, main @ 1481989 clean. 2026-10-25",
+    "orchestrator: scout verified (19 facts, 7 unknowns, 5 risks; workspace green 255/44/32/4). Plan-killer narrowed: engine is in core; shell-only pieces to move or redo are link config, pending pairing + QR, notification delivery, project picking, state path. Spawning architect. 2026-10-25",
+    "orchestrator: HUMAN GATE passed. Owner: \"approve as recommended, go ahead\". G1 TOML; G2 inbox-updated meets forwarding, orchestrad logs notices, notice stays reserved; G3 limits = link max_connections only, lower-only; G4 sign-in failure runs and reports in log and status; G5 refuse PID 1, rely on KillMode=control-group, no reaper; G6 status+pair+clients+revoke; G7 unit omits MemoryDenyWriteExecute and RestrictNamespaces, owner confirms on a real box later. Diamond: s1 first, then s2/s3/s5 parallel, s4 after s2+s3. 2026-10-25",
+    "orchestrator: s1 PASS attempt 1 (9c3e70b on h2-s1). Branched h2-s2, h2-s3, h2-s5 from 9c3e70b in C:/Users/natha/wt/h2s{2,3,5}; spawning their builders in parallel. s4 waits for s2+s3. 2026-10-25",
+    "orchestrator: s5 REJECT attempt 2 (cap reached): gpu.conf.example DeviceAllow=char-nvidia-frontend does not exist on NVIDIA driver 550+ (/proc/devices lists nvidia, nvidiactl). Escalated to owner. s2 attempt 2 under review; s3 fixing after REJECT 1 (Reply Debug leaks secret; Server drop hangs). 2026-10-25",
+    "orchestrator: s2 PASS attempt 2 (a1f4cf7), s3 PASS attempt 2 (8c85e69). Owner authorized a 3rd attempt for s5 (\"Allow a 3rd attempt\"), past the 2-attempt cap. Built h2-s4 base: 9c3e70b + no-ff merges of h2-s2 and h2-s3 (clean, disjoint files) = 4b7444d; spawning s4 builder and s5 fix. 2026-10-25",
+    "orchestrator: s5 PASS attempt 3 (4792c5d). s4 REJECT attempt 1: open_host restores every saved project, so a project the config skips or dropped stays served to phones after restart; core has no remove call (plan gap, origin architect; plan had removal under NOT DOING). Owner chose \"Fix it in core\". scope_exceptions += core/src/projects.rs, core/src/session/mod.rs (a forget/retain-projects API, unused by the desktop) and orchestrad/README.md (s4 reviewer note: socket lookup wording, control.sock under the dirs). s4 builder must record deviation_from_approved_plan. 2026-10-25",
+    "orchestrator: s4 REJECT attempt 2 (cap reached): (1) a follow-up reply to a finished task session on a hidden project resumes it (cwd_of uses the worktree, never checks Projects); (2) open_host starts queued-task and cleanup threads before retain_projects runs, so a queued task on a dropped project can start. Escalated to owner. 2026-10-25",
+    "orchestrator: owner authorized a 3rd attempt for s4 (\"Allow a 3rd attempt\"), past the cap. scope_exceptions += core/src/host.rs (s1 file, already passed) so open_host applies the allowed project set before background work starts. Desktop passes no filter and keeps current behaviour. 2026-10-25",
+    "orchestrator: s4 PASS attempt 3 (0e85417). All 5 slices PASS (s1 9c3e70b, s2 a1f4cf7, s3 8c85e69, s4 0e85417, s5 4792c5d). Integration worktree C:/Users/natha/wt/h2int on branch h2-integrate from main 1481989; spawning integrator. 2026-10-25",
+    "orchestrator: CLOSED 2026-10-25. H2 orchestrad merged to orchestra main as 4043c5d (--no-ff of h2-integrate f7f435d; 5 slices, s2/s3 passed on attempt 2, s4/s5 on owner-authorized attempt 3). h2-integrate pushed with owner approval; CI run 40242846093 green 6/6, Linux x64+arm64 ran orchestrad lib 61, tests/daemon.rs 9, unit_file 9, core 267. main NOT pushed yet. close-run.py closeable. Follow-ups: cancel_task is not refused on a hidden project; phones can still read and stop old sessions/tasks of a dropped project; README status omits pid/storage and exit codes 2/130; config error clip at 256 chars can drop the field name; JOURNAL_STREAM dev:ino check; test port races; arm64 not compile-checked locally. Dropped nothing from the plan."
+  ]
+}
